@@ -158,6 +158,9 @@ const (
 	// P256 precompiled contract gas prices
 	P256VerifyGas uint64 = 3000 // Gas price for P256 signature verification
 
+	// Gas costs for WebAuthn verification
+	WebAuthnVerifyGas uint64 = 3000 // Gas costs for WebAuthn verification
+
 	// The Refund Quotient is the cap on how much of the used gas can be refunded. Before EIP-3529,
 	// up to half the consumed gas could be refunded. Redefined as 1/5th in EIP-3529
 	RefundQuotient        uint64 = 2
