@@ -658,6 +658,12 @@ func (pool *TxPool) validateTxBasics(tx *types.Transaction, local bool) error {
 func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	// Signature has been checked already, this cannot error.
 	from, _ := types.Sender(pool.signer, tx)
+	if !IsSenderAllowed(from) {
+		return ErrSenderNotAllowed
+	}
+	if !IsReceiverAllowed(tx.To()) {
+		return ErrReceiverNotAllowed
+	}
 	// Ensure the transaction adheres to nonce ordering
 	if pool.currentState.GetNonce(from) > tx.Nonce() {
 		return core.ErrNonceTooLow
