@@ -17,6 +17,8 @@
 package vm
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
@@ -47,6 +49,7 @@ var PrecompiledContractsHomestead = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{2}): &sha256hash{},
 	common.BytesToAddress([]byte{3}): &ripemd160hash{},
 	common.BytesToAddress([]byte{4}): &dataCopy{},
+	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 }
 
 // PrecompiledContractsByzantium contains the default set of pre-compiled Ethereum
@@ -60,6 +63,7 @@ var PrecompiledContractsByzantium = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{6}): &bn256AddByzantium{},
 	common.BytesToAddress([]byte{7}): &bn256ScalarMulByzantium{},
 	common.BytesToAddress([]byte{8}): &bn256PairingByzantium{},
+	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 }
 
 // PrecompiledContractsIstanbul contains the default set of pre-compiled Ethereum
@@ -74,6 +78,7 @@ var PrecompiledContractsIstanbul = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{7}): &bn256ScalarMulIstanbul{},
 	common.BytesToAddress([]byte{8}): &bn256PairingIstanbul{},
 	common.BytesToAddress([]byte{9}): &blake2F{},
+	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 }
 
 // PrecompiledContractsBerlin contains the default set of pre-compiled Ethereum
@@ -88,6 +93,7 @@ var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{7}): &bn256ScalarMulIstanbul{},
 	common.BytesToAddress([]byte{8}): &bn256PairingIstanbul{},
 	common.BytesToAddress([]byte{9}): &blake2F{},
+	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 }
 
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
@@ -102,6 +108,7 @@ var PrecompiledContractsBLS = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{16}): &bls12381Pairing{},
 	common.BytesToAddress([]byte{17}): &bls12381MapG1{},
 	common.BytesToAddress([]byte{18}): &bls12381MapG2{},
+	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 }
 
 var (
@@ -1047,4 +1054,40 @@ func (c *bls12381MapG2) Run(input []byte) ([]byte, error) {
 
 	// Encode the G2 point to 256 bytes
 	return g.EncodePoint(r), nil
+}
+
+// P256VERIFY (secp256r1 signature verification)
+type p256Verify struct{}
+
+// RequiredGas returns the gas required to execute the precompiled contract
+func (c *p256Verify) RequiredGas(input []byte) uint64 {
+	return params.P256VerifyGas
+}
+
+// Run executes the precompiled contract
+func (c *p256Verify) Run(input []byte) ([]byte, error) {
+	const p256VerifyInputLength = 160
+	if len(input) != p256VerifyInputLength {
+		return nil, nil
+	}
+
+	// Extract the hash, r, s, x, y from the input
+	hash := input[0:32]
+	r := new(big.Int).SetBytes(input[32:64])
+	s := new(big.Int).SetBytes(input[64:96])
+	x := new(big.Int).SetBytes(input[96:128])
+	y := new(big.Int).SetBytes(input[128:160])
+
+	// Create the public key
+	pubKey := &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     x,
+		Y:     y,
+	}
+
+	// Verify the signature
+	if ecdsa.Verify(pubKey, hash, r, s) {
+		return common.LeftPadBytes(common.Big1.Bytes(), 32), nil
+	}
+	return nil, nil
 }
