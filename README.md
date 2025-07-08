@@ -1,16 +1,10 @@
-## Go Ethereum
+# Incentum
 
-Official Golang execution layer implementation of the Ethereum protocol.
+Incentum is a customized Ethereum execution client based on [go-ethereum (Geth)](https://github.com/ethereum/go-ethereum), forked from the `release/1.11` branch.
 
-[![API Reference](
-https://camo.githubusercontent.com/915b7be44ada53c290eb157634330494ebe3e30a/68747470733a2f2f676f646f632e6f72672f6769746875622e636f6d2f676f6c616e672f6764646f3f7374617475732e737667
-)](https://pkg.go.dev/github.com/ethereum/go-ethereum?tab=doc)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ethereum/go-ethereum)](https://goreportcard.com/report/github.com/ethereum/go-ethereum)
-[![Travis](https://travis-ci.com/ethereum/go-ethereum.svg?branch=master)](https://travis-ci.com/ethereum/go-ethereum)
-[![Discord](https://img.shields.io/badge/discord-join%20chat-blue.svg)](https://discord.gg/nthXNEv)
+This project builds upon the rock-solid foundation of Geth while enabling protocol-level experimentation with enhancements relevant to our ecosystem. It retains full compatibility with the Ethereum protocol.
 
-Automated builds are available for stable releases and the unstable master branch. Binary
-archives are published at https://geth.ethereum.org/downloads/.
+> **Note:** This is an independent fork maintained under the Incentum project. It is **not** affiliated with the Ethereum Foundation or the upstream Geth maintainers.
 
 ## Building the source
 
@@ -122,15 +116,6 @@ crossing over between the main network and test network, you should always
 use separate accounts for play and real money. Unless you manually move
 accounts, `geth` will by default correctly separate the two networks and will not make any
 accounts available between them.*
-
-### Full node on the Rinkeby test network
-
-Go Ethereum also supports connecting to the older proof-of-authority based test network
-called [*Rinkeby*](https://www.rinkeby.io) which is operated by members of the community.
-
-```shell
-$ geth --rinkeby console
-```
 
 ### Configuration
 
