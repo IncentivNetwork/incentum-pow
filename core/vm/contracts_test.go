@@ -64,7 +64,9 @@ var allPrecompiles = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{15}):   &bls12381G2MultiExp{},
 	common.BytesToAddress([]byte{16}):   &bls12381Pairing{},
 	common.BytesToAddress([]byte{17}):   &bls12381MapG1{},
-	common.BytesToAddress([]byte{18}):   &bls12381MapG2{},
+	common.BytesToAddress([]byte{18}):     &bls12381MapG2{},
+	common.BytesToAddress([]byte{1, 0}):   &p256Verify{},
+	common.BytesToAddress([]byte{1, 17}):  &webAuthnVerify{},
 }
 
 // EIP-152 test vectors
@@ -267,6 +269,82 @@ func BenchmarkPrecompiledBlake2F(b *testing.B) { benchJson("blake2F", "09", b) }
 func TestPrecompileBlake2FMalformedInput(t *testing.T) {
 	for _, test := range blake2FMalformedInputTests {
 		testPrecompiledFailure("09", test, t)
+	}
+}
+
+// TestWebAuthnVerifyBufferOverflow tests webAuthnVerify with malformed inputs that could cause buffer overflows
+func TestWebAuthnVerifyBufferOverflow(t *testing.T) {
+	p := &webAuthnVerify{}
+	expected := common.LeftPadBytes(common.Big0.Bytes(), 32)
+
+	// Test case 1: authDataLen overflow
+	input := make([]byte, 136)
+	// Set authDataLen to maximum uint32 value
+	input[32] = 0xFF
+	input[33] = 0xFF
+	input[34] = 0xFF
+	input[35] = 0xFF
+
+	result, err := p.Run(input)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if !bytes.Equal(result, expected) {
+		t.Errorf("Expected zero result for overflow input")
+	}
+
+	// Test case 2: clientDataJSONLen overflow
+	input2 := make([]byte, 200)
+	// Set reasonable authDataLen
+	input2[35] = 32 // authDataLen = 32
+	// Set clientDataJSONLen to large value at offset 37+32+4 = 73
+	offset := 37 + 32
+	if offset+4 <= len(input2) {
+		input2[offset] = 0xFF
+		input2[offset+1] = 0xFF
+		input2[offset+2] = 0xFF
+		input2[offset+3] = 0xFF
+	}
+
+	result2, err2 := p.Run(input2)
+	if err2 != nil {
+		t.Errorf("Expected no error, got %v", err2)
+	}
+	if !bytes.Equal(result2, expected) {
+		t.Errorf("Expected zero result for clientDataJSON overflow")
+	}
+
+	// Test case 3: insufficient data for final fields
+	input3 := make([]byte, 100)
+	input3[35] = 10 // small authDataLen
+	offset3 := 37 + 10
+	input3[offset3+3] = 10 // small clientDataJSONLen
+
+	result3, err3 := p.Run(input3)
+	if err3 != nil {
+		t.Errorf("Expected no error, got %v", err3)
+	}
+	if !bytes.Equal(result3, expected) {
+		t.Errorf("Expected zero result for insufficient data")
+	}
+
+	// Test case 4: input too small
+	input4 := make([]byte, 50)
+	result4, err4 := p.Run(input4)
+	if err4 != nil {
+		t.Errorf("Expected no error, got %v", err4)
+	}
+	if !bytes.Equal(result4, expected) {
+		t.Errorf("Expected zero result for small input")
+	}
+
+	// Test case 5: empty input
+	result5, err5 := p.Run([]byte{})
+	if err5 != nil {
+		t.Errorf("Expected no error, got %v", err5)
+	}
+	if !bytes.Equal(result5, expected) {
+		t.Errorf("Expected zero result for empty input")
 	}
 }
 
