@@ -82,12 +82,7 @@ func IsSenderAllowed(addr common.Address) bool {
     mu.RLock()
     defer mu.RUnlock()
 
-    // If both lists are empty, allow all transactions (AllowList inactive)
-    if len(allowedSenders) == 0 && len(allowedReceivers) == 0 {
-        return true
-    }
-
-    // If only sender list is empty, allow all senders
+    // If sender list is empty, allow all senders
     if len(allowedSenders) == 0 {
         return true
     }
@@ -106,13 +101,8 @@ func IsReceiverAllowed(addr *common.Address) bool {
     if addr == nil { // contract creation always allowed
         return true
     }
-
-    // If both lists are empty, allow all transactions (AllowList inactive)
-    if len(allowedSenders) == 0 && len(allowedReceivers) == 0 {
-        return true
-    }
     
-    // If only receiver list is empty, allow all receivers
+    // If receiver list is empty, allow all receivers
     if len(allowedReceivers) == 0 {
         return true
     }
