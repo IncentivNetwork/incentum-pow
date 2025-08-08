@@ -195,6 +195,8 @@ func CommitGenesisState(db ethdb.Database, triedb *trie.Database, blockhash comm
 			genesis = DefaultGoerliGenesisBlock()
 		case params.SepoliaGenesisHash:
 			genesis = DefaultSepoliaGenesisBlock()
+		case params.IncentivTestnetGenesisHash:
+			genesis = DefaultIncentivTestnetGenesisBlock()
 		}
 		if genesis != nil {
 			alloc = genesis.Alloc
@@ -565,6 +567,32 @@ func DefaultSepoliaGenesisBlock() *Genesis {
 		Difficulty: big.NewInt(0x20000),
 		Timestamp:  1633267481,
 		Alloc:      decodePrealloc(sepoliaAllocData),
+	}
+}
+
+// DefaultIncentivTestnetGenesisBlock returns the Incentiv Testnet genesis block.
+func DefaultIncentivTestnetGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.IncentivTestnetChainConfig,
+		Nonce:      0x42,
+		ExtraData:  []byte{},
+		GasLimit:   0x1c9c380,
+		Difficulty: big.NewInt(0x1),
+		Timestamp:  0,
+		Alloc: GenesisAlloc{
+			common.HexToAddress("0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e"): {
+				Balance: func() *big.Int { 
+					balance, _ := new(big.Int).SetString("500000000000000000000000000000", 10)
+					return balance 
+				}(),
+			},
+			common.HexToAddress("0x683d8cb71DC0caa58AD75986292F22d830B87B75"): {
+				Balance: func() *big.Int { 
+					balance, _ := new(big.Int).SetString("500000000000000000000000000000", 10)
+					return balance 
+				}(),
+			},
+		},
 	}
 }
 
