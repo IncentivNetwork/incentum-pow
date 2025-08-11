@@ -202,6 +202,10 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Initialize the address allowlist from the active chain configuration
+	core.SetAllowlist(eth.blockchain.Config().Allowlist)
+
 	eth.bloomIndexer.Start(eth.blockchain)
 
 	if config.TxPool.Journal != "" {

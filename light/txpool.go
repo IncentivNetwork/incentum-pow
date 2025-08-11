@@ -371,6 +371,10 @@ func (pool *TxPool) validateTx(ctx context.Context, tx *types.Transaction) error
 	if header.GasLimit < tx.Gas() {
 		return txpool.ErrGasLimit
 	}
+	// Enforce receiver allowlist based on chain-config activation windows
+	if !core.IsReceiverAllowed(tx.To(), header.Number.Uint64()) {
+		return core.ErrReceiverNotAllowed
+	}
 
 	// Transactions can't be negative. This may never happen
 	// using RLP decoded transactions but may occur if you create

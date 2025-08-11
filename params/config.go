@@ -248,6 +248,13 @@ var (
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
 		Clique:                        nil,
+		// Allowlist: []AllowlistEntry{
+		// 	{
+		// 		Address:         common.HexToAddress("0xaE64A9cb72264fA277E1Fd1cd059992aDfe77306"),
+		// 		ActivateBlock:   big.NewInt(100),
+		// 		DeactivateBlock: big.NewInt(200),
+		// 	},
+		// },
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
@@ -425,6 +432,15 @@ type CheckpointOracleConfig struct {
 	Threshold uint64           `json:"threshold"`
 }
 
+// AllowlistEntry defines a single allowlisted address with an activation window.
+// If ActivateBlock is nil, the entry is considered active from genesis (block 0).
+// If DeactivateBlock is nil, the entry is considered active indefinitely after activation.
+type AllowlistEntry struct {
+    Address         common.Address `json:"address"`
+    ActivateBlock   *big.Int       `json:"activateBlock,omitempty"`
+    DeactivateBlock *big.Int       `json:"deactivateBlock,omitempty"`
+}
+
 // ChainConfig is the core config which determines the blockchain settings.
 //
 // ChainConfig is stored in the database on a per block basis. This means
@@ -472,6 +488,10 @@ type ChainConfig struct {
 	// Various consensus engines
 	Ethash *EthashConfig `json:"ethash,omitempty"`
 	Clique *CliqueConfig `json:"clique,omitempty"`
+
+    // Optional address allowlist with per-address activation windows.
+    // If empty or nil, no address-based admission restriction is implied by config.
+    Allowlist []AllowlistEntry `json:"allowlist,omitempty"`
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.

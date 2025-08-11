@@ -658,12 +658,17 @@ func (pool *TxPool) validateTxBasics(tx *types.Transaction, local bool) error {
 func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	// Signature has been checked already, this cannot error.
 	from, _ := types.Sender(pool.signer, tx)
-	if !IsSenderAllowed(from) {
-		return ErrSenderNotAllowed
-	}
-	if !IsReceiverAllowed(tx.To()) {
-		return ErrReceiverNotAllowed
-	}
+
+    // Enforce receiver allowlist based on chain config activation windows
+    // Determine current block number for window evaluation
+    var currentBlockNumber uint64
+    if head := pool.chain.CurrentBlock(); head != nil && head.Number != nil {
+        currentBlockNumber = head.Number.Uint64()
+    }
+    if !core.IsReceiverAllowed(tx.To(), currentBlockNumber) {
+        return core.ErrReceiverNotAllowed
+    }
+
 	// Ensure the transaction adheres to nonce ordering
 	if pool.currentState.GetNonce(from) > tx.Nonce() {
 		return core.ErrNonceTooLow
