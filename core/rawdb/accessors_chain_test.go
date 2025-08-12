@@ -29,8 +29,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -930,4 +933,103 @@ func TestHeadersRLPStorage(t *testing.T) {
 	checkSequence(0, 1)    // Only genesis
 	checkSequence(1, 1)    // Only block 1
 	checkSequence(1, 2)    // Genesis + block 1
+}
+
+func setupTestDatabaseWithBlocks(t *testing.T, blockCount int) ethdb.Database {
+	t.Helper()
+	frdir := t.TempDir()
+	db, err := NewDatabaseWithFreezer(NewMemoryDatabase(), frdir, "", false)
+	require.NoError(t, err, "failed to create database with ancient backend")
+	t.Cleanup(func() { db.Close() })
+
+	var chain []*types.Block
+	var pHash common.Hash
+	for i := 0; i < blockCount; i++ {
+		block := types.NewBlockWithHeader(&types.Header{
+			Number:      big.NewInt(int64(i)),
+			Extra:       []byte("test block"),
+			UncleHash:   types.EmptyUncleHash,
+			TxHash:      types.EmptyTxsHash,
+			ReceiptHash: types.EmptyReceiptsHash,
+			ParentHash:  pHash,
+		})
+		chain = append(chain, block)
+		pHash = block.Hash()
+	}
+	var receipts []types.Receipts = make([]types.Receipts, blockCount)
+	WriteAncientBlocks(db, chain, receipts, big.NewInt(100))
+	return db
+}
+
+func TestReadHeaderRange_DoSProtectionAndEdgeCases(t *testing.T) {
+	tests := []struct {
+		name          string
+		start         uint64
+		count         uint64
+		expectedCount int
+		maxAllowed    int
+		description   string
+	}{
+		{
+			name:          "zero_count_dos_protection",
+			start:         5,
+			count:         0,
+			expectedCount: 0,
+			maxAllowed:    0,
+			description:   "CVE-2024-32972: count=0 should return 0 headers",
+		},
+		{
+			name:          "integer_underflow_dos_protection",
+			start:         5,
+			count:         ^uint64(0), // 0-1 becomes UINT64_MAX due to underflow
+			expectedCount: -1,
+			maxAllowed:    10,
+			description:   "CVE-2024-32972: integer underflow should be limited",
+		},
+		{
+			name:          "uint64_max_dos_protection",
+			start:         5,
+			count:         18446744073709551615, // explicit UINT64_MAX
+			expectedCount: -1,
+			maxAllowed:    10,
+			description:   "CVE-2024-32972: UINT64_MAX should be limited",
+		},
+		{
+			name:          "normal_single_header",
+			start:         5,
+			count:         1,
+			expectedCount: 1,
+			maxAllowed:    1,
+			description:   "normal operation: single header request",
+		},
+		{
+			name:          "normal_multiple_headers",
+			start:         5,
+			count:         3,
+			expectedCount: 3,
+			maxAllowed:    3,
+			description:   "normal operation: multiple headers request",
+		},
+		{
+			name:          "large_count_limited",
+			start:         5,
+			count:         1000,
+			expectedCount: -1,
+			maxAllowed:    10,
+			description:   "large count should be limited by implementation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupTestDatabaseWithBlocks(t, 10)
+
+			headers := ReadHeaderRange(db, tt.start, tt.count)
+
+			if tt.expectedCount >= 0 {
+				assert.Equal(t, tt.expectedCount, len(headers), tt.description)
+			}
+			assert.True(t, len(headers) <= tt.maxAllowed, "%s: got %d headers, max allowed %d", tt.description, len(headers), tt.maxAllowed)
+		})
+	}
 }
