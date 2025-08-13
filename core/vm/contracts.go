@@ -1201,11 +1201,9 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 	p256Verifier := &p256Verify{}
 	result, err := p256Verifier.Run(p256Input)
 	if err != nil {
-		fmt.Printf("P256 verification error: %v\n", err)
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 	if result == nil {
-		fmt.Printf("P256 verification failed: result is nil\n")
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 
