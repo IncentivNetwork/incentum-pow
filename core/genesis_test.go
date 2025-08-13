@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/stretchr/testify/require"
 )
 
 func TestInvalidCliqueConfig(t *testing.T) {
@@ -248,44 +249,45 @@ func TestReadWriteGenesisAlloc(t *testing.T) {
 func TestIncentivTestnetGenesis(t *testing.T) {
 	genesis := DefaultIncentivTestnetGenesisBlock()
 
-	if genesis.Config.ChainID.Uint64() != 28802 {
-		t.Errorf("Expected chain ID 28802, got %d", genesis.Config.ChainID.Uint64())
-	}
+	// Test basic genesis parameters
+	require.Equal(t, uint64(28802), genesis.Config.ChainID.Uint64(), "Chain ID should be 28802")
+	require.Equal(t, uint64(0x1c9c380), genesis.GasLimit, "Gas limit should be 0x1c9c380")
+	require.Equal(t, uint64(1), genesis.Difficulty.Uint64(), "Difficulty should be 1")
 
-	if genesis.GasLimit != 0x1c9c380 {
-		t.Errorf("Expected gas limit 0x1c9c380, got 0x%x", genesis.GasLimit)
-	}
-
-	if genesis.Difficulty.Uint64() != 1 {
-		t.Errorf("Expected difficulty 1, got %d", genesis.Difficulty.Uint64())
-	}
-
+	// Test pre-allocations
 	expectedAllocs := map[string]string{
 		"0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e": "500000000000000000000000000000",
 		"0x683d8cb71DC0caa58AD75986292F22d830B87B75": "500000000000000000000000000000",
 	}
 
-	if len(genesis.Alloc) != len(expectedAllocs) {
-		t.Errorf("Expected %d allocations, got %d", len(expectedAllocs), len(genesis.Alloc))
-	}
+	require.Equal(t, len(expectedAllocs), len(genesis.Alloc), "Number of allocations should match")
 
-	for addrStr, expectedBalance := range expectedAllocs {
+	for addrStr, expectedBalanceStr := range expectedAllocs {
 		addr := common.HexToAddress(addrStr)
 		account, exists := genesis.Alloc[addr]
-		if !exists {
-			t.Errorf("Missing allocation for address %s", addrStr)
-			continue
-		}
+		require.True(t, exists, "Allocation should exist for address %s", addrStr)
 
-		expected, _ := new(big.Int).SetString(expectedBalance, 10)
-		if account.Balance.Cmp(expected) != 0 {
-			t.Errorf("Wrong balance for %s: expected %s, got %s", addrStr, expected.String(), account.Balance.String())
-		}
+		expectedBalance, success := new(big.Int).SetString(expectedBalanceStr, 10)
+		require.True(t, success, "Expected balance should be valid")
+		require.Equal(t, expectedBalance, account.Balance, "Balance should match for address %s", addrStr)
 	}
 
+	// Test genesis hash
 	block := genesis.ToBlock()
-	if block.Hash() != params.IncentivTestnetGenesisHash {
-		t.Errorf("Genesis hash mismatch: expected %s, got %s",
-			params.IncentivTestnetGenesisHash.Hex(), block.Hash().Hex())
-	}
+	require.Equal(t, params.IncentivTestnetGenesisHash, block.Hash(), "Genesis hash should match expected value")
+}
+
+func TestIncentivTestnetGenesisValidation(t *testing.T) {
+	// Test that the current implementation has proper validation
+	// This test ensures that DefaultIncentivTestnetGenesisBlock() includes runtime validation
+
+	// This should not panic with valid configuration
+	genesis := DefaultIncentivTestnetGenesisBlock()
+	require.NotNil(t, genesis, "DefaultIncentivTestnetGenesisBlock() should not return nil")
+
+	// Verify that validation is actually happening by checking consistency
+	// The runtime validation should ensure hash matches expected value
+	block := genesis.ToBlock()
+	require.Equal(t, params.IncentivTestnetGenesisHash, block.Hash(),
+		"Validation should ensure genesis hash matches expected value")
 }

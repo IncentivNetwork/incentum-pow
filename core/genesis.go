@@ -572,7 +572,20 @@ func DefaultSepoliaGenesisBlock() *Genesis {
 
 // DefaultIncentivTestnetGenesisBlock returns the Incentiv Testnet genesis block.
 func DefaultIncentivTestnetGenesisBlock() *Genesis {
-	return &Genesis{
+	// Define expected allocation addresses for validation
+	expectedAddresses := []string{
+		"0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e",
+		"0x683d8cb71DC0caa58AD75986292F22d830B87B75",
+	}
+
+	// Validate addresses before creating genesis
+	for _, addr := range expectedAddresses {
+		if !common.IsHexAddress(addr) {
+			panic("DefaultIncentivTestnetGenesisBlock: invalid pre-allocation address: " + addr)
+		}
+	}
+
+	genesis := &Genesis{
 		Config:     params.IncentivTestnetChainConfig,
 		Nonce:      0x42,
 		ExtraData:  []byte{},
@@ -594,6 +607,13 @@ func DefaultIncentivTestnetGenesisBlock() *Genesis {
 			},
 		},
 	}
+
+	// Validate genesis hash to ensure consistency
+	if genesis.ToBlock().Hash() != params.IncentivTestnetGenesisHash {
+		panic("DefaultIncentivTestnetGenesisBlock: genesis hash mismatch - parameters may have been modified incorrectly")
+	}
+
+	return genesis
 }
 
 // DeveloperGenesisBlock returns the 'geth --dev' genesis block.
