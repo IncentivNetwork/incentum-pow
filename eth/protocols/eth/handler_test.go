@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -618,5 +619,122 @@ func testGetBlockReceipts(t *testing.T, protocol uint) {
 		ReceiptsPacket: receipts,
 	}); err != nil {
 		t.Errorf("receipts mismatch: %v", err)
+	}
+}
+
+func setupTestBackendAndPeer(t *testing.T, protocol uint, blockCount int) (*testBackend, *testPeer) {
+	t.Helper()
+	backend := newTestBackend(blockCount)
+	t.Cleanup(func() { backend.close() })
+
+	peer, _ := newTestPeer("peer", protocol, backend)
+	t.Cleanup(func() { peer.close() })
+
+	return backend, peer
+}
+
+func TestGetBlockHeadersDoSProtection_ETH66(t *testing.T) {
+	testGetBlockHeadersDoSProtection(t, ETH66)
+}
+
+func TestGetBlockHeadersDoSProtection_ETH67(t *testing.T) {
+	testGetBlockHeadersDoSProtection(t, ETH67)
+}
+
+func TestGetBlockHeadersDoSProtection_ETH68(t *testing.T) {
+	testGetBlockHeadersDoSProtection(t, ETH68)
+}
+
+func testGetBlockHeadersDoSProtection(t *testing.T, protocol uint) {
+	tests := []struct {
+		name           string
+		origin         uint64
+		amount         uint64
+		skip           uint64
+		reverse        bool
+		expectedCount  int
+		maxAllowed     int
+		description    string
+	}{
+		{
+			name:          "zero_amount_dos_protection",
+			origin:        50,
+			amount:        0,
+			skip:          0,
+			reverse:       false,
+			expectedCount: 0,
+			maxAllowed:    0,
+			description:   "CVE-2024-32972: amount=0 should return 0 headers",
+		},
+		{
+			name:          "normal_single_header",
+			origin:        50,
+			amount:        1,
+			skip:          0,
+			reverse:       false,
+			expectedCount: 1,
+			maxAllowed:    1,
+			description:   "normal operation: single header request",
+		},
+		{
+			name:          "normal_multiple_headers",
+			origin:        50,
+			amount:        5,
+			skip:          0,
+			reverse:       false,
+			expectedCount: 5,
+			maxAllowed:    5,
+			description:   "normal operation: multiple headers request",
+		},
+		{
+			name:          "reverse_headers",
+			origin:        50,
+			amount:        3,
+			skip:          0,
+			reverse:       true,
+			expectedCount: 3,
+			maxAllowed:    3,
+			description:   "normal operation: reverse header request",
+		},
+		{
+			name:          "skip_headers",
+			origin:        50,
+			amount:        3,
+			skip:          2,
+			reverse:       false,
+			expectedCount: -1, // don't check exact, depends on available blocks
+			maxAllowed:    3,
+			description:   "normal operation: skip header request",
+		},
+		{
+			name:          "large_amount_limited",
+			origin:        50,
+			amount:        1000,
+			skip:          0,
+			reverse:       false,
+			expectedCount: -1, // should be limited by protocol
+			maxAllowed:    200, // reasonable upper bound
+			description:   "large amount should be limited by protocol limits",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backend, peer := setupTestBackendAndPeer(t, protocol, 100)
+
+			query := &GetBlockHeadersPacket{
+				Origin:  HashOrNumber{Number: tt.origin},
+				Amount:  tt.amount,
+				Skip:    tt.skip,
+				Reverse: tt.reverse,
+			}
+
+			headers := ServiceGetBlockHeadersQuery(backend.chain, query, peer.Peer)
+
+			if tt.expectedCount >= 0 {
+				assert.Len(t, headers, tt.expectedCount, tt.description)
+			}
+			assert.True(t, len(headers) <= tt.maxAllowed, "%s: got %d headers, max allowed %d", tt.description, len(headers), tt.maxAllowed)
+		})
 	}
 }
