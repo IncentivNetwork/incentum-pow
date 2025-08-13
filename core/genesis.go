@@ -581,15 +581,15 @@ func DefaultIncentivTestnetGenesisBlock() *Genesis {
 		Timestamp:  0,
 		Alloc: GenesisAlloc{
 			common.HexToAddress("0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e"): {
-				Balance: func() *big.Int { 
+				Balance: func() *big.Int {
 					balance, _ := new(big.Int).SetString("500000000000000000000000000000", 10)
-					return balance 
+					return balance
 				}(),
 			},
 			common.HexToAddress("0x683d8cb71DC0caa58AD75986292F22d830B87B75"): {
-				Balance: func() *big.Int { 
+				Balance: func() *big.Int {
 					balance, _ := new(big.Int).SetString("500000000000000000000000000000", 10)
-					return balance 
+					return balance
 				}(),
 			},
 		},
