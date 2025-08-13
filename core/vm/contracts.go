@@ -1150,6 +1150,11 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 	challengeLocation := binary.BigEndian.Uint32(input[offset : offset+4])
 	responseTypeLocation := binary.BigEndian.Uint32(input[offset+4 : offset+8])
 
+	// Check bounds for challengeLocation and responseTypeLocation
+	if challengeLocation >= uint32(len(clientDataJSON)) || responseTypeLocation >= uint32(len(clientDataJSON)) {
+		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
+
 	r := new(big.Int).SetBytes(input[offset+8 : offset+40])
 	s := new(big.Int).SetBytes(input[offset+40 : offset+72])
 	x := new(big.Int).SetBytes(input[offset+72 : offset+104])

@@ -346,6 +346,50 @@ func TestWebAuthnVerifyBufferOverflow(t *testing.T) {
 	if !bytes.Equal(result5, expected) {
 		t.Errorf("Expected zero result for empty input")
 	}
+
+	// Test case 6: challengeLocation out of bounds
+	input6 := make([]byte, 300)
+	input6[35] = 32 // authDataLen = 32
+	offset6 := 37 + 32
+	input6[offset6+3] = 50 // clientDataJSONLen = 50
+	// Set challengeLocation to value >= clientDataJSONLen (50)
+	challengeOffset := offset6 + 4 + 50
+	if challengeOffset+4 <= len(input6) {
+		input6[challengeOffset] = 0x00
+		input6[challengeOffset+1] = 0x00
+		input6[challengeOffset+2] = 0x00
+		input6[challengeOffset+3] = 60 // challengeLocation = 60 > clientDataJSONLen (50)
+	}
+
+	result6, err6 := p.Run(input6)
+	if err6 != nil {
+		t.Errorf("Expected no error, got %v", err6)
+	}
+	if !bytes.Equal(result6, expected) {
+		t.Errorf("Expected zero result for challengeLocation out of bounds")
+	}
+
+	// Test case 7: responseTypeLocation out of bounds
+	input7 := make([]byte, 300)
+	input7[35] = 32 // authDataLen = 32
+	offset7 := 37 + 32
+	input7[offset7+3] = 50 // clientDataJSONLen = 50
+	// Set responseTypeLocation to value >= clientDataJSONLen (50)
+	responseOffset := offset7 + 4 + 50
+	if responseOffset+8 <= len(input7) {
+		input7[responseOffset+4] = 0x00
+		input7[responseOffset+5] = 0x00
+		input7[responseOffset+6] = 0x00
+		input7[responseOffset+7] = 60 // responseTypeLocation = 60 > clientDataJSONLen (50)
+	}
+
+	result7, err7 := p.Run(input7)
+	if err7 != nil {
+		t.Errorf("Expected no error, got %v", err7)
+	}
+	if !bytes.Equal(result7, expected) {
+		t.Errorf("Expected zero result for responseTypeLocation out of bounds")
+	}
 }
 
 func TestPrecompiledEcrecover(t *testing.T) { testJson("ecRecover", "01", t) }
