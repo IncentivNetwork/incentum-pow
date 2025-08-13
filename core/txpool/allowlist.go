@@ -18,7 +18,7 @@ var (
 )
 
 const (
-    // Standard path within the repo – can be changed via SetAllowlistFilePath
+    // Standard path within the repo
     defaultAllowlistPath = "allowlist.json"
 
     // How often we check for file changes
@@ -66,16 +66,6 @@ func init() {
 // -----------------------------------------------------------------------------
 // Public helpers
 // -----------------------------------------------------------------------------
-
-// SetAllowlistFilePath allows tests or user config to change the path.
-// Reloads immediately.
-func SetAllowlistFilePath(path string) {
-    mu.Lock()
-    allowlistFilePath = path
-    mu.Unlock()
-
-    loadAllowlistFromFile()
-}
 
 // IsSenderAllowed checks only the sender list; if sender list is empty, it's "allowed".
 func IsSenderAllowed(addr common.Address) bool {
