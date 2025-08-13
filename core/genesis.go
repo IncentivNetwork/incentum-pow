@@ -50,6 +50,10 @@ const (
 	IncentivTestnetAddr2    = "0x683d8cb71DC0caa58AD75986292F22d830B87B75"
 	IncentivTestnetBalance1 = "500000000000000000000000000000" // 500,000,000,000 tokens
 	IncentivTestnetBalance2 = "500000000000000000000000000000" // 500,000,000,000 tokens
+	// IncentivTestnetGasLimit is set to 30M gas (6.4x higher than standard 4.7M)
+	// to support higher transaction throughput and complex smart contract operations
+	// suitable for testnet environment with increased block capacity
+	IncentivTestnetGasLimit = 0x1c9c380 // 30,000,000 gas
 )
 
 // Genesis specifies the header fields, state of a genesis block. It also defines hard
@@ -608,7 +612,7 @@ func DefaultIncentivTestnetGenesisBlock() *Genesis {
 		Config:     params.IncentivTestnetChainConfig,
 		Nonce:      0x42,
 		ExtraData:  []byte{},
-		GasLimit:   0x1c9c380,
+		GasLimit:   IncentivTestnetGasLimit,
 		Difficulty: big.NewInt(0x1),
 		Timestamp:  0,
 		Alloc: GenesisAlloc{

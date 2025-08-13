@@ -251,7 +251,7 @@ func TestIncentivTestnetGenesis(t *testing.T) {
 
 	// Test basic genesis parameters
 	require.Equal(t, uint64(28802), genesis.Config.ChainID.Uint64(), "Chain ID should be 28802")
-	require.Equal(t, uint64(0x1c9c380), genesis.GasLimit, "Gas limit should be 0x1c9c380")
+	require.Equal(t, uint64(IncentivTestnetGasLimit), genesis.GasLimit, "Gas limit should match constant")
 	require.Equal(t, uint64(1), genesis.Difficulty.Uint64(), "Difficulty should be 1")
 
 	// Test pre-allocations using constants
@@ -313,4 +313,12 @@ func TestIncentivTestnetConstants(t *testing.T) {
 	expectedBalance := new(big.Int)
 	expectedBalance.SetString("500000000000000000000000000000", 10)
 	require.Equal(t, expectedBalance, balance1, "Balance should be 500 billion tokens")
+
+	// Test gas limit constant
+	require.Equal(t, uint64(0x1c9c380), uint64(IncentivTestnetGasLimit), "Gas limit constant should be 30M")
+	require.Equal(t, uint64(30000000), uint64(IncentivTestnetGasLimit), "Gas limit should be 30,000,000")
+
+	// Verify gas limit is significantly higher than standard genesis gas limit
+	require.Greater(t, uint64(IncentivTestnetGasLimit), params.GenesisGasLimit,
+		"Incentiv testnet gas limit should be higher than standard genesis gas limit")
 }
