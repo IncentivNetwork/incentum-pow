@@ -94,7 +94,7 @@ func IsSenderAllowed(addr common.Address) bool {
 
     // Check if the address is contained in the sender list
     _, allowed := allowedSenders[addr]
-	log.Info("allowlist: sender check result", "address", addr.Hex(), "allowed", allowed)
+    log.Debug("allowlist: sender check result", "address", addr.Hex(), "allowed", allowed)
     return allowed
 }
 
@@ -119,6 +119,7 @@ func IsReceiverAllowed(addr *common.Address) bool {
     
     // Check if the address is contained in the receiver list
     _, allowed := allowedReceivers[*addr]
+    log.Debug("allowlist: receiver check result", "address", addr.Hex(), "allowed", allowed)
     return allowed
 }
 
