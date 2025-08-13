@@ -44,6 +44,18 @@ import (
 
 var errGenesisNoConfig = errors.New("genesis has no chain configuration")
 
+// IncentivTestnet genesis configuration constants
+const (
+	IncentivTestnetAddr1    = "0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e"
+	IncentivTestnetAddr2    = "0x683d8cb71DC0caa58AD75986292F22d830B87B75"
+	IncentivTestnetBalance1 = "500000000000000000000000000000" // 500,000,000,000 tokens
+	IncentivTestnetBalance2 = "500000000000000000000000000000" // 500,000,000,000 tokens
+	// IncentivTestnetGasLimit is set to 30M gas (6.4x higher than standard 4.7M)
+	// to support higher transaction throughput and complex smart contract operations
+	// suitable for testnet environment with increased block capacity
+	IncentivTestnetGasLimit = 0x1c9c380 // 30,000,000 gas
+)
+
 // Genesis specifies the header fields, state of a genesis block. It also defines hard
 // fork switch-over blocks through the chain configuration.
 type Genesis struct {
@@ -195,6 +207,8 @@ func CommitGenesisState(db ethdb.Database, triedb *trie.Database, blockhash comm
 			genesis = DefaultGoerliGenesisBlock()
 		case params.SepoliaGenesisHash:
 			genesis = DefaultSepoliaGenesisBlock()
+		case params.IncentivTestnetGenesisHash:
+			genesis = DefaultIncentivTestnetGenesisBlock()
 		}
 		if genesis != nil {
 			alloc = genesis.Alloc
@@ -566,6 +580,57 @@ func DefaultSepoliaGenesisBlock() *Genesis {
 		Timestamp:  1633267481,
 		Alloc:      decodePrealloc(sepoliaAllocData),
 	}
+}
+
+// DefaultIncentivTestnetGenesisBlock returns the Incentiv Testnet genesis block.
+func DefaultIncentivTestnetGenesisBlock() *Genesis {
+	// Define expected allocation addresses for validation using constants
+	expectedAddresses := []string{
+		IncentivTestnetAddr1,
+		IncentivTestnetAddr2,
+	}
+
+	// Validate addresses before creating genesis
+	for _, addr := range expectedAddresses {
+		if !common.IsHexAddress(addr) {
+			panic("DefaultIncentivTestnetGenesisBlock: invalid pre-allocation address: " + addr)
+		}
+	}
+
+	// Parse balances with proper error handling
+	balance1, ok1 := new(big.Int).SetString(IncentivTestnetBalance1, 10)
+	if !ok1 {
+		panic("DefaultIncentivTestnetGenesisBlock: invalid balance1 string: " + IncentivTestnetBalance1)
+	}
+
+	balance2, ok2 := new(big.Int).SetString(IncentivTestnetBalance2, 10)
+	if !ok2 {
+		panic("DefaultIncentivTestnetGenesisBlock: invalid balance2 string: " + IncentivTestnetBalance2)
+	}
+
+	genesis := &Genesis{
+		Config:     params.IncentivTestnetChainConfig,
+		Nonce:      0x42,
+		ExtraData:  []byte{},
+		GasLimit:   IncentivTestnetGasLimit,
+		Difficulty: big.NewInt(0x1),
+		Timestamp:  0,
+		Alloc: GenesisAlloc{
+			common.HexToAddress(IncentivTestnetAddr1): {
+				Balance: balance1,
+			},
+			common.HexToAddress(IncentivTestnetAddr2): {
+				Balance: balance2,
+			},
+		},
+	}
+
+	// Validate genesis hash to ensure consistency
+	if genesis.ToBlock().Hash() != params.IncentivTestnetGenesisHash {
+		panic("DefaultIncentivTestnetGenesisBlock: genesis hash mismatch - parameters may have been modified incorrectly")
+	}
+
+	return genesis
 }
 
 // DeveloperGenesisBlock returns the 'geth --dev' genesis block.

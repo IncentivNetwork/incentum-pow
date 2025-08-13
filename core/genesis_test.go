@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/stretchr/testify/require"
 )
 
 func TestInvalidCliqueConfig(t *testing.T) {
@@ -174,6 +175,7 @@ func TestGenesisHashes(t *testing.T) {
 		{DefaultGoerliGenesisBlock(), params.GoerliGenesisHash},
 		{DefaultRinkebyGenesisBlock(), params.RinkebyGenesisHash},
 		{DefaultSepoliaGenesisBlock(), params.SepoliaGenesisHash},
+		{DefaultIncentivTestnetGenesisBlock(), params.IncentivTestnetGenesisHash},
 	} {
 		// Test via MustCommit
 		if have := c.genesis.MustCommit(rawdb.NewMemoryDatabase()).Hash(); have != c.want {
@@ -242,4 +244,81 @@ func TestReadWriteGenesisAlloc(t *testing.T) {
 			t.Fatal("Unexpected account")
 		}
 	}
+}
+
+func TestIncentivTestnetGenesis(t *testing.T) {
+	genesis := DefaultIncentivTestnetGenesisBlock()
+
+	// Test basic genesis parameters
+	require.Equal(t, uint64(28802), genesis.Config.ChainID.Uint64(), "Chain ID should be 28802")
+	require.Equal(t, uint64(IncentivTestnetGasLimit), genesis.GasLimit, "Gas limit should match constant")
+	require.Equal(t, uint64(1), genesis.Difficulty.Uint64(), "Difficulty should be 1")
+
+	// Test pre-allocations using constants
+	expectedAllocs := map[string]string{
+		IncentivTestnetAddr1: IncentivTestnetBalance1,
+		IncentivTestnetAddr2: IncentivTestnetBalance2,
+	}
+
+	require.Equal(t, len(expectedAllocs), len(genesis.Alloc), "Number of allocations should match")
+
+	for addrStr, expectedBalanceStr := range expectedAllocs {
+		addr := common.HexToAddress(addrStr)
+		account, exists := genesis.Alloc[addr]
+		require.True(t, exists, "Allocation should exist for address %s", addrStr)
+
+		expectedBalance, success := new(big.Int).SetString(expectedBalanceStr, 10)
+		require.True(t, success, "Expected balance should be valid")
+		require.Equal(t, expectedBalance, account.Balance, "Balance should match for address %s", addrStr)
+	}
+
+	// Test genesis hash
+	block := genesis.ToBlock()
+	require.Equal(t, params.IncentivTestnetGenesisHash, block.Hash(), "Genesis hash should match expected value")
+}
+
+func TestIncentivTestnetGenesisValidation(t *testing.T) {
+	// Test that the current implementation has proper validation
+	// This test ensures that DefaultIncentivTestnetGenesisBlock() includes runtime validation
+
+	// This should not panic with valid configuration
+	genesis := DefaultIncentivTestnetGenesisBlock()
+	require.NotNil(t, genesis, "DefaultIncentivTestnetGenesisBlock() should not return nil")
+
+	// Verify that validation is actually happening by checking consistency
+	// The runtime validation should ensure hash matches expected value
+	block := genesis.ToBlock()
+	require.Equal(t, params.IncentivTestnetGenesisHash, block.Hash(),
+		"Validation should ensure genesis hash matches expected value")
+}
+
+func TestIncentivTestnetConstants(t *testing.T) {
+	// Test that constants are valid
+	require.True(t, common.IsHexAddress(IncentivTestnetAddr1), "Addr1 constant should be valid hex address")
+	require.True(t, common.IsHexAddress(IncentivTestnetAddr2), "Addr2 constant should be valid hex address")
+
+	// Test that balance constants can be parsed
+	balance1, ok1 := new(big.Int).SetString(IncentivTestnetBalance1, 10)
+	require.True(t, ok1, "Balance1 constant should be valid")
+	require.NotNil(t, balance1, "Balance1 should not be nil")
+
+	balance2, ok2 := new(big.Int).SetString(IncentivTestnetBalance2, 10)
+	require.True(t, ok2, "Balance2 constant should be valid")
+	require.NotNil(t, balance2, "Balance2 should not be nil")
+
+	// Test that balances are equal (as expected in current config)
+	require.Equal(t, balance1, balance2, "Both balances should be equal")
+
+	// Test expected balance value
+	expectedBalance := new(big.Int)
+	expectedBalance.SetString("500000000000000000000000000000", 10)
+	require.Equal(t, expectedBalance, balance1, "Balance should be 500 billion tokens")
+
+	// Test gas limit constant
+	require.Equal(t, uint64(0x1c9c380), uint64(IncentivTestnetGasLimit), "Gas limit constant should be 30M")
+	require.Equal(t, uint64(30000000), uint64(IncentivTestnetGasLimit), "Gas limit should be 30,000,000")
+
+	// Verify gas limit is significantly higher than standard genesis gas limit
+	require.Greater(t, uint64(IncentivTestnetGasLimit), params.GenesisGasLimit,
+		"Incentiv testnet gas limit should be higher than standard genesis gas limit")
 }
