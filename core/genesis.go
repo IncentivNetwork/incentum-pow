@@ -44,6 +44,14 @@ import (
 
 var errGenesisNoConfig = errors.New("genesis has no chain configuration")
 
+// IncentivTestnet genesis configuration constants
+const (
+	IncentivTestnetAddr1    = "0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e"
+	IncentivTestnetAddr2    = "0x683d8cb71DC0caa58AD75986292F22d830B87B75"
+	IncentivTestnetBalance1 = "500000000000000000000000000000" // 500,000,000,000 tokens
+	IncentivTestnetBalance2 = "500000000000000000000000000000" // 500,000,000,000 tokens
+)
+
 // Genesis specifies the header fields, state of a genesis block. It also defines hard
 // fork switch-over blocks through the chain configuration.
 type Genesis struct {
@@ -572,10 +580,10 @@ func DefaultSepoliaGenesisBlock() *Genesis {
 
 // DefaultIncentivTestnetGenesisBlock returns the Incentiv Testnet genesis block.
 func DefaultIncentivTestnetGenesisBlock() *Genesis {
-	// Define expected allocation addresses for validation
+	// Define expected allocation addresses for validation using constants
 	expectedAddresses := []string{
-		"0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e",
-		"0x683d8cb71DC0caa58AD75986292F22d830B87B75",
+		IncentivTestnetAddr1,
+		IncentivTestnetAddr2,
 	}
 
 	// Validate addresses before creating genesis
@@ -583,6 +591,17 @@ func DefaultIncentivTestnetGenesisBlock() *Genesis {
 		if !common.IsHexAddress(addr) {
 			panic("DefaultIncentivTestnetGenesisBlock: invalid pre-allocation address: " + addr)
 		}
+	}
+
+	// Parse balances with proper error handling
+	balance1, ok1 := new(big.Int).SetString(IncentivTestnetBalance1, 10)
+	if !ok1 {
+		panic("DefaultIncentivTestnetGenesisBlock: invalid balance1 string: " + IncentivTestnetBalance1)
+	}
+
+	balance2, ok2 := new(big.Int).SetString(IncentivTestnetBalance2, 10)
+	if !ok2 {
+		panic("DefaultIncentivTestnetGenesisBlock: invalid balance2 string: " + IncentivTestnetBalance2)
 	}
 
 	genesis := &Genesis{
@@ -593,17 +612,11 @@ func DefaultIncentivTestnetGenesisBlock() *Genesis {
 		Difficulty: big.NewInt(0x1),
 		Timestamp:  0,
 		Alloc: GenesisAlloc{
-			common.HexToAddress("0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e"): {
-				Balance: func() *big.Int {
-					balance, _ := new(big.Int).SetString("500000000000000000000000000000", 10)
-					return balance
-				}(),
+			common.HexToAddress(IncentivTestnetAddr1): {
+				Balance: balance1,
 			},
-			common.HexToAddress("0x683d8cb71DC0caa58AD75986292F22d830B87B75"): {
-				Balance: func() *big.Int {
-					balance, _ := new(big.Int).SetString("500000000000000000000000000000", 10)
-					return balance
-				}(),
+			common.HexToAddress(IncentivTestnetAddr2): {
+				Balance: balance2,
 			},
 		},
 	}

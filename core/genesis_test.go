@@ -254,10 +254,10 @@ func TestIncentivTestnetGenesis(t *testing.T) {
 	require.Equal(t, uint64(0x1c9c380), genesis.GasLimit, "Gas limit should be 0x1c9c380")
 	require.Equal(t, uint64(1), genesis.Difficulty.Uint64(), "Difficulty should be 1")
 
-	// Test pre-allocations
+	// Test pre-allocations using constants
 	expectedAllocs := map[string]string{
-		"0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e": "500000000000000000000000000000",
-		"0x683d8cb71DC0caa58AD75986292F22d830B87B75": "500000000000000000000000000000",
+		IncentivTestnetAddr1: IncentivTestnetBalance1,
+		IncentivTestnetAddr2: IncentivTestnetBalance2,
 	}
 
 	require.Equal(t, len(expectedAllocs), len(genesis.Alloc), "Number of allocations should match")
@@ -290,4 +290,27 @@ func TestIncentivTestnetGenesisValidation(t *testing.T) {
 	block := genesis.ToBlock()
 	require.Equal(t, params.IncentivTestnetGenesisHash, block.Hash(),
 		"Validation should ensure genesis hash matches expected value")
+}
+
+func TestIncentivTestnetConstants(t *testing.T) {
+	// Test that constants are valid
+	require.True(t, common.IsHexAddress(IncentivTestnetAddr1), "Addr1 constant should be valid hex address")
+	require.True(t, common.IsHexAddress(IncentivTestnetAddr2), "Addr2 constant should be valid hex address")
+
+	// Test that balance constants can be parsed
+	balance1, ok1 := new(big.Int).SetString(IncentivTestnetBalance1, 10)
+	require.True(t, ok1, "Balance1 constant should be valid")
+	require.NotNil(t, balance1, "Balance1 should not be nil")
+
+	balance2, ok2 := new(big.Int).SetString(IncentivTestnetBalance2, 10)
+	require.True(t, ok2, "Balance2 constant should be valid")
+	require.NotNil(t, balance2, "Balance2 should not be nil")
+
+	// Test that balances are equal (as expected in current config)
+	require.Equal(t, balance1, balance2, "Both balances should be equal")
+
+	// Test expected balance value
+	expectedBalance := new(big.Int)
+	expectedBalance.SetString("500000000000000000000000000000", 10)
+	require.Equal(t, expectedBalance, balance1, "Balance should be 500 billion tokens")
 }
