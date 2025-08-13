@@ -20,6 +20,9 @@ package utils
 import (
 	"reflect"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/urfave/cli/v2"
 )
 
 func Test_SplitTagsFlag(t *testing.T) {
@@ -60,5 +63,42 @@ func Test_SplitTagsFlag(t *testing.T) {
 				t.Errorf("splitTagsFlag() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestIncentivTestnetFlag(t *testing.T) {
+	// Test that MakeGenesis creates the correct genesis for Incentiv testnet
+	app := &cli.App{
+		Flags: []cli.Flag{
+			IncentivTestnetFlag,
+		},
+		Action: func(ctx *cli.Context) error {
+			genesis := MakeGenesis(ctx)
+			if genesis == nil {
+				t.Fatal("Expected genesis block, got nil")
+			}
+
+			if genesis.Config.ChainID.Uint64() != 28802 {
+				t.Errorf("Expected chain ID 28802, got %d", genesis.Config.ChainID.Uint64())
+			}
+
+			// Verify it matches the default Incentiv testnet genesis
+			expected := core.DefaultIncentivTestnetGenesisBlock()
+			if genesis.Config.ChainID.Uint64() != expected.Config.ChainID.Uint64() {
+				t.Errorf("Genesis chain ID doesn't match default")
+			}
+
+			if len(genesis.Alloc) != len(expected.Alloc) {
+				t.Errorf("Genesis allocation count doesn't match default")
+			}
+
+			return nil
+		},
+	}
+
+	// Run app with --incentiv-testnet flag
+	err := app.Run([]string{"test", "--incentiv-testnet"})
+	if err != nil {
+		t.Fatalf("Failed to run app: %v", err)
 	}
 }

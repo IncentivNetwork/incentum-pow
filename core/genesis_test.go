@@ -174,6 +174,7 @@ func TestGenesisHashes(t *testing.T) {
 		{DefaultGoerliGenesisBlock(), params.GoerliGenesisHash},
 		{DefaultRinkebyGenesisBlock(), params.RinkebyGenesisHash},
 		{DefaultSepoliaGenesisBlock(), params.SepoliaGenesisHash},
+		{DefaultIncentivTestnetGenesisBlock(), params.IncentivTestnetGenesisHash},
 	} {
 		// Test via MustCommit
 		if have := c.genesis.MustCommit(rawdb.NewMemoryDatabase()).Hash(); have != c.want {
@@ -241,5 +242,50 @@ func TestReadWriteGenesisAlloc(t *testing.T) {
 		if !reflect.DeepEqual(want, account) {
 			t.Fatal("Unexpected account")
 		}
+	}
+}
+
+func TestIncentivTestnetGenesis(t *testing.T) {
+	genesis := DefaultIncentivTestnetGenesisBlock()
+
+	if genesis.Config.ChainID.Uint64() != 28802 {
+		t.Errorf("Expected chain ID 28802, got %d", genesis.Config.ChainID.Uint64())
+	}
+
+	if genesis.GasLimit != 0x1c9c380 {
+		t.Errorf("Expected gas limit 0x1c9c380, got 0x%x", genesis.GasLimit)
+	}
+
+	if genesis.Difficulty.Uint64() != 1 {
+		t.Errorf("Expected difficulty 1, got %d", genesis.Difficulty.Uint64())
+	}
+
+	expectedAllocs := map[string]string{
+		"0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e": "500000000000000000000000000000",
+		"0x683d8cb71DC0caa58AD75986292F22d830B87B75": "500000000000000000000000000000",
+	}
+
+	if len(genesis.Alloc) != len(expectedAllocs) {
+		t.Errorf("Expected %d allocations, got %d", len(expectedAllocs), len(genesis.Alloc))
+	}
+
+	for addrStr, expectedBalance := range expectedAllocs {
+		addr := common.HexToAddress(addrStr)
+		account, exists := genesis.Alloc[addr]
+		if !exists {
+			t.Errorf("Missing allocation for address %s", addrStr)
+			continue
+		}
+
+		expected, _ := new(big.Int).SetString(expectedBalance, 10)
+		if account.Balance.Cmp(expected) != 0 {
+			t.Errorf("Wrong balance for %s: expected %s, got %s", addrStr, expected.String(), account.Balance.String())
+		}
+	}
+
+	block := genesis.ToBlock()
+	if block.Hash() != params.IncentivTestnetGenesisHash {
+		t.Errorf("Genesis hash mismatch: expected %s, got %s",
+			params.IncentivTestnetGenesisHash.Hex(), block.Hash().Hex())
 	}
 }

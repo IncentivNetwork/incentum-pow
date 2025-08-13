@@ -191,3 +191,16 @@ func TestCustomBackend(t *testing.T) {
 		}
 	}
 }
+
+func TestIncentivTestnetFlag(t *testing.T) {
+	t.Parallel()
+
+	datadir := t.TempDir()
+
+	geth := runGeth(t, "--datadir", datadir, "--incentiv-testnet", "--port", "0", "--authrpc.port", "0",
+		"--maxpeers", "0", "--nodiscover", "--nat", "none", "--ipcdisable",
+		"--exec", "eth.chainId", "console")
+
+	geth.ExpectRegexp("28802")
+	geth.ExpectExit()
+}
