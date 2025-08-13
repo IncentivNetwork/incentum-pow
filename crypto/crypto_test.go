@@ -74,6 +74,14 @@ func TestUnmarshalPubkey(t *testing.T) {
 		t.Fatalf("expected error, got %v, %v", err, key)
 	}
 
+	// Test zero public key (CVE-2024-45040 protection)
+	zeroKey := make([]byte, 65)
+	zeroKey[0] = 0x04 // uncompressed format
+	key, err = UnmarshalPubkey(zeroKey)
+	if err != errInvalidPubkey || key != nil {
+		t.Fatalf("expected error for zero public key, got %v, %v", err, key)
+	}
+
 	var (
 		enc, _ = hex.DecodeString("04760c4460e5336ac9bbd87952a3c7ec4363fc0a97bd31c86430806e287b437fd1b01abc6e1db640cf3106b520344af1d58b00b57823db3e1407cbc433e1b6d04d")
 		dec    = &ecdsa.PublicKey{
