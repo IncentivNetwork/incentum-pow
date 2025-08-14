@@ -76,7 +76,7 @@ var (
 		GrayGlacierBlock:              big.NewInt(15_050_000),
 		TerminalTotalDifficulty:       MainnetTerminalTotalDifficulty, // 58_750_000_000_000_000_000_000
 		TerminalTotalDifficultyPassed: true,
-		ShanghaiTime:                  newUint64(1681338455),
+		ShanghaiTime:                  newUint64(1755203160),
 		Ethash:                        new(EthashConfig),
 	}
 
@@ -241,7 +241,7 @@ var (
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
+		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
