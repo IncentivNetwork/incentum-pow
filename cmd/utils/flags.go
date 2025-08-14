@@ -1902,7 +1902,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		SetDNSDiscoveryDefaults(cfg, params.GoerliGenesisHash)
 	case ctx.Bool(IncentivTestnetFlag.Name):
 		if !ctx.IsSet(NetworkIdFlag.Name) {
-			cfg.NetworkId = 28802
+			cfg.NetworkId = 12730
 		}
 		cfg.Genesis = core.DefaultIncentivTestnetGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.IncentivTestnetGenesisHash)

@@ -31,7 +31,7 @@ var (
 	SepoliaGenesisHash         = common.HexToHash("0x25a5cc106eea7138acab33231d7160d69cb777ee0c2c553fcddf5138993e6dd9")
 	RinkebyGenesisHash         = common.HexToHash("0x6341fd3daf94b748c72ced5a5b26028f2474f5f00d824504e4fa37a75767e177")
 	GoerliGenesisHash          = common.HexToHash("0xbf7e331f7f7c1dd2e05159666b3bf8bc7a8a3a9eb1d518969eab529dd9b88c1a")
-	IncentivTestnetGenesisHash = common.HexToHash("0xfdd345ccc24a0cbc1fdb136949c66387691e3fe3fd4b1a9960f99d4341c309bd")
+	IncentivTestnetGenesisHash = common.HexToHash("0xb26debdebcf6ab4fda5c6fed47165428fa98884a720cf808de0a5edb50fbbbf7")
 )
 
 // TrustedCheckpoints associates each known checkpoint with the genesis hash of
@@ -76,7 +76,7 @@ var (
 		GrayGlacierBlock:              big.NewInt(15_050_000),
 		TerminalTotalDifficulty:       MainnetTerminalTotalDifficulty, // 58_750_000_000_000_000_000_000
 		TerminalTotalDifficultyPassed: true,
-		ShanghaiTime:                  newUint64(1681338455),
+		ShanghaiTime:                  newUint64(1755163895),
 		Ethash:                        new(EthashConfig),
 	}
 
@@ -224,7 +224,7 @@ var (
 
 	// IncentivTestnetChainConfig contains the chain parameters to run a node on the Incentiv test network.
 	IncentivTestnetChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(28802),
+		ChainID:                       big.NewInt(12730),
 		HomesteadBlock:                big.NewInt(0),
 		DAOForkBlock:                  nil,
 		DAOForkSupport:                false,
@@ -241,13 +241,17 @@ var (
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
+		ShanghaiTime:                  newUint64(1755167074),
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
-		Clique:                        nil,
+		Clique: &CliqueConfig{
+                        Period: 5,
+                        Epoch:  30000,
+                },
+
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
