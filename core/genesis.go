@@ -46,10 +46,10 @@ var errGenesisNoConfig = errors.New("genesis has no chain configuration")
 
 // IncentivTestnet genesis configuration constants
 const (
-	IncentivTestnetAddr1    = "0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e"
-	IncentivTestnetAddr2    = "0x683d8cb71DC0caa58AD75986292F22d830B87B75"
-	IncentivTestnetBalance1 = "500000000000000000000000000000" // 500,000,000,000 tokens
-	IncentivTestnetBalance2 = "500000000000000000000000000000" // 500,000,000,000 tokens
+	IncentivTestnetAddr1    = "0x1E82Fb69E1cB8Bed5BbD8b893C320fAD80B8874B"
+	IncentivTestnetAddr2    = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+	IncentivTestnetBalance1 = "1000000000000000000000000000000" // 500,000,000,000 tokens
+	IncentivTestnetBalance2 = "1000000000000000000000000000000" // 500,000,000,000 tokens
 	// IncentivTestnetGasLimit is set to 30M gas (6.4x higher than standard 4.7M)
 	// to support higher transaction throughput and complex smart contract operations
 	// suitable for testnet environment with increased block capacity
@@ -607,25 +607,29 @@ func DefaultIncentivTestnetGenesisBlock() *Genesis {
 	if !ok2 {
 		panic("DefaultIncentivTestnetGenesisBlock: invalid balance2 string: " + IncentivTestnetBalance2)
 	}
-
+	rawExtraData := "0000000000000000000000000000000000000000000000000000000000000000270875c5cb93F56011365Ba765D8d0397F0baD8C000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	extraData, err := hex.DecodeString(rawExtraData)
+	if err != nil {
+    	   panic(err)
+	}
 	genesis := &Genesis{
-		Config:     params.IncentivTestnetChainConfig,
-		Nonce:      0x42,
-		ExtraData:  []byte{},
-		GasLimit:   IncentivTestnetGasLimit,
-		Difficulty: big.NewInt(0x1),
-		Timestamp:  0,
-		Alloc: GenesisAlloc{
-			common.HexToAddress(IncentivTestnetAddr1): {
-				Balance: balance1,
-			},
-			common.HexToAddress(IncentivTestnetAddr2): {
-				Balance: balance2,
-			},
-		},
+    		Config:     params.IncentivTestnetChainConfig, // your chain config
+    		Nonce:      0x42,
+  		GasLimit:   IncentivTestnetGasLimit,
+    		Difficulty: big.NewInt(0x1),
+    		Timestamp:  0,
+    		Alloc: GenesisAlloc{
+        	common.HexToAddress(IncentivTestnetAddr1): {
+            		Balance: balance1,
+        	},
+        	common.HexToAddress(IncentivTestnetAddr2): {
+            		Balance: balance2,
+        		},
+    		},
+		ExtraData: extraData,
 	}
 
-	// Validate genesis hash to ensure consistency
+
 	if genesis.ToBlock().Hash() != params.IncentivTestnetGenesisHash {
 		panic("DefaultIncentivTestnetGenesisBlock: genesis hash mismatch - parameters may have been modified incorrectly")
 	}
