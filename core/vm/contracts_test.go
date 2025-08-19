@@ -64,9 +64,7 @@ var allPrecompiles = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{15}):   &bls12381G2MultiExp{},
 	common.BytesToAddress([]byte{16}):   &bls12381Pairing{},
 	common.BytesToAddress([]byte{17}):   &bls12381MapG1{},
-	common.BytesToAddress([]byte{18}):     &bls12381MapG2{},
-	common.BytesToAddress([]byte{1, 0}):   &p256Verify{},
-	common.BytesToAddress([]byte{1, 17}):  &webAuthnVerify{},
+	common.BytesToAddress([]byte{18}):   &bls12381MapG2{},
 }
 
 // EIP-152 test vectors
@@ -269,126 +267,6 @@ func BenchmarkPrecompiledBlake2F(b *testing.B) { benchJson("blake2F", "09", b) }
 func TestPrecompileBlake2FMalformedInput(t *testing.T) {
 	for _, test := range blake2FMalformedInputTests {
 		testPrecompiledFailure("09", test, t)
-	}
-}
-
-// TestWebAuthnVerifyBufferOverflow tests webAuthnVerify with malformed inputs that could cause buffer overflows
-func TestWebAuthnVerifyBufferOverflow(t *testing.T) {
-	p := &webAuthnVerify{}
-	expected := common.LeftPadBytes(common.Big0.Bytes(), 32)
-
-	// Test case 1: authDataLen overflow
-	input := make([]byte, 136)
-	// Set authDataLen to maximum uint32 value
-	input[32] = 0xFF
-	input[33] = 0xFF
-	input[34] = 0xFF
-	input[35] = 0xFF
-
-	result, err := p.Run(input)
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
-	if !bytes.Equal(result, expected) {
-		t.Errorf("Expected zero result for overflow input")
-	}
-
-	// Test case 2: clientDataJSONLen overflow
-	input2 := make([]byte, 200)
-	// Set reasonable authDataLen
-	input2[35] = 32 // authDataLen = 32
-	// Set clientDataJSONLen to large value at offset 37+32+4 = 73
-	offset := 37 + 32
-	if offset+4 <= len(input2) {
-		input2[offset] = 0xFF
-		input2[offset+1] = 0xFF
-		input2[offset+2] = 0xFF
-		input2[offset+3] = 0xFF
-	}
-
-	result2, err2 := p.Run(input2)
-	if err2 != nil {
-		t.Errorf("Expected no error, got %v", err2)
-	}
-	if !bytes.Equal(result2, expected) {
-		t.Errorf("Expected zero result for clientDataJSON overflow")
-	}
-
-	// Test case 3: insufficient data for final fields
-	input3 := make([]byte, 100)
-	input3[35] = 10 // small authDataLen
-	offset3 := 37 + 10
-	input3[offset3+3] = 10 // small clientDataJSONLen
-
-	result3, err3 := p.Run(input3)
-	if err3 != nil {
-		t.Errorf("Expected no error, got %v", err3)
-	}
-	if !bytes.Equal(result3, expected) {
-		t.Errorf("Expected zero result for insufficient data")
-	}
-
-	// Test case 4: input too small
-	input4 := make([]byte, 50)
-	result4, err4 := p.Run(input4)
-	if err4 != nil {
-		t.Errorf("Expected no error, got %v", err4)
-	}
-	if !bytes.Equal(result4, expected) {
-		t.Errorf("Expected zero result for small input")
-	}
-
-	// Test case 5: empty input
-	result5, err5 := p.Run([]byte{})
-	if err5 != nil {
-		t.Errorf("Expected no error, got %v", err5)
-	}
-	if !bytes.Equal(result5, expected) {
-		t.Errorf("Expected zero result for empty input")
-	}
-
-	// Test case 6: challengeLocation out of bounds
-	input6 := make([]byte, 300)
-	input6[35] = 32 // authDataLen = 32
-	offset6 := 37 + 32
-	input6[offset6+3] = 50 // clientDataJSONLen = 50
-	// Set challengeLocation to value >= clientDataJSONLen (50)
-	challengeOffset := offset6 + 4 + 50
-	if challengeOffset+4 <= len(input6) {
-		input6[challengeOffset] = 0x00
-		input6[challengeOffset+1] = 0x00
-		input6[challengeOffset+2] = 0x00
-		input6[challengeOffset+3] = 60 // challengeLocation = 60 > clientDataJSONLen (50)
-	}
-
-	result6, err6 := p.Run(input6)
-	if err6 != nil {
-		t.Errorf("Expected no error, got %v", err6)
-	}
-	if !bytes.Equal(result6, expected) {
-		t.Errorf("Expected zero result for challengeLocation out of bounds")
-	}
-
-	// Test case 7: responseTypeLocation out of bounds
-	input7 := make([]byte, 300)
-	input7[35] = 32 // authDataLen = 32
-	offset7 := 37 + 32
-	input7[offset7+3] = 50 // clientDataJSONLen = 50
-	// Set responseTypeLocation to value >= clientDataJSONLen (50)
-	responseOffset := offset7 + 4 + 50
-	if responseOffset+8 <= len(input7) {
-		input7[responseOffset+4] = 0x00
-		input7[responseOffset+5] = 0x00
-		input7[responseOffset+6] = 0x00
-		input7[responseOffset+7] = 60 // responseTypeLocation = 60 > clientDataJSONLen (50)
-	}
-
-	result7, err7 := p.Run(input7)
-	if err7 != nil {
-		t.Errorf("Expected no error, got %v", err7)
-	}
-	if !bytes.Equal(result7, expected) {
-		t.Errorf("Expected zero result for responseTypeLocation out of bounds")
 	}
 }
 

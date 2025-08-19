@@ -1114,46 +1114,21 @@ func (c *webAuthnVerify) RequiredGas(input []byte) uint64 {
 }
 
 func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
-	if len(input) < 136 {
-		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
-	}
 
 	challenge := input[:32]
 	authDataLen := binary.BigEndian.Uint32(input[32:36])
 
-	if authDataLen > uint32(len(input)-37) {
-		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
-	}
-
 	authenticatorData := input[36 : 36+authDataLen]
-	if 36+int(authDataLen) >= len(input) {
-		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
-	}
 	requireUserVerification := input[36+authDataLen] == 1
 
 	offset := 37 + authDataLen
-	if int(offset+4) > len(input) {
-		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
-	}
 	clientDataJSONLen := binary.BigEndian.Uint32(input[offset : offset+4])
 
-	// Check for overflow and bounds
-	if clientDataJSONLen > uint32(len(input)) || int(offset+4+clientDataJSONLen) > len(input) || offset+4+clientDataJSONLen < offset {
-		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
-	}
 	clientDataJSON := string(input[offset+4 : offset+4+clientDataJSONLen])
 
 	offset = offset + 4 + clientDataJSONLen
-	if int(offset+136) > len(input) {
-		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
-	}
 	challengeLocation := binary.BigEndian.Uint32(input[offset : offset+4])
 	responseTypeLocation := binary.BigEndian.Uint32(input[offset+4 : offset+8])
-
-	// Check bounds for challengeLocation and responseTypeLocation
-	if challengeLocation >= uint32(len(clientDataJSON)) || responseTypeLocation >= uint32(len(clientDataJSON)) {
-		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
-	}
 
 	r := new(big.Int).SetBytes(input[offset+8 : offset+40])
 	s := new(big.Int).SetBytes(input[offset+40 : offset+72])
