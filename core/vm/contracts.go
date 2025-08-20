@@ -1115,6 +1115,9 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 	if len(input) < 295 {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
+	if len(input) > 8192 { // 8KB upper bound
+		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
 
 	challenge := input[:32]
 	authDataLen := binary.BigEndian.Uint32(input[32:36])
