@@ -1114,7 +1114,7 @@ const (
 )
 
 func (c *webAuthnVerify) RequiredGas(input []byte) uint64 {
-	return params.WebAuthnVerifyGas
+	return params.WebAuthnVerifyBaseGas + params.P256VerifyGas
 }
 
 func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
