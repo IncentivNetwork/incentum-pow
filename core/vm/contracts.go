@@ -23,7 +23,9 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -1083,6 +1085,10 @@ func (c *p256Verify) Run(input []byte) ([]byte, error) {
 	s := new(big.Int).SetBytes(input[64:96])
 	x := new(big.Int).SetBytes(input[96:128])
 	y := new(big.Int).SetBytes(input[128:160])
+
+	if x == nil || y == nil || !elliptic.P256().IsOnCurve(x, y) {
+		return nil, nil
+	}
 
 	// Create the public key
 	pubKey := &ecdsa.PublicKey{
