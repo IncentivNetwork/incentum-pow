@@ -33,7 +33,7 @@ func LookupInstructionSet(rules params.Rules) (JumpTable, error) {
 	case rules.IsShanghai:
 		return newShanghaiInstructionSet(), nil
 	case rules.IsMerge:
-		return newMergeInstructionSet(), nil
+		return newShanghaiInstructionSet(), errors.New("merge-fork not supported in PoW-only mode")
 	case rules.IsLondon:
 		return newLondonInstructionSet(), nil
 	case rules.IsBerlin:

@@ -262,9 +262,6 @@ func (beacon *Beacon) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 	}
 	// Verify existence / non-existence of withdrawalsHash.
 	shanghai := chain.Config().IsShanghai(header.Time)
-	if shanghai && header.WithdrawalsHash == nil {
-		return errors.New("missing withdrawalsHash")
-	}
 	if !shanghai && header.WithdrawalsHash != nil {
 		return fmt.Errorf("invalid withdrawalsHash: have %x, expected nil", header.WithdrawalsHash)
 	}
@@ -322,16 +319,8 @@ func (beacon *Beacon) verifyHeaders(chain consensus.ChainHeaderReader, headers [
 // Prepare implements consensus.Engine, initializing the difficulty field of a
 // header to conform to the beacon protocol. The changes are done inline.
 func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
-	// Transition isn't triggered yet, use the legacy rules for preparation.
-	reached, err := IsTTDReached(chain, header.ParentHash, header.Number.Uint64()-1)
-	if err != nil {
-		return err
-	}
-	if !reached {
-		return beacon.ethone.Prepare(chain, header)
-	}
-	header.Difficulty = beaconDifficulty
-	return nil
+	// PoS is not supported, always use PoW rules
+	return beacon.ethone.Prepare(chain, header)
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.

@@ -713,35 +713,66 @@ func TestCreate2Addreses(t *testing.T) {
 	}
 }
 
-func TestRandom(t *testing.T) {
-	type testcase struct {
-		name   string
-		random common.Hash
+func TestOpDifficultyValid(t *testing.T) {
+	difficulty := big.NewInt(12345)
+	env := NewEVM(BlockContext{Difficulty: difficulty}, TxContext{}, nil, params.TestChainConfig, Config{})
+	stack := newstack()
+	pc := uint64(0)
+
+	_, err := opDifficulty(&pc, env.interpreter, &ScopeContext{nil, stack, nil})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for _, tt := range []testcase{
-		{name: "empty hash", random: common.Hash{}},
-		{name: "1", random: common.Hash{0}},
-		{name: "emptyCodeHash", random: emptyCodeHash},
-		{name: "hash(0x010203)", random: crypto.Keccak256Hash([]byte{0x01, 0x02, 0x03})},
-	} {
-		var (
-			env            = NewEVM(BlockContext{Random: &tt.random}, TxContext{}, nil, params.TestChainConfig, Config{})
-			stack          = newstack()
-			pc             = uint64(0)
-			evmInterpreter = env.interpreter
-		)
-		opRandom(&pc, evmInterpreter, &ScopeContext{nil, stack, nil})
-		if len(stack.data) != 1 {
-			t.Errorf("Expected one item on stack after %v, got %d: ", tt.name, len(stack.data))
-		}
-		actual := stack.pop()
-		expected, overflow := uint256.FromBig(new(big.Int).SetBytes(tt.random.Bytes()))
-		if overflow {
-			t.Errorf("Testcase %v: invalid overflow", tt.name)
-		}
-		if actual.Cmp(expected) != 0 {
-			t.Errorf("Testcase %v: expected  %x, got %x", tt.name, expected, actual)
-		}
+	if stack.len() != 1 {
+		t.Fatalf("expected 1 item on stack, got %d", stack.len())
+	}
+
+	result := stack.pop()
+	expected, _ := uint256.FromBig(difficulty)
+	if result.Cmp(expected) != 0 {
+		t.Errorf("expected %x, got %x", expected, result)
+	}
+}
+
+func TestOpDifficultyNilSafe(t *testing.T) {
+	env := NewEVM(BlockContext{Difficulty: nil}, TxContext{}, nil, params.TestChainConfig, Config{})
+	stack := newstack()
+	pc := uint64(0)
+
+	_, err := opDifficulty(&pc, env.interpreter, &ScopeContext{nil, stack, nil})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stack.len() != 1 {
+		t.Fatalf("expected 1 item on stack, got %d", stack.len())
+	}
+
+	result := stack.pop()
+	expected := new(uint256.Int).SetUint64(131072) // minimum difficulty as per ethash
+	if result.Cmp(expected) != 0 {
+		t.Errorf("expected minimum difficulty (131072) when Difficulty is nil, got %x", result)
+	}
+}
+
+func TestOpPush0(t *testing.T) {
+	env := NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+	stack := newstack()
+	pc := uint64(0)
+
+	_, err := opPush0(&pc, env.interpreter, &ScopeContext{nil, stack, nil})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stack.len() != 1 {
+		t.Fatalf("expected 1 item on stack, got %d", stack.len())
+	}
+
+	result := stack.pop()
+	expected := new(uint256.Int).SetUint64(0)
+	if result.Cmp(expected) != 0 {
+		t.Errorf("PUSH0 should push zero, got %x", result)
 	}
 }
