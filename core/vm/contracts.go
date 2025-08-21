@@ -1118,7 +1118,10 @@ func (c *webAuthnVerify) RequiredGas(input []byte) uint64 {
 }
 
 func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
-	if len(input) < 136 {
+	if len(input) < 295 {
+		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
+	if len(input) > 8192 { // 8KB upper bound
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 
@@ -1130,9 +1133,6 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 	}
 
 	authenticatorData := input[36 : 36+authDataLen]
-	if 36+int(authDataLen) >= len(input) {
-		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
-	}
 	requireUserVerification := input[36+authDataLen] == 1
 
 	offset := 37 + authDataLen
@@ -1165,7 +1165,7 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 	y := new(big.Int).SetBytes(input[offset+104 : offset+136])
 
 	// 1. Check authenticatorData flags
-	if len(authenticatorData) < 32 {
+	if len(authenticatorData) < 37 {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 
@@ -1175,15 +1175,23 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 
 	// 2. Check response type
 	responseType := `"type":"webauthn.get"`
-	if !strings.Contains(clientDataJSON[responseTypeLocation:], responseType) {
+	expectedResponseTypeEndPos := responseTypeLocation + uint32(len(responseType))
+	if uint32(len(clientDataJSON)) < expectedResponseTypeEndPos {
+		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
+	if clientDataJSON[responseTypeLocation:expectedResponseTypeEndPos] != responseType {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 
 	// 3. Check challenge
-	challengeB64 := base64.RawURLEncoding.EncodeToString(challenge)
-	challengeProperty := fmt.Sprintf(`"challenge":"%s"`, challengeB64)
-	if !strings.Contains(clientDataJSON[challengeLocation:], challengeProperty) {
+	expectedChallengeBase64 := base64.RawURLEncoding.EncodeToString(challenge)
+	challengeProperty := `"challenge":"` + expectedChallengeBase64 + `"`
+	expectedChallengePropertyEndPos := challengeLocation + uint32(len(challengeProperty))
+	if uint32(len(clientDataJSON)) < expectedChallengePropertyEndPos {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
+	if clientDataJSON[challengeLocation:expectedChallengePropertyEndPos] != challengeProperty {
+		return common.LeftPadBytes(big.NewInt(0).Bytes(), 32), nil
 	}
 
 	// 4. Calculate message hash using SHA256 instead of Keccak256
