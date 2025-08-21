@@ -18,8 +18,11 @@ package vm
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"testing"
 	"time"
@@ -46,27 +49,27 @@ type precompiledFailureTest struct {
 // allPrecompiles does not map to the actual set of precompiles, as it also contains
 // repriced versions of precompiles at certain slots
 var allPrecompiles = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{1}):    &ecrecover{},
-	common.BytesToAddress([]byte{2}):    &sha256hash{},
-	common.BytesToAddress([]byte{3}):    &ripemd160hash{},
-	common.BytesToAddress([]byte{4}):    &dataCopy{},
-	common.BytesToAddress([]byte{5}):    &bigModExp{eip2565: false},
-	common.BytesToAddress([]byte{0xf5}): &bigModExp{eip2565: true},
-	common.BytesToAddress([]byte{6}):    &bn256AddIstanbul{},
-	common.BytesToAddress([]byte{7}):    &bn256ScalarMulIstanbul{},
-	common.BytesToAddress([]byte{8}):    &bn256PairingIstanbul{},
-	common.BytesToAddress([]byte{9}):    &blake2F{},
-	common.BytesToAddress([]byte{10}):   &bls12381G1Add{},
-	common.BytesToAddress([]byte{11}):   &bls12381G1Mul{},
-	common.BytesToAddress([]byte{12}):   &bls12381G1MultiExp{},
-	common.BytesToAddress([]byte{13}):   &bls12381G2Add{},
-	common.BytesToAddress([]byte{14}):   &bls12381G2Mul{},
-	common.BytesToAddress([]byte{15}):   &bls12381G2MultiExp{},
-	common.BytesToAddress([]byte{16}):   &bls12381Pairing{},
-	common.BytesToAddress([]byte{17}):   &bls12381MapG1{},
-	common.BytesToAddress([]byte{18}):     &bls12381MapG2{},
-	common.BytesToAddress([]byte{1, 0}):   &p256Verify{},
-	common.BytesToAddress([]byte{1, 17}):  &webAuthnVerify{},
+	common.BytesToAddress([]byte{1}):     &ecrecover{},
+	common.BytesToAddress([]byte{2}):     &sha256hash{},
+	common.BytesToAddress([]byte{3}):     &ripemd160hash{},
+	common.BytesToAddress([]byte{4}):     &dataCopy{},
+	common.BytesToAddress([]byte{5}):     &bigModExp{eip2565: false},
+	common.BytesToAddress([]byte{0xf5}):  &bigModExp{eip2565: true},
+	common.BytesToAddress([]byte{6}):     &bn256AddIstanbul{},
+	common.BytesToAddress([]byte{7}):     &bn256ScalarMulIstanbul{},
+	common.BytesToAddress([]byte{8}):     &bn256PairingIstanbul{},
+	common.BytesToAddress([]byte{9}):     &blake2F{},
+	common.BytesToAddress([]byte{10}):    &bls12381G1Add{},
+	common.BytesToAddress([]byte{11}):    &bls12381G1Mul{},
+	common.BytesToAddress([]byte{12}):    &bls12381G1MultiExp{},
+	common.BytesToAddress([]byte{13}):    &bls12381G2Add{},
+	common.BytesToAddress([]byte{14}):    &bls12381G2Mul{},
+	common.BytesToAddress([]byte{15}):    &bls12381G2MultiExp{},
+	common.BytesToAddress([]byte{16}):    &bls12381Pairing{},
+	common.BytesToAddress([]byte{17}):    &bls12381MapG1{},
+	common.BytesToAddress([]byte{18}):    &bls12381MapG2{},
+	common.BytesToAddress([]byte{1, 0}):  &p256Verify{},
+	common.BytesToAddress([]byte{1, 17}): &webAuthnVerify{},
 }
 
 // EIP-152 test vectors
@@ -389,6 +392,98 @@ func TestWebAuthnVerifyBufferOverflow(t *testing.T) {
 	}
 	if !bytes.Equal(result7, expected) {
 		t.Errorf("Expected zero result for responseTypeLocation out of bounds")
+	}
+}
+
+// TestWebAuthnVerify tests webAuthnVerify with correct inputs
+func TestWebAuthnVerify(t *testing.T) {
+	p := &webAuthnVerify{}
+
+	challenge := common.Hex2Bytes("f631058a3ba1116acce12396fad0a125b5041c43f8e15723709f81aa8d5f4ccf")
+	authenticatorData := common.Hex2Bytes("49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d97630500000101")
+	challengeB64 := base64.RawURLEncoding.EncodeToString(challenge)
+	clientDataJSON := fmt.Sprintf(`{"type":"webauthn.get","challenge":"%s","origin":"http://localhost:3005"}`, challengeB64)
+	r := new(big.Int)
+	r.SetString("43684192885701841787131392247364253107519555363555461570655060745499568693242", 10)
+	s := new(big.Int)
+	s.SetString("22655632649588629308599201066602670461698485748654492451178007896016452673579", 10)
+
+	x := new(big.Int)
+	x.SetString("28573233055232466711029625910063034642429572463461595413086259353299906450061", 10)
+	y := new(big.Int)
+	y.SetString("39367742072897599771788408398752356480431855827262528811857788332151452825281", 10)
+
+	challengeIndex := uint32(23)
+	typeIndex := uint32(1)
+
+	authDataLen := uint32(len(authenticatorData))
+	clientDataJSONBytes := []byte(clientDataJSON)
+	clientDataJSONLen := uint32(len(clientDataJSONBytes))
+	requireUserVerification := byte(0) // false
+
+	inputSize := 32 + 4 + int(authDataLen) + 1 + 4 + int(clientDataJSONLen) + 4 + 4 + 32 + 32 + 32 + 32
+	input := make([]byte, inputSize)
+
+	offset := 0
+
+	copy(input[offset:offset+32], challenge)
+	offset += 32
+
+	binary.BigEndian.PutUint32(input[offset:offset+4], authDataLen)
+	offset += 4
+
+	copy(input[offset:offset+int(authDataLen)], authenticatorData)
+	offset += int(authDataLen)
+
+	input[offset] = requireUserVerification
+	offset += 1
+
+	binary.BigEndian.PutUint32(input[offset:offset+4], clientDataJSONLen)
+	offset += 4
+
+	copy(input[offset:offset+int(clientDataJSONLen)], clientDataJSONBytes)
+	offset += int(clientDataJSONLen)
+
+	binary.BigEndian.PutUint32(input[offset:offset+4], challengeIndex)
+	offset += 4
+
+	binary.BigEndian.PutUint32(input[offset:offset+4], typeIndex)
+	offset += 4
+
+	// r (32 bytes)
+	rBytes := r.Bytes()
+	copy(input[offset+32-len(rBytes):offset+32], rBytes) // right-pad with zeros
+	offset += 32
+
+	// s (32 bytes)
+	sBytes := s.Bytes()
+	copy(input[offset+32-len(sBytes):offset+32], sBytes) // right-pad with zeros
+	offset += 32
+
+	// x (32 bytes)
+	xBytes := x.Bytes()
+	copy(input[offset+32-len(xBytes):offset+32], xBytes) // right-pad with zeros
+	offset += 32
+
+	// y (32 bytes)
+	yBytes := y.Bytes()
+	copy(input[offset+32-len(yBytes):offset+32], yBytes) // right-pad with zeros
+
+	result, err := p.Run(input)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if result == nil {
+		t.Errorf("Expected non-nil result")
+	}
+
+	if bytes.Equal(result, common.LeftPadBytes(common.Big0.Bytes(), 32)) {
+		t.Errorf("Expected non-zero result")
+	}
+
+	if len(result) != 32 {
+		t.Errorf("Expected 32-byte result, got %d bytes", len(result))
 	}
 }
 
