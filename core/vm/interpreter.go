@@ -59,7 +59,8 @@ func NewEVMInterpreter(evm *EVM) *EVMInterpreter {
 	case evm.chainRules.IsShanghai:
 		table = &shanghaiInstructionSet
 	case evm.chainRules.IsMerge:
-		table = &mergeInstructionSet
+		// In PoW-only mode, use Shanghai instruction set instead of merge
+		table = &shanghaiInstructionSet
 	case evm.chainRules.IsLondon:
 		table = &londonInstructionSet
 	case evm.chainRules.IsBerlin:

@@ -26,7 +26,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
@@ -238,5 +237,7 @@ func CreateConsensusEngine(stack *node.Node, ethashConfig *ethash.Config, clique
 		}, notify, noverify)
 		engine.(*ethash.Ethash).SetThreads(-1) // Disable CPU mining
 	}
-	return beacon.New(engine)
+	// Return pure PoW engine without beacon wrapper - PoW only mode
+	log.Info("Using pure PoW consensus engine - beacon consensus disabled")
+	return engine
 }
