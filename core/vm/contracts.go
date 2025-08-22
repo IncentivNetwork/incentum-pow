@@ -17,15 +17,11 @@
 package vm
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -33,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/blake2b"
 	"github.com/ethereum/go-ethereum/crypto/bls12381"
 	"github.com/ethereum/go-ethereum/crypto/bn256"
+	"github.com/ethereum/go-ethereum/crypto/secp256r1"
 	"github.com/ethereum/go-ethereum/params"
 	"golang.org/x/crypto/ripemd160"
 )
@@ -1081,25 +1078,11 @@ func (c *p256Verify) Run(input []byte) ([]byte, error) {
 
 	// Extract the hash, r, s, x, y from the input
 	hash := input[0:32]
-	r := new(big.Int).SetBytes(input[32:64])
-	s := new(big.Int).SetBytes(input[64:96])
-	x := new(big.Int).SetBytes(input[96:128])
-	y := new(big.Int).SetBytes(input[128:160])
+	r, s := new(big.Int).SetBytes(input[32:64]), new(big.Int).SetBytes(input[64:96])
+	x, y := new(big.Int).SetBytes(input[96:128]), new(big.Int).SetBytes(input[128:160])
 
-	if x == nil || y == nil || !elliptic.P256().IsOnCurve(x, y) {
-		return nil, nil
-	}
-
-	// Create the public key
-	pubKey := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     x,
-		Y:     y,
-	}
-
-	// Verify the signature
-	if ecdsa.Verify(pubKey, hash, r, s) {
-		return common.LeftPadBytes(common.Big1.Bytes(), 32), nil
+	if secp256r1.Verify(hash, r, s, x, y) {
+		return true32Byte, nil
 	}
 	return nil, nil
 }

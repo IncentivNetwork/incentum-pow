@@ -156,7 +156,7 @@ const (
 	Bls12381MapG2Gas          uint64 = 110000 // Gas price for BLS12-381 mapping field element to G2 operation
 
 	// P256 precompiled contract gas prices
-	P256VerifyGas uint64 = 3000 // Gas price for P256 signature verification
+	P256VerifyGas uint64 = 6900 // secp256r1 elliptic curve signature verifier gas price
 
 	// Base gas costs for WebAuthn verification
 	WebAuthnVerifyBaseGas uint64 = 3000 // Gas costs for WebAuthn verification
