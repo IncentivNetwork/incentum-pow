@@ -67,13 +67,6 @@ func init() {
 // Public helpers
 // -----------------------------------------------------------------------------
 
-// SetAllowlistFilePath changes the path to the allowlist file.
-func SetAllowlistFilePath(path string) {
-	mu.Lock()
-	allowlistFilePath = path
-	mu.Unlock()
-}
-
 // IsSenderAllowed checks only the sender list; if sender list is empty, it's "allowed".
 func IsSenderAllowed(addr common.Address) bool {
 	mu.RLock()
