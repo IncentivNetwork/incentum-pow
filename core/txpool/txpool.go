@@ -635,8 +635,12 @@ func (pool *TxPool) validateTxBasics(tx *types.Transaction, local bool) error {
 		return core.ErrTipAboveFeeCap
 	}
 	// Make sure the transaction is signed properly.
-	if _, err := types.Sender(pool.signer, tx); err != nil {
+	from, err := types.Sender(pool.signer, tx)
+	if err != nil {
 		return ErrInvalidSender
+	}
+	if !IsSenderAllowed(from) {
+		return ErrSenderNotAllowed
 	}
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !local && tx.GasTipCapIntCmp(pool.gasPrice) < 0 {
@@ -650,6 +654,9 @@ func (pool *TxPool) validateTxBasics(tx *types.Transaction, local bool) error {
 	if tx.Gas() < intrGas {
 		return core.ErrIntrinsicGas
 	}
+	if !IsReceiverAllowed(tx.To()) {
+		return ErrReceiverNotAllowed
+	}
 	return nil
 }
 
@@ -658,12 +665,6 @@ func (pool *TxPool) validateTxBasics(tx *types.Transaction, local bool) error {
 func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	// Signature has been checked already, this cannot error.
 	from, _ := types.Sender(pool.signer, tx)
-	if !IsSenderAllowed(from) {
-		return ErrSenderNotAllowed
-	}
-	if !IsReceiverAllowed(tx.To()) {
-		return ErrReceiverNotAllowed
-	}
 	// Ensure the transaction adheres to nonce ordering
 	if pool.currentState.GetNonce(from) > tx.Nonce() {
 		return core.ErrNonceTooLow
