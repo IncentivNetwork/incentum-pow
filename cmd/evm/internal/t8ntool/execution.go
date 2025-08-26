@@ -244,19 +244,11 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		// - there are only 'bad' transactions, which aren't executed. In those cases,
 		//   the coinbase gets no txfee, so isn't created, and thus needs to be touched
 		var (
-			blockReward = big.NewInt(miningReward)
+			blockReward = big.NewInt(0)
 			minerReward = new(big.Int).Set(blockReward)
-			perOmmer    = new(big.Int).Div(blockReward, big.NewInt(32))
 		)
 		for _, ommer := range pre.Env.Ommers {
-			// Add 1/32th for each ommer included
-			minerReward.Add(minerReward, perOmmer)
-			// Add (8-delta)/8
-			reward := big.NewInt(8)
-			reward.Sub(reward, new(big.Int).SetUint64(ommer.Delta))
-			reward.Mul(reward, blockReward)
-			reward.Div(reward, big.NewInt(8))
-			statedb.AddBalance(ommer.Address, reward)
+			statedb.AddBalance(ommer.Address, minerReward)
 		}
 		statedb.AddBalance(pre.Env.Coinbase, minerReward)
 	}
