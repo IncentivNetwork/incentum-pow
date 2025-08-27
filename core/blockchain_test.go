@@ -3595,9 +3595,21 @@ func TestEIP1559Transition(t *testing.T) {
 
 	state, _ := chain.State()
 
-	// 3: Ensure that miner received only the tx's tip.
+	// 3: Ensure that miner received only the tx's tip + base fee with percentage.
 	actual := state.GetBalance(block.Coinbase())
-	expected := new(big.Int).SetUint64(block.GasUsed() * block.Transactions()[0].GasTipCap().Uint64())
+	gasUsed := block.GasUsed()
+	tipFee := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), block.Transactions()[0].GasTipCap())
+
+	// minerTipReward = tipFee * MinerFeePercent / FeePercentDivisor
+	minerTipReward := new(big.Int).Mul(tipFee, big.NewInt(params.MinerFeePercent))
+	minerTipReward.Div(minerTipReward, big.NewInt(params.FeePercentDivisor))
+	baseFee := block.BaseFee()
+	//// minerBaseReward = baseFee * MinerFeePercent / FeePercentDivisor
+	minerBaseReward := new(big.Int).Mul(baseFee, big.NewInt(params.MinerFeePercent))
+	minerBaseReward.Div(minerBaseReward, big.NewInt(params.FeePercentDivisor))
+
+	// expected = minerTipReward + minerBaseReward
+	expected := new(big.Int).Add(minerBaseReward, minerTipReward)
 	if actual.Cmp(expected) != 0 {
 		t.Fatalf("miner balance incorrect: expected %d, got %d", expected, actual)
 	}
@@ -3631,10 +3643,22 @@ func TestEIP1559Transition(t *testing.T) {
 	block = chain.GetBlockByNumber(2)
 	state, _ = chain.State()
 	effectiveTip := block.Transactions()[0].GasTipCap().Uint64() - block.BaseFee().Uint64()
-
-	// 6+5: Ensure that miner received only the tx's effective tip.
+	// 6+5: Ensure that miner received the tx's effective tip + base fee with percentage.
 	actual = state.GetBalance(block.Coinbase())
-	expected = new(big.Int).SetUint64(block.GasUsed() * effectiveTip)
+	tip := new(big.Int).SetUint64(block.GasUsed() * effectiveTip)
+
+	// minerTipReward = tipFee * MinerFeePercent / FeePercentDivisor
+	minerTipReward = new(big.Int).Mul(tip, big.NewInt(params.MinerFeePercent))
+	minerTipReward.Div(minerTipReward, big.NewInt(params.FeePercentDivisor))
+
+	baseFee = block.BaseFee()
+	//// minerBaseReward = baseFee * MinerFeePercent / FeePercentDivisor
+	minerBaseReward = new(big.Int).Mul(baseFee, big.NewInt(params.MinerFeePercent))
+	minerBaseReward.Div(minerBaseReward, big.NewInt(params.FeePercentDivisor))
+
+	// expected = minerTipReward + minerBaseReward
+	expected = new(big.Int).Add(minerBaseReward, minerTipReward)
+
 	if actual.Cmp(expected) != 0 {
 		t.Fatalf("miner balance incorrect: expected %d, got %d", expected, actual)
 	}
@@ -4318,9 +4342,18 @@ func TestEIP3651(t *testing.T) {
 
 	state, _ := chain.State()
 
-	// 3: Ensure that miner received only the tx's tip.
+	// 3: Ensure that miner received the tx's tip + base fee in percentage.
 	actual := state.GetBalance(block.Coinbase())
-	expected := new(big.Int).SetUint64(block.GasUsed() * block.Transactions()[0].GasTipCap().Uint64())
+	tipFee := new(big.Int).SetUint64(block.GasUsed() * block.Transactions()[0].GasTipCap().Uint64())
+	minerTipReward := new(big.Int).Mul(tipFee, big.NewInt(params.MinerFeePercent))
+	minerTipReward.Div(minerTipReward, big.NewInt(params.FeePercentDivisor))
+	baseFee := block.BaseFee()
+	//// minerBaseReward = baseFee * MinerFeePercent / FeePercentDivisor
+	minerBaseReward := new(big.Int).Mul(baseFee, big.NewInt(params.MinerFeePercent))
+	minerBaseReward.Div(minerBaseReward, big.NewInt(params.FeePercentDivisor))
+
+	// expected = minerTipReward + minerBaseReward
+	expected := new(big.Int).Add(minerBaseReward, minerTipReward)
 	if actual.Cmp(expected) != 0 {
 		t.Fatalf("miner balance incorrect: expected %d, got %d", expected, actual)
 	}

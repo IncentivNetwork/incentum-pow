@@ -50,6 +50,7 @@ var (
 		MuirGlacierBlock:              big.NewInt(7_117_117),
 		BerlinBlock:                   big.NewInt(9_812_189),
 		LondonBlock:                   big.NewInt(10_499_401),
+		FeePoolBlock:                  big.NewInt(10_500_000),
 		TerminalTotalDifficulty:       new(big.Int).SetUint64(50_000_000_000_000_000),
 		TerminalTotalDifficultyPassed: true,
 	}
