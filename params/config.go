@@ -72,6 +72,7 @@ var (
 		MuirGlacierBlock:              big.NewInt(9_200_000),
 		BerlinBlock:                   big.NewInt(12_244_000),
 		LondonBlock:                   big.NewInt(12_965_000),
+		FeePoolBlock:                  big.NewInt(13_000_000), // Activate fee pool after London
 		ArrowGlacierBlock:             big.NewInt(13_773_000),
 		GrayGlacierBlock:              big.NewInt(15_050_000),
 		TerminalTotalDifficulty:       MainnetTerminalTotalDifficulty, // 58_750_000_000_000_000_000_000
@@ -117,6 +118,7 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
+		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
 		TerminalTotalDifficulty:       big.NewInt(17_000_000_000_000_000),
 		TerminalTotalDifficultyPassed: true,
 		MergeNetsplitBlock:            big.NewInt(1735371),
@@ -148,6 +150,7 @@ var (
 		MuirGlacierBlock:    nil,
 		BerlinBlock:         big.NewInt(8_290_928),
 		LondonBlock:         big.NewInt(8_897_988),
+		FeePoolBlock:        big.NewInt(8_900_000), // Activate fee pool after London
 		ArrowGlacierBlock:   nil,
 		Clique: &CliqueConfig{
 			Period: 15,
@@ -191,6 +194,7 @@ var (
 		MuirGlacierBlock:              nil,
 		BerlinBlock:                   big.NewInt(4_460_644),
 		LondonBlock:                   big.NewInt(5_062_605),
+		FeePoolBlock:                  big.NewInt(5_065_000), // Activate fee pool after London
 		ArrowGlacierBlock:             nil,
 		TerminalTotalDifficulty:       big.NewInt(10_790_000),
 		TerminalTotalDifficultyPassed: true,
@@ -238,6 +242,7 @@ var (
 		MuirGlacierBlock:              nil,
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
+		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		MergeNetsplitBlock:            nil,
@@ -267,6 +272,7 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
+		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
 		ArrowGlacierBlock:             big.NewInt(0),
 		GrayGlacierBlock:              big.NewInt(0),
 		MergeNetsplitBlock:            nil,
@@ -296,6 +302,7 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
+		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		MergeNetsplitBlock:            nil,
@@ -325,6 +332,7 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
+		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
 		ArrowGlacierBlock:             big.NewInt(0),
 		GrayGlacierBlock:              big.NewInt(0),
 		MergeNetsplitBlock:            nil,
@@ -425,6 +433,11 @@ type CheckpointOracleConfig struct {
 	Threshold uint64           `json:"threshold"`
 }
 
+// FeePoolConfig represents the configuration for the fee pool smart contract.
+type FeePoolConfig struct {
+	Address common.Address `json:"address"` // Fee pool contract address
+}
+
 // ChainConfig is the core config which determines the blockchain settings.
 //
 // ChainConfig is stored in the database on a per block basis. This means
@@ -450,6 +463,7 @@ type ChainConfig struct {
 	MuirGlacierBlock    *big.Int `json:"muirGlacierBlock,omitempty"`    // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	BerlinBlock         *big.Int `json:"berlinBlock,omitempty"`         // Berlin switch block (nil = no fork, 0 = already on berlin)
 	LondonBlock         *big.Int `json:"londonBlock,omitempty"`         // London switch block (nil = no fork, 0 = already on london)
+	FeePoolBlock        *big.Int `json:"feePoolBlock,omitempty"`        // Fee pool switch block (nil = no fork, 0 = already on fee pool)
 	ArrowGlacierBlock   *big.Int `json:"arrowGlacierBlock,omitempty"`   // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	GrayGlacierBlock    *big.Int `json:"grayGlacierBlock,omitempty"`    // Eip-5133 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	MergeNetsplitBlock  *big.Int `json:"mergeNetsplitBlock,omitempty"`  // Virtual fork after The Merge to use as a network splitter
@@ -642,6 +656,11 @@ func (c *ChainConfig) IsBerlin(num *big.Int) bool {
 // IsLondon returns whether num is either equal to the London fork block or greater.
 func (c *ChainConfig) IsLondon(num *big.Int) bool {
 	return isBlockForked(c.LondonBlock, num)
+}
+
+// IsFeePool returns whether num is either equal to the Fee Pool fork block or greater.
+func (c *ChainConfig) IsFeePool(num *big.Int) bool {
+	return isBlockForked(c.FeePoolBlock, num)
 }
 
 // IsArrowGlacier returns whether num is either equal to the Arrow Glacier (EIP-4345) fork block or greater.

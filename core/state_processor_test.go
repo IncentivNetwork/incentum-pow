@@ -56,6 +56,7 @@ func TestStateProcessorErrors(t *testing.T) {
 			MuirGlacierBlock:    big.NewInt(0),
 			BerlinBlock:         big.NewInt(0),
 			LondonBlock:         big.NewInt(0),
+			FeePoolBlock:        big.NewInt(0),
 			Ethash:              new(params.EthashConfig),
 		}
 		signer  = types.LatestSigner(config)
@@ -326,6 +327,7 @@ func TestStateProcessorErrors(t *testing.T) {
 					MuirGlacierBlock:              big.NewInt(0),
 					BerlinBlock:                   big.NewInt(0),
 					LondonBlock:                   big.NewInt(0),
+					FeePoolBlock:                  big.NewInt(0),
 					ArrowGlacierBlock:             big.NewInt(0),
 					GrayGlacierBlock:              big.NewInt(0),
 					MergeNetsplitBlock:            nil,

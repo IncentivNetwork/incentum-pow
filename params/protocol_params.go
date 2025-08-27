@@ -16,7 +16,11 @@
 
 package params
 
-import "math/big"
+import (
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
+)
 
 const (
 	GasLimitBoundDivisor uint64 = 1024               // The bound divisor of the gas limit, used in update calculations.
@@ -124,6 +128,11 @@ const (
 	DefaultElasticityMultiplier     = 2          // Bounds the maximum gas limit an EIP-1559 block may have.
 	InitialBaseFee                  = 1000000000 // Initial base fee for EIP-1559 blocks.
 
+	// Fee distribution constants for fee pool mechanism
+	MinerFeePercent   = 125  // 12.5% of base fee goes to miner (125/1000)
+	FeePoolPercent    = 875  // 87.5% of base fee goes to fee pool (875/1000)
+	FeePercentDivisor = 1000 // Divisor for percentage calculations
+
 	MaxCodeSize     = 24576           // Maximum bytecode to permit for a contract
 	MaxInitCodeSize = 2 * MaxCodeSize // Maximum initcode to permit in a creation transaction and create instructions
 
@@ -177,5 +186,8 @@ var (
 	DifficultyBoundDivisor = big.NewInt(2048)   // The bound divisor of the difficulty, used in the update calculations.
 	GenesisDifficulty      = big.NewInt(131072) // Difficulty of the Genesis block.
 	MinimumDifficulty      = big.NewInt(131072) // The minimum that the difficulty may ever be.
-	DurationLimit          = big.NewInt(5)      // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
+	DurationLimit          = big.NewInt(5)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
+
+	// FeePoolContractAddress Fee pool contract address
+	FeePoolContractAddress = common.HexToAddress("0x0000000000000000000000000000000000000000") // TODO: Set actual fee pool contract address
 )

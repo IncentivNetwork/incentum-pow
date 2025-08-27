@@ -392,9 +392,37 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		// are 0. This avoids a negative effectiveTip being applied to
 		// the coinbase when simulating calls.
 	} else {
-		fee := new(big.Int).SetUint64(st.gasUsed())
-		fee.Mul(fee, effectiveTip)
-		st.state.AddBalance(st.evm.Context.Coinbase, fee)
+		gasUsed := new(big.Int).SetUint64(st.gasUsed())
+
+		// Check if fee pool is active
+		if st.evm.ChainConfig().IsFeePool(st.evm.Context.BlockNumber) {
+			tipFee := new(big.Int).Mul(gasUsed, effectiveTip)
+
+			// Split tip fee: 12.5% to miner, 87.5% to fee pool
+			minerTipFee := new(big.Int).Mul(tipFee, big.NewInt(params.MinerFeePercent))
+			minerTipFee.Div(minerTipFee, big.NewInt(params.FeePercentDivisor))
+
+			feePoolTipFee := new(big.Int).Mul(tipFee, big.NewInt(params.FeePoolPercent))
+			feePoolTipFee.Div(feePoolTipFee, big.NewInt(params.FeePercentDivisor))
+
+			if rules.IsLondon && st.evm.Context.BaseFee != nil {
+				minerBaseFee := new(big.Int).Mul(st.evm.Context.BaseFee, big.NewInt(params.MinerFeePercent))
+				minerBaseFee.Div(minerBaseFee, big.NewInt(params.FeePercentDivisor))
+
+				feePoolBaseFee := new(big.Int).Mul(st.evm.Context.BaseFee, big.NewInt(params.FeePoolPercent))
+				feePoolBaseFee.Div(feePoolBaseFee, big.NewInt(params.FeePercentDivisor))
+
+				// Add base fees to respective accounts
+				st.state.AddBalance(st.evm.Context.Coinbase, minerBaseFee)
+				st.state.AddBalance(params.FeePoolContractAddress, feePoolBaseFee)
+			}
+
+			st.state.AddBalance(st.evm.Context.Coinbase, minerTipFee)
+			st.state.AddBalance(params.FeePoolContractAddress, feePoolTipFee)
+		} else {
+			fee := new(big.Int).Mul(gasUsed, effectiveTip)
+			st.state.AddBalance(st.evm.Context.Coinbase, fee)
+		}
 	}
 
 	return &ExecutionResult{
