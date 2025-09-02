@@ -156,10 +156,10 @@ const (
 	Bls12381MapG2Gas          uint64 = 110000 // Gas price for BLS12-381 mapping field element to G2 operation
 
 	// P256 precompiled contract gas prices
-	P256VerifyGas uint64 = 3000 // Gas price for P256 signature verification
+	P256VerifyGas uint64 = 6900 // secp256r1 elliptic curve signature verifier gas price
 
-	// Gas costs for WebAuthn verification
-	WebAuthnVerifyGas uint64 = 3000 // Gas costs for WebAuthn verification
+	// Base gas costs for WebAuthn verification
+	WebAuthnVerifyBaseGas uint64 = 3000 // Gas costs for WebAuthn verification
 
 	// The Refund Quotient is the cap on how much of the used gas can be refunded. Before EIP-3529,
 	// up to half the consumed gas could be refunded. Redefined as 1/5th in EIP-3529

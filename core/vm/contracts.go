@@ -17,15 +17,11 @@
 package vm
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"math/big"
-	"fmt"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -33,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/blake2b"
 	"github.com/ethereum/go-ethereum/crypto/bls12381"
 	"github.com/ethereum/go-ethereum/crypto/bn256"
+	"github.com/ethereum/go-ethereum/crypto/secp256r1"
 	"github.com/ethereum/go-ethereum/params"
 	"golang.org/x/crypto/ripemd160"
 )
@@ -48,10 +45,10 @@ type PrecompiledContract interface {
 // PrecompiledContractsHomestead contains the default set of pre-compiled Ethereum
 // contracts used in the Frontier and Homestead releases.
 var PrecompiledContractsHomestead = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{1}): &ecrecover{},
-	common.BytesToAddress([]byte{2}): &sha256hash{},
-	common.BytesToAddress([]byte{3}): &ripemd160hash{},
-	common.BytesToAddress([]byte{4}): &dataCopy{},
+	common.BytesToAddress([]byte{1}):                                  &ecrecover{},
+	common.BytesToAddress([]byte{2}):                                  &sha256hash{},
+	common.BytesToAddress([]byte{3}):                                  &ripemd160hash{},
+	common.BytesToAddress([]byte{4}):                                  &dataCopy{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
 }
@@ -59,14 +56,14 @@ var PrecompiledContractsHomestead = map[common.Address]PrecompiledContract{
 // PrecompiledContractsByzantium contains the default set of pre-compiled Ethereum
 // contracts used in the Byzantium release.
 var PrecompiledContractsByzantium = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{1}): &ecrecover{},
-	common.BytesToAddress([]byte{2}): &sha256hash{},
-	common.BytesToAddress([]byte{3}): &ripemd160hash{},
-	common.BytesToAddress([]byte{4}): &dataCopy{},
-	common.BytesToAddress([]byte{5}): &bigModExp{eip2565: false},
-	common.BytesToAddress([]byte{6}): &bn256AddByzantium{},
-	common.BytesToAddress([]byte{7}): &bn256ScalarMulByzantium{},
-	common.BytesToAddress([]byte{8}): &bn256PairingByzantium{},
+	common.BytesToAddress([]byte{1}):                                  &ecrecover{},
+	common.BytesToAddress([]byte{2}):                                  &sha256hash{},
+	common.BytesToAddress([]byte{3}):                                  &ripemd160hash{},
+	common.BytesToAddress([]byte{4}):                                  &dataCopy{},
+	common.BytesToAddress([]byte{5}):                                  &bigModExp{eip2565: false},
+	common.BytesToAddress([]byte{6}):                                  &bn256AddByzantium{},
+	common.BytesToAddress([]byte{7}):                                  &bn256ScalarMulByzantium{},
+	common.BytesToAddress([]byte{8}):                                  &bn256PairingByzantium{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
 }
@@ -74,15 +71,15 @@ var PrecompiledContractsByzantium = map[common.Address]PrecompiledContract{
 // PrecompiledContractsIstanbul contains the default set of pre-compiled Ethereum
 // contracts used in the Istanbul release.
 var PrecompiledContractsIstanbul = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{1}): &ecrecover{},
-	common.BytesToAddress([]byte{2}): &sha256hash{},
-	common.BytesToAddress([]byte{3}): &ripemd160hash{},
-	common.BytesToAddress([]byte{4}): &dataCopy{},
-	common.BytesToAddress([]byte{5}): &bigModExp{eip2565: false},
-	common.BytesToAddress([]byte{6}): &bn256AddIstanbul{},
-	common.BytesToAddress([]byte{7}): &bn256ScalarMulIstanbul{},
-	common.BytesToAddress([]byte{8}): &bn256PairingIstanbul{},
-	common.BytesToAddress([]byte{9}): &blake2F{},
+	common.BytesToAddress([]byte{1}):                                  &ecrecover{},
+	common.BytesToAddress([]byte{2}):                                  &sha256hash{},
+	common.BytesToAddress([]byte{3}):                                  &ripemd160hash{},
+	common.BytesToAddress([]byte{4}):                                  &dataCopy{},
+	common.BytesToAddress([]byte{5}):                                  &bigModExp{eip2565: false},
+	common.BytesToAddress([]byte{6}):                                  &bn256AddIstanbul{},
+	common.BytesToAddress([]byte{7}):                                  &bn256ScalarMulIstanbul{},
+	common.BytesToAddress([]byte{8}):                                  &bn256PairingIstanbul{},
+	common.BytesToAddress([]byte{9}):                                  &blake2F{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
 }
@@ -90,15 +87,15 @@ var PrecompiledContractsIstanbul = map[common.Address]PrecompiledContract{
 // PrecompiledContractsBerlin contains the default set of pre-compiled Ethereum
 // contracts used in the Berlin release.
 var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{1}): &ecrecover{},
-	common.BytesToAddress([]byte{2}): &sha256hash{},
-	common.BytesToAddress([]byte{3}): &ripemd160hash{},
-	common.BytesToAddress([]byte{4}): &dataCopy{},
-	common.BytesToAddress([]byte{5}): &bigModExp{eip2565: true},
-	common.BytesToAddress([]byte{6}): &bn256AddIstanbul{},
-	common.BytesToAddress([]byte{7}): &bn256ScalarMulIstanbul{},
-	common.BytesToAddress([]byte{8}): &bn256PairingIstanbul{},
-	common.BytesToAddress([]byte{9}): &blake2F{},
+	common.BytesToAddress([]byte{1}):                                  &ecrecover{},
+	common.BytesToAddress([]byte{2}):                                  &sha256hash{},
+	common.BytesToAddress([]byte{3}):                                  &ripemd160hash{},
+	common.BytesToAddress([]byte{4}):                                  &dataCopy{},
+	common.BytesToAddress([]byte{5}):                                  &bigModExp{eip2565: true},
+	common.BytesToAddress([]byte{6}):                                  &bn256AddIstanbul{},
+	common.BytesToAddress([]byte{7}):                                  &bn256ScalarMulIstanbul{},
+	common.BytesToAddress([]byte{8}):                                  &bn256PairingIstanbul{},
+	common.BytesToAddress([]byte{9}):                                  &blake2F{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
 }
@@ -106,15 +103,15 @@ var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
 // contracts specified in EIP-2537. These are exported for testing purposes.
 var PrecompiledContractsBLS = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{10}): &bls12381G1Add{},
-	common.BytesToAddress([]byte{11}): &bls12381G1Mul{},
-	common.BytesToAddress([]byte{12}): &bls12381G1MultiExp{},
-	common.BytesToAddress([]byte{13}): &bls12381G2Add{},
-	common.BytesToAddress([]byte{14}): &bls12381G2Mul{},
-	common.BytesToAddress([]byte{15}): &bls12381G2MultiExp{},
-	common.BytesToAddress([]byte{16}): &bls12381Pairing{},
-	common.BytesToAddress([]byte{17}): &bls12381MapG1{},
-	common.BytesToAddress([]byte{18}): &bls12381MapG2{},
+	common.BytesToAddress([]byte{10}):                                 &bls12381G1Add{},
+	common.BytesToAddress([]byte{11}):                                 &bls12381G1Mul{},
+	common.BytesToAddress([]byte{12}):                                 &bls12381G1MultiExp{},
+	common.BytesToAddress([]byte{13}):                                 &bls12381G2Add{},
+	common.BytesToAddress([]byte{14}):                                 &bls12381G2Mul{},
+	common.BytesToAddress([]byte{15}):                                 &bls12381G2MultiExp{},
+	common.BytesToAddress([]byte{16}):                                 &bls12381Pairing{},
+	common.BytesToAddress([]byte{17}):                                 &bls12381MapG1{},
+	common.BytesToAddress([]byte{18}):                                 &bls12381MapG2{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
 	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
 }
@@ -1081,21 +1078,11 @@ func (c *p256Verify) Run(input []byte) ([]byte, error) {
 
 	// Extract the hash, r, s, x, y from the input
 	hash := input[0:32]
-	r := new(big.Int).SetBytes(input[32:64])
-	s := new(big.Int).SetBytes(input[64:96])
-	x := new(big.Int).SetBytes(input[96:128])
-	y := new(big.Int).SetBytes(input[128:160])
+	r, s := new(big.Int).SetBytes(input[32:64]), new(big.Int).SetBytes(input[64:96])
+	x, y := new(big.Int).SetBytes(input[96:128]), new(big.Int).SetBytes(input[128:160])
 
-	// Create the public key
-	pubKey := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     x,
-		Y:     y,
-	}
-
-	// Verify the signature
-	if ecdsa.Verify(pubKey, hash, r, s) {
-		return common.LeftPadBytes(common.Big1.Bytes(), 32), nil
+	if secp256r1.Verify(hash, r, s, x, y) {
+		return true32Byte, nil
 	}
 	return nil, nil
 }
@@ -1110,10 +1097,16 @@ const (
 )
 
 func (c *webAuthnVerify) RequiredGas(input []byte) uint64 {
-	return params.WebAuthnVerifyGas
+	return params.WebAuthnVerifyBaseGas + params.P256VerifyGas
 }
 
 func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
+	if len(input) < 295 {
+		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
+	if len(input) > 8192 { // 8KB upper bound
+		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
 
 	challenge := input[:32]
 	authDataLen := binary.BigEndian.Uint32(input[32:36])
@@ -1136,7 +1129,7 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 	y := new(big.Int).SetBytes(input[offset+104 : offset+136])
 
 	// 1. Check authenticatorData flags
-	if len(authenticatorData) < 32 {
+	if len(authenticatorData) < 37 {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 
@@ -1146,15 +1139,23 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 
 	// 2. Check response type
 	responseType := `"type":"webauthn.get"`
-	if !strings.Contains(clientDataJSON[responseTypeLocation:], responseType) {
+	expectedResponseTypeEndPos := responseTypeLocation + uint32(len(responseType))
+	if uint32(len(clientDataJSON)) < expectedResponseTypeEndPos {
+		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
+	if clientDataJSON[responseTypeLocation:expectedResponseTypeEndPos] != responseType {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 
 	// 3. Check challenge
-	challengeB64 := base64.RawURLEncoding.EncodeToString(challenge)
-	challengeProperty := fmt.Sprintf(`"challenge":"%s"`, challengeB64)
-	if !strings.Contains(clientDataJSON[challengeLocation:], challengeProperty) {
+	expectedChallengeBase64 := base64.RawURLEncoding.EncodeToString(challenge)
+	challengeProperty := `"challenge":"` + expectedChallengeBase64 + `"`
+	expectedChallengePropertyEndPos := challengeLocation + uint32(len(challengeProperty))
+	if uint32(len(clientDataJSON)) < expectedChallengePropertyEndPos {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+	}
+	if clientDataJSON[challengeLocation:expectedChallengePropertyEndPos] != challengeProperty {
+		return common.LeftPadBytes(big.NewInt(0).Bytes(), 32), nil
 	}
 
 	// 4. Calculate message hash using SHA256 instead of Keccak256

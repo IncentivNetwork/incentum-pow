@@ -18,8 +18,11 @@ package vm
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"testing"
 	"time"
@@ -46,25 +49,27 @@ type precompiledFailureTest struct {
 // allPrecompiles does not map to the actual set of precompiles, as it also contains
 // repriced versions of precompiles at certain slots
 var allPrecompiles = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{1}):    &ecrecover{},
-	common.BytesToAddress([]byte{2}):    &sha256hash{},
-	common.BytesToAddress([]byte{3}):    &ripemd160hash{},
-	common.BytesToAddress([]byte{4}):    &dataCopy{},
-	common.BytesToAddress([]byte{5}):    &bigModExp{eip2565: false},
-	common.BytesToAddress([]byte{0xf5}): &bigModExp{eip2565: true},
-	common.BytesToAddress([]byte{6}):    &bn256AddIstanbul{},
-	common.BytesToAddress([]byte{7}):    &bn256ScalarMulIstanbul{},
-	common.BytesToAddress([]byte{8}):    &bn256PairingIstanbul{},
-	common.BytesToAddress([]byte{9}):    &blake2F{},
-	common.BytesToAddress([]byte{10}):   &bls12381G1Add{},
-	common.BytesToAddress([]byte{11}):   &bls12381G1Mul{},
-	common.BytesToAddress([]byte{12}):   &bls12381G1MultiExp{},
-	common.BytesToAddress([]byte{13}):   &bls12381G2Add{},
-	common.BytesToAddress([]byte{14}):   &bls12381G2Mul{},
-	common.BytesToAddress([]byte{15}):   &bls12381G2MultiExp{},
-	common.BytesToAddress([]byte{16}):   &bls12381Pairing{},
-	common.BytesToAddress([]byte{17}):   &bls12381MapG1{},
-	common.BytesToAddress([]byte{18}):   &bls12381MapG2{},
+	common.BytesToAddress([]byte{1}):     &ecrecover{},
+	common.BytesToAddress([]byte{2}):     &sha256hash{},
+	common.BytesToAddress([]byte{3}):     &ripemd160hash{},
+	common.BytesToAddress([]byte{4}):     &dataCopy{},
+	common.BytesToAddress([]byte{5}):     &bigModExp{eip2565: false},
+	common.BytesToAddress([]byte{0xf5}):  &bigModExp{eip2565: true},
+	common.BytesToAddress([]byte{6}):     &bn256AddIstanbul{},
+	common.BytesToAddress([]byte{7}):     &bn256ScalarMulIstanbul{},
+	common.BytesToAddress([]byte{8}):     &bn256PairingIstanbul{},
+	common.BytesToAddress([]byte{9}):     &blake2F{},
+	common.BytesToAddress([]byte{10}):    &bls12381G1Add{},
+	common.BytesToAddress([]byte{11}):    &bls12381G1Mul{},
+	common.BytesToAddress([]byte{12}):    &bls12381G1MultiExp{},
+	common.BytesToAddress([]byte{13}):    &bls12381G2Add{},
+	common.BytesToAddress([]byte{14}):    &bls12381G2Mul{},
+	common.BytesToAddress([]byte{15}):    &bls12381G2MultiExp{},
+	common.BytesToAddress([]byte{16}):    &bls12381Pairing{},
+	common.BytesToAddress([]byte{17}):    &bls12381MapG1{},
+	common.BytesToAddress([]byte{18}):    &bls12381MapG2{},
+	common.BytesToAddress([]byte{1, 0}):  &p256Verify{},
+	common.BytesToAddress([]byte{1, 17}): &webAuthnVerify{},
 }
 
 // EIP-152 test vectors
@@ -270,6 +275,218 @@ func TestPrecompileBlake2FMalformedInput(t *testing.T) {
 	}
 }
 
+// TestWebAuthnVerifyBufferOverflow tests webAuthnVerify with malformed inputs that could cause buffer overflows
+func TestWebAuthnVerifyBufferOverflow(t *testing.T) {
+	p := &webAuthnVerify{}
+	expected := common.LeftPadBytes(common.Big0.Bytes(), 32)
+
+	// Test case 1: authDataLen overflow
+	input := make([]byte, 136)
+	// Set authDataLen to maximum uint32 value
+	input[32] = 0xFF
+	input[33] = 0xFF
+	input[34] = 0xFF
+	input[35] = 0xFF
+
+	result, err := p.Run(input)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if !bytes.Equal(result, expected) {
+		t.Errorf("Expected zero result for overflow input")
+	}
+
+	// Test case 2: clientDataJSONLen overflow
+	input2 := make([]byte, 200)
+	// Set reasonable authDataLen
+	input2[35] = 32 // authDataLen = 32
+	// Set clientDataJSONLen to large value at offset 37+32+4 = 73
+	offset := 37 + 32
+	if offset+4 <= len(input2) {
+		input2[offset] = 0xFF
+		input2[offset+1] = 0xFF
+		input2[offset+2] = 0xFF
+		input2[offset+3] = 0xFF
+	}
+
+	result2, err2 := p.Run(input2)
+	if err2 != nil {
+		t.Errorf("Expected no error, got %v", err2)
+	}
+	if !bytes.Equal(result2, expected) {
+		t.Errorf("Expected zero result for clientDataJSON overflow")
+	}
+
+	// Test case 3: insufficient data for final fields
+	input3 := make([]byte, 100)
+	input3[35] = 10 // small authDataLen
+	offset3 := 37 + 10
+	input3[offset3+3] = 10 // small clientDataJSONLen
+
+	result3, err3 := p.Run(input3)
+	if err3 != nil {
+		t.Errorf("Expected no error, got %v", err3)
+	}
+	if !bytes.Equal(result3, expected) {
+		t.Errorf("Expected zero result for insufficient data")
+	}
+
+	// Test case 4: input too small
+	input4 := make([]byte, 50)
+	result4, err4 := p.Run(input4)
+	if err4 != nil {
+		t.Errorf("Expected no error, got %v", err4)
+	}
+	if !bytes.Equal(result4, expected) {
+		t.Errorf("Expected zero result for small input")
+	}
+
+	// Test case 5: empty input
+	result5, err5 := p.Run([]byte{})
+	if err5 != nil {
+		t.Errorf("Expected no error, got %v", err5)
+	}
+	if !bytes.Equal(result5, expected) {
+		t.Errorf("Expected zero result for empty input")
+	}
+
+	// Test case 6: challengeLocation out of bounds
+	input6 := make([]byte, 300)
+	input6[35] = 32 // authDataLen = 32
+	offset6 := 37 + 32
+	input6[offset6+3] = 50 // clientDataJSONLen = 50
+	// Set challengeLocation to value >= clientDataJSONLen (50)
+	challengeOffset := offset6 + 4 + 50
+	if challengeOffset+4 <= len(input6) {
+		input6[challengeOffset] = 0x00
+		input6[challengeOffset+1] = 0x00
+		input6[challengeOffset+2] = 0x00
+		input6[challengeOffset+3] = 60 // challengeLocation = 60 > clientDataJSONLen (50)
+	}
+
+	result6, err6 := p.Run(input6)
+	if err6 != nil {
+		t.Errorf("Expected no error, got %v", err6)
+	}
+	if !bytes.Equal(result6, expected) {
+		t.Errorf("Expected zero result for challengeLocation out of bounds")
+	}
+
+	// Test case 7: responseTypeLocation out of bounds
+	input7 := make([]byte, 300)
+	input7[35] = 32 // authDataLen = 32
+	offset7 := 37 + 32
+	input7[offset7+3] = 50 // clientDataJSONLen = 50
+	// Set responseTypeLocation to value >= clientDataJSONLen (50)
+	responseOffset := offset7 + 4 + 50
+	if responseOffset+8 <= len(input7) {
+		input7[responseOffset+4] = 0x00
+		input7[responseOffset+5] = 0x00
+		input7[responseOffset+6] = 0x00
+		input7[responseOffset+7] = 60 // responseTypeLocation = 60 > clientDataJSONLen (50)
+	}
+
+	result7, err7 := p.Run(input7)
+	if err7 != nil {
+		t.Errorf("Expected no error, got %v", err7)
+	}
+	if !bytes.Equal(result7, expected) {
+		t.Errorf("Expected zero result for responseTypeLocation out of bounds")
+	}
+}
+
+// TestWebAuthnVerify tests webAuthnVerify with correct inputs
+func TestWebAuthnVerify(t *testing.T) {
+	p := &webAuthnVerify{}
+
+	challenge := common.Hex2Bytes("f631058a3ba1116acce12396fad0a125b5041c43f8e15723709f81aa8d5f4ccf")
+	authenticatorData := common.Hex2Bytes("49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d97630500000101")
+	challengeB64 := base64.RawURLEncoding.EncodeToString(challenge)
+	clientDataJSON := fmt.Sprintf(`{"type":"webauthn.get","challenge":"%s","origin":"http://localhost:3005"}`, challengeB64)
+	r := new(big.Int)
+	r.SetString("43684192885701841787131392247364253107519555363555461570655060745499568693242", 10)
+	s := new(big.Int)
+	s.SetString("22655632649588629308599201066602670461698485748654492451178007896016452673579", 10)
+
+	x := new(big.Int)
+	x.SetString("28573233055232466711029625910063034642429572463461595413086259353299906450061", 10)
+	y := new(big.Int)
+	y.SetString("39367742072897599771788408398752356480431855827262528811857788332151452825281", 10)
+
+	challengeIndex := uint32(23)
+	typeIndex := uint32(1)
+
+	authDataLen := uint32(len(authenticatorData))
+	clientDataJSONBytes := []byte(clientDataJSON)
+	clientDataJSONLen := uint32(len(clientDataJSONBytes))
+	requireUserVerification := byte(0) // false
+
+	inputSize := 32 + 4 + int(authDataLen) + 1 + 4 + int(clientDataJSONLen) + 4 + 4 + 32 + 32 + 32 + 32
+	input := make([]byte, inputSize)
+
+	offset := 0
+
+	copy(input[offset:offset+32], challenge)
+	offset += 32
+
+	binary.BigEndian.PutUint32(input[offset:offset+4], authDataLen)
+	offset += 4
+
+	copy(input[offset:offset+int(authDataLen)], authenticatorData)
+	offset += int(authDataLen)
+
+	input[offset] = requireUserVerification
+	offset += 1
+
+	binary.BigEndian.PutUint32(input[offset:offset+4], clientDataJSONLen)
+	offset += 4
+
+	copy(input[offset:offset+int(clientDataJSONLen)], clientDataJSONBytes)
+	offset += int(clientDataJSONLen)
+
+	binary.BigEndian.PutUint32(input[offset:offset+4], challengeIndex)
+	offset += 4
+
+	binary.BigEndian.PutUint32(input[offset:offset+4], typeIndex)
+	offset += 4
+
+	// r (32 bytes)
+	rBytes := r.Bytes()
+	copy(input[offset+32-len(rBytes):offset+32], rBytes) // right-pad with zeros
+	offset += 32
+
+	// s (32 bytes)
+	sBytes := s.Bytes()
+	copy(input[offset+32-len(sBytes):offset+32], sBytes) // right-pad with zeros
+	offset += 32
+
+	// x (32 bytes)
+	xBytes := x.Bytes()
+	copy(input[offset+32-len(xBytes):offset+32], xBytes) // right-pad with zeros
+	offset += 32
+
+	// y (32 bytes)
+	yBytes := y.Bytes()
+	copy(input[offset+32-len(yBytes):offset+32], yBytes) // right-pad with zeros
+
+	result, err := p.Run(input)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if result == nil {
+		t.Errorf("Expected non-nil result")
+	}
+
+	if bytes.Equal(result, common.LeftPadBytes(common.Big0.Bytes(), 32)) {
+		t.Errorf("Expected non-zero result")
+	}
+
+	if len(result) != 32 {
+		t.Errorf("Expected 32-byte result, got %d bytes", len(result))
+	}
+}
+
 func TestPrecompiledEcrecover(t *testing.T) { testJson("ecRecover", "01", t) }
 
 func testJson(name, addr string, t *testing.T) {
@@ -391,3 +608,15 @@ func BenchmarkPrecompiledBLS12381G2MultiExpWorstCase(b *testing.B) {
 	}
 	benchmarkPrecompiled("0f", testcase, b)
 }
+
+// Benchmarks the sample inputs from the P256VERIFY precompile.
+func BenchmarkPrecompiledP256Verify(bench *testing.B) {
+	t := precompiledTest{
+		Input:    "4cee90eb86eaa050036147a12d49004b6b9c72bd725d39d4785011fe190f0b4da73bd4903f0ce3b639bbbf6e8e80d16931ff4bcf5993d58468e8fb19086e8cac36dbcd03009df8c59286b162af3bd7fcc0450c9aa81be5d10d312af6c66b1d604aebd3099c618202fcfe16ae7770b0c49ab5eadf74b754204a3bb6060e44eff37618b065f9832de4ca6ca971a7a1adc826d0f7c00181a5fb2ddf79ae00b4e10e",
+		Expected: "0000000000000000000000000000000000000000000000000000000000000001",
+		Name:     "p256Verify",
+	}
+	benchmarkPrecompiled("0100", t, bench)
+}
+
+func TestPrecompiledP256Verify(t *testing.T) { testJson("p256Verify", "0100", t) }
