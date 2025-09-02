@@ -82,8 +82,9 @@ func (b *BlockGen) SetDifficulty(diff *big.Int) {
 }
 
 // SetPos makes the header a PoS-header (0 difficulty)
+// PoS is not supported in this implementation
 func (b *BlockGen) SetPoS() {
-	b.header.Difficulty = new(big.Int)
+	panic("PoS is not supported")
 }
 
 // addTx adds a transaction to the generated block. If no coinbase has
@@ -290,13 +291,8 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		// to a chain, so the difficulty will be left unset (nil). Set it here to the
 		// correct value.
 		if b.header.Difficulty == nil {
-			if config.TerminalTotalDifficulty == nil {
-				// Clique chain
-				b.header.Difficulty = big.NewInt(2)
-			} else {
-				// Post-merge chain
-				b.header.Difficulty = big.NewInt(0)
-			}
+			// Clique chain - always use traditional difficulty values
+			b.header.Difficulty = big.NewInt(2)
 		}
 		// Mutate the state and block according to any hard-fork specs
 		if daoBlock := config.DAOForkBlock; daoBlock != nil {

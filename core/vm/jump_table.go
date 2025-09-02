@@ -54,7 +54,7 @@ var (
 	istanbulInstructionSet         = newIstanbulInstructionSet()
 	berlinInstructionSet           = newBerlinInstructionSet()
 	londonInstructionSet           = newLondonInstructionSet()
-	mergeInstructionSet            = newMergeInstructionSet()
+
 	shanghaiInstructionSet         = newShanghaiInstructionSet()
 )
 
@@ -80,20 +80,9 @@ func validate(jt JumpTable) JumpTable {
 }
 
 func newShanghaiInstructionSet() JumpTable {
-	instructionSet := newMergeInstructionSet()
+	instructionSet := newLondonInstructionSet()
 	enable3855(&instructionSet) // PUSH0 instruction
 	enable3860(&instructionSet) // Limit and meter initcode
-	return validate(instructionSet)
-}
-
-func newMergeInstructionSet() JumpTable {
-	instructionSet := newLondonInstructionSet()
-	instructionSet[PREVRANDAO] = &operation{
-		execute:     opRandom,
-		constantGas: GasQuickStep,
-		minStack:    minStack(0, 1),
-		maxStack:    maxStack(0, 1),
-	}
 	return validate(instructionSet)
 }
 
