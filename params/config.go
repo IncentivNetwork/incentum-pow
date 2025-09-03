@@ -247,11 +247,7 @@ var (
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
-		Clique: &CliqueConfig{
-                        Period: 5,
-                        Epoch:  30000,
-                },
-
+		Clique:                        nil,
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced

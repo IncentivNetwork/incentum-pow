@@ -607,26 +607,22 @@ func DefaultIncentivTestnetGenesisBlock() *Genesis {
 	if !ok2 {
 		panic("DefaultIncentivTestnetGenesisBlock: invalid balance2 string: " + IncentivTestnetBalance2)
 	}
-	rawExtraData := "0000000000000000000000000000000000000000000000000000000000000000270875c5cb93F56011365Ba765D8d0397F0baD8C000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-	extraData, err := hex.DecodeString(rawExtraData)
-	if err != nil {
-    	   panic(err)
-	}
+
 	genesis := &Genesis{
-    		Config:     params.IncentivTestnetChainConfig, // your chain config
-    		Nonce:      0x42,
-  		GasLimit:   IncentivTestnetGasLimit,
-    		Difficulty: big.NewInt(0x1),
-    		Timestamp:  0,
-    		Alloc: GenesisAlloc{
-        	common.HexToAddress(IncentivTestnetAddr1): {
-            		Balance: balance1,
-        	},
-        	common.HexToAddress(IncentivTestnetAddr2): {
-            		Balance: balance2,
-        		},
-    		},
-		ExtraData: extraData,
+			Config:     params.IncentivTestnetChainConfig,
+			Nonce:      0x42,
+		GasLimit:   IncentivTestnetGasLimit,
+			Difficulty: big.NewInt(0x1),
+			Timestamp:  0,
+			Alloc: GenesisAlloc{
+				common.HexToAddress(IncentivTestnetAddr1): {
+					Balance: balance1,
+				},
+				common.HexToAddress(IncentivTestnetAddr2): {
+					Balance: balance2,
+				},
+			},
+		ExtraData:  []byte{},
 	}
 
 
