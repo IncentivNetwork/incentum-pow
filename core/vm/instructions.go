@@ -24,6 +24,11 @@ import (
 	"github.com/holiman/uint256"
 )
 
+const (
+	// minimumDifficulty is the minimum difficulty value as per ethash consensus rules
+	minimumDifficulty = 131072
+)
+
 func opAdd(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	x, y := scope.Stack.pop(), scope.Stack.peek()
 	y.Add(&x, y)
@@ -469,13 +474,13 @@ func opNumber(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 }
 
 func opDifficulty(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	v, _ := uint256.FromBig(interpreter.evm.Context.Difficulty)
-	scope.Stack.push(v)
-	return nil, nil
-}
-
-func opRandom(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
-	v := new(uint256.Int).SetBytes(interpreter.evm.Context.Random.Bytes())
+	var v *uint256.Int
+	if interpreter.evm.Context.Difficulty != nil {
+		v, _ = uint256.FromBig(interpreter.evm.Context.Difficulty)
+	} else {
+		// Return minimum difficulty as per ethash consensus rules
+		v = new(uint256.Int).SetUint64(minimumDifficulty)
+	}
 	scope.Stack.push(v)
 	return nil, nil
 }

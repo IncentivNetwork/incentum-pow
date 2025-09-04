@@ -270,7 +270,7 @@ var (
 		ArrowGlacierBlock:             big.NewInt(0),
 		GrayGlacierBlock:              big.NewInt(0),
 		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
+		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
@@ -299,7 +299,7 @@ var (
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
+		ShanghaiTime:                  newUint64(0), // Enable PUSH0 from genesis
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
@@ -328,7 +328,7 @@ var (
 		ArrowGlacierBlock:             big.NewInt(0),
 		GrayGlacierBlock:              big.NewInt(0),
 		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
+		ShanghaiTime:                  newUint64(0), // Enable PUSH0 from genesis
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
@@ -357,7 +357,7 @@ var (
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		MergeNetsplitBlock:            nil,
-		ShanghaiTime:                  nil,
+		ShanghaiTime:                  newUint64(0), // Enable PUSH0 from genesis
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,

@@ -256,27 +256,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		}
 		return engine.STATUS_SYNCING, nil
 	}
-	// Block is known locally, just sanity check that the beacon client does not
-	// attempt to push us back to before the merge.
-	if block.Difficulty().BitLen() > 0 || block.NumberU64() == 0 {
-		var (
-			td  = api.eth.BlockChain().GetTd(update.HeadBlockHash, block.NumberU64())
-			ptd = api.eth.BlockChain().GetTd(block.ParentHash(), block.NumberU64()-1)
-			ttd = api.eth.BlockChain().Config().TerminalTotalDifficulty
-		)
-		if td == nil || (block.NumberU64() > 0 && ptd == nil) {
-			log.Error("TDs unavailable for TTD check", "number", block.NumberU64(), "hash", update.HeadBlockHash, "td", td, "parent", block.ParentHash(), "ptd", ptd)
-			return engine.STATUS_INVALID, errors.New("TDs unavailable for TDD check")
-		}
-		if td.Cmp(ttd) < 0 {
-			log.Error("Refusing beacon update to pre-merge", "number", block.NumberU64(), "hash", update.HeadBlockHash, "diff", block.Difficulty(), "age", common.PrettyAge(time.Unix(int64(block.Time()), 0)))
-			return engine.ForkChoiceResponse{PayloadStatus: engine.INVALID_TERMINAL_BLOCK, PayloadID: nil}, nil
-		}
-		if block.NumberU64() > 0 && ptd.Cmp(ttd) >= 0 {
-			log.Error("Parent block is already post-ttd", "number", block.NumberU64(), "hash", update.HeadBlockHash, "diff", block.Difficulty(), "age", common.PrettyAge(time.Unix(int64(block.Time()), 0)))
-			return engine.ForkChoiceResponse{PayloadStatus: engine.INVALID_TERMINAL_BLOCK, PayloadID: nil}, nil
-		}
-	}
+	// PoS is not supported, skip merge-related checks
 	valid := func(id *engine.PayloadID) engine.ForkChoiceResponse {
 		return engine.ForkChoiceResponse{
 			PayloadStatus: engine.PayloadStatusV1{Status: engine.VALID, LatestValidHash: &update.HeadBlockHash},
@@ -622,11 +602,8 @@ func (api *ConsensusAPI) checkInvalidAncestor(check common.Hash, head common.Has
 		}
 		api.invalidTipsets[head] = invalid
 	}
-	// If the last valid hash is the terminal pow block, return 0x0 for latest valid hash
+	// Always use parent hash as last valid since PoS is not supported
 	lastValid := &invalid.ParentHash
-	if header := api.eth.BlockChain().GetHeader(invalid.ParentHash, invalid.Number.Uint64()-1); header != nil && header.Difficulty.Sign() != 0 {
-		lastValid = &common.Hash{}
-	}
 	failure := "links to previously rejected block"
 	return &engine.PayloadStatusV1{
 		Status:          engine.INVALID,
@@ -640,12 +617,8 @@ func (api *ConsensusAPI) checkInvalidAncestor(check common.Hash, head common.Has
 func (api *ConsensusAPI) invalid(err error, latestValid *types.Header) engine.PayloadStatusV1 {
 	currentHash := api.eth.BlockChain().CurrentBlock().Hash()
 	if latestValid != nil {
-		// Set latest valid hash to 0x0 if parent is PoW block
-		currentHash = common.Hash{}
-		if latestValid.Difficulty.BitLen() == 0 {
-			// Otherwise set latest valid hash to parent hash
-			currentHash = latestValid.Hash()
-		}
+		// Always use latest valid hash since PoS is not supported
+		currentHash = latestValid.Hash()
 	}
 	errorMsg := err.Error()
 	return engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &currentHash, ValidationError: &errorMsg}
