@@ -635,12 +635,9 @@ func (pool *TxPool) validateTxBasics(tx *types.Transaction, local bool) error {
 		return core.ErrTipAboveFeeCap
 	}
 	// Make sure the transaction is signed properly.
-	from, err := types.Sender(pool.signer, tx)
+	_, err := types.Sender(pool.signer, tx)
 	if err != nil {
 		return ErrInvalidSender
-	}
-	if !IsSenderAllowed(from) {
-		return ErrSenderNotAllowed
 	}
 	// Drop non-local transactions under our own minimal accepted gas price or tip
 	if !local && tx.GasTipCapIntCmp(pool.gasPrice) < 0 {
@@ -653,9 +650,6 @@ func (pool *TxPool) validateTxBasics(tx *types.Transaction, local bool) error {
 	}
 	if tx.Gas() < intrGas {
 		return core.ErrIntrinsicGas
-	}
-	if !IsReceiverAllowed(tx.To()) {
-		return ErrReceiverNotAllowed
 	}
 	return nil
 }
@@ -697,7 +691,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 // pending or queued one, it overwrites the previous transaction if its price is higher.
 //
 // If a newly added transaction is marked as local, its sending account will be
-// be added to the allowlist, preventing any associated transaction from being dropped
+// be added to the local accounts, preventing any associated transaction from being dropped
 // out of the pool due to pricing constraints.
 func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err error) {
 	// If the transaction is already known, discard it
