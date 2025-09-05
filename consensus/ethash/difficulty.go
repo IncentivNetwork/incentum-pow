@@ -27,7 +27,7 @@ const (
 	// frontierDurationLimit is for Frontier:
 	// The decision boundary on the blocktime duration used to determine
 	// whether difficulty should go up or down.
-	frontierDurationLimit = 13
+	frontierDurationLimit = 5
 	// minimumDifficulty The minimum that the difficulty may ever be.
 	minimumDifficulty = 131072
 	// expDiffPeriod is the exponential difficulty period
@@ -78,15 +78,16 @@ func CalcDifficultyFrontierU256(time uint64, parent *types.Header) *big.Int {
 
 // CalcDifficultyHomesteadU256 is the difficulty adjustment algorithm. It returns
 // the difficulty that a new block should have when created at time given the
-// parent block's time and difficulty. The calculation uses the Homestead rules.
+// parent block's time and difficulty. The calculation uses the Homestead rules
+// modified for 5-second target block time instead of original 13-second target.
 func CalcDifficultyHomesteadU256(time uint64, parent *types.Header) *big.Int {
 	/*
 		https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2.md
-		Algorithm:
-		block_diff = pdiff + pdiff / 2048 * max(1 - (time - ptime) / 10, -99) + 2 ^ int((num / 100000) - 2))
+		Algorithm (modified for precise 5-second target):
+		block_diff = pdiff + pdiff / 2048 * max(1 - ((time - ptime + 2) / 5), -99) + 2 ^ int((num / 100000) - 2))
 
 		Our modification, to use unsigned ints:
-		block_diff = pdiff - pdiff / 2048 * max((time - ptime) / 10 - 1, 99) + 2 ^ int((num / 100000) - 2))
+		block_diff = pdiff - pdiff / 2048 * max(((time - ptime + 2) / 5) - 1, 99) + 2 ^ int((num / 100000) - 2))
 
 		Where:
 		- pdiff  = parent.difficulty
@@ -99,7 +100,7 @@ func CalcDifficultyHomesteadU256(time uint64, parent *types.Header) *big.Int {
 	adjust := pDiff.Clone()
 	adjust.Rsh(adjust, difficultyBoundDivisor) // adjust: pDiff / 2048
 
-	x := (time - parent.Time) / 10 // (time - ptime) / 10)
+	x := (time - parent.Time + 2) / 5 // ((time - ptime + 2) / 5) for precise 5-second target
 	var neg = true
 	if x == 0 {
 		x = 1

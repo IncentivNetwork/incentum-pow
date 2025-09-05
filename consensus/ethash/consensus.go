@@ -363,6 +363,7 @@ var (
 	expDiffPeriod = big.NewInt(100000)
 	big1          = big.NewInt(1)
 	big2          = big.NewInt(2)
+	big5          = big.NewInt(5)
 	big9          = big.NewInt(9)
 	big10         = big.NewInt(10)
 	bigMinus99    = big.NewInt(-99)
@@ -433,12 +434,13 @@ func makeDifficultyCalculator(bombDelay *big.Int) func(time uint64, parent *type
 
 // calcDifficultyHomestead is the difficulty adjustment algorithm. It returns
 // the difficulty that a new block should have when created at time given the
-// parent block's time and difficulty. The calculation uses the Homestead rules.
+// parent block's time and difficulty. The calculation uses the Homestead rules
+// modified for 5-second target block time instead of original 13-second target.
 func calcDifficultyHomestead(time uint64, parent *types.Header) *big.Int {
 	// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-2.md
-	// algorithm:
+	// algorithm (modified for precise 5-second target):
 	// diff = (parent_diff +
-	//         (parent_diff / 2048 * max(1 - (block_timestamp - parent_timestamp) // 10, -99))
+	//         (parent_diff / 2048 * max(1 - ((block_timestamp - parent_timestamp + 2) // 5), -99))
 	//        ) + 2^(periodCount - 2)
 
 	bigTime := new(big.Int).SetUint64(time)
@@ -448,16 +450,17 @@ func calcDifficultyHomestead(time uint64, parent *types.Header) *big.Int {
 	x := new(big.Int)
 	y := new(big.Int)
 
-	// 1 - (block_timestamp - parent_timestamp) // 10
+	// 1 - ((block_timestamp - parent_timestamp + 2) // 5) for precise 5-second target
 	x.Sub(bigTime, bigParentTime)
-	x.Div(x, big10)
+	x.Add(x, big2)  // Add 2 to shift the target to exactly 5 seconds
+	x.Div(x, big5)  // Divide by 5 for 5-second intervals
 	x.Sub(big1, x)
 
-	// max(1 - (block_timestamp - parent_timestamp) // 10, -99)
+	// max(1 - ((block_timestamp - parent_timestamp + 2) // 5), -99)
 	if x.Cmp(bigMinus99) < 0 {
 		x.Set(bigMinus99)
 	}
-	// (parent_diff + parent_diff // 2048 * max(1 - (block_timestamp - parent_timestamp) // 10, -99))
+	// (parent_diff + parent_diff // 2048 * max(1 - ((block_timestamp - parent_timestamp + 2) // 5), -99))
 	y.Div(parent.Difficulty, params.DifficultyBoundDivisor)
 	x.Mul(y, x)
 	x.Add(parent.Difficulty, x)
