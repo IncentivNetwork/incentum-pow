@@ -90,6 +90,7 @@ func newTestBackendWithGenerator(blocks int, shanghai bool, generator func(int, 
 			MuirGlacierBlock:              big.NewInt(0),
 			BerlinBlock:                   big.NewInt(0),
 			LondonBlock:                   big.NewInt(0),
+			FeePoolBlock:                  big.NewInt(0),
 			ArrowGlacierBlock:             big.NewInt(0),
 			GrayGlacierBlock:              big.NewInt(0),
 			MergeNetsplitBlock:            big.NewInt(0),
@@ -647,14 +648,14 @@ func TestGetBlockHeadersDoSProtection_ETH68(t *testing.T) {
 
 func testGetBlockHeadersDoSProtection(t *testing.T, protocol uint) {
 	tests := []struct {
-		name           string
-		origin         uint64
-		amount         uint64
-		skip           uint64
-		reverse        bool
-		expectedCount  int
-		maxAllowed     int
-		description    string
+		name          string
+		origin        uint64
+		amount        uint64
+		skip          uint64
+		reverse       bool
+		expectedCount int
+		maxAllowed    int
+		description   string
 	}{
 		{
 			name:          "zero_amount_dos_protection",
@@ -712,7 +713,7 @@ func testGetBlockHeadersDoSProtection(t *testing.T, protocol uint) {
 			amount:        1000,
 			skip:          0,
 			reverse:       false,
-			expectedCount: -1, // should be limited by protocol
+			expectedCount: -1,  // should be limited by protocol
 			maxAllowed:    200, // reasonable upper bound
 			description:   "large amount should be limited by protocol limits",
 		},

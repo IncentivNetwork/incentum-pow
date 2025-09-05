@@ -182,6 +182,7 @@ var Forks = map[string]*params.ChainConfig{
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(5),
+		FeePoolBlock:        big.NewInt(6),
 	},
 	"London": {
 		ChainID:             big.NewInt(1),
@@ -196,6 +197,7 @@ var Forks = map[string]*params.ChainConfig{
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(0),
+		FeePoolBlock:        big.NewInt(0),
 	},
 	"ArrowGlacier": {
 		ChainID:             big.NewInt(1),

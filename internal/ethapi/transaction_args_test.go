@@ -228,6 +228,7 @@ func newBackendMock() *backendMock {
 		MuirGlacierBlock:    big.NewInt(0),
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(1000),
+		FeePoolBlock:        big.NewInt(1100),
 	}
 	return &backendMock{
 		current: &types.Header{
