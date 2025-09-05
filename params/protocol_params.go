@@ -188,6 +188,6 @@ var (
 	MinimumDifficulty      = big.NewInt(131072) // The minimum that the difficulty may ever be.
 	DurationLimit          = big.NewInt(5)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
 
-	// FeePoolContractAddress Fee pool contract address
-	FeePoolContractAddress = common.HexToAddress("0x0000000000000000000000000000000000000000") // TODO: Set actual fee pool contract address
+	// FeePoolContractAddress Fee pool contract address (temporary test address)
+	FeePoolContractAddress = common.HexToAddress("0x742d35Cc6634C0532925a3b8D4C9db96590c6C89") // TODO: Replace with actual fee pool contract address when deployed
 )
