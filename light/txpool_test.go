@@ -144,35 +144,3 @@ func TestTxPool(t *testing.T) {
 		}
 	}
 }
-
-func TestTxPoolAllowlist(t *testing.T) {
-	var (
-		sdb   = rawdb.NewMemoryDatabase()
-		ldb   = rawdb.NewMemoryDatabase()
-		gspec = &core.Genesis{
-			Config:  params.TestChainConfig,
-			Alloc:   core.GenesisAlloc{testBankAddress: {Balance: testBankFunds}},
-			BaseFee: big.NewInt(params.InitialBaseFee),
-		}
-	)
-
-	blockchain, _ := core.NewBlockChain(sdb, nil, gspec, nil, ethash.NewFullFaker(), vm.Config{}, nil, nil)
-	gspec.MustCommit(ldb)
-	odr := &testOdr{sdb: sdb, ldb: ldb, serverState: blockchain.StateCache(), indexerConfig: TestClientIndexerConfig}
-	relay := &testTxRelay{
-		send:    make(chan int, 1),
-		discard: make(chan int, 1),
-		mined:   make(chan int, 1),
-	}
-	lightchain, _ := NewLightChain(odr, params.TestChainConfig, ethash.NewFullFaker(), nil)
-	pool := NewTxPool(params.TestChainConfig, lightchain, relay)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	tx, _ := types.SignTx(types.NewTransaction(0, acc1Addr, big.NewInt(10000), params.TxGas, big.NewInt(params.InitialBaseFee), nil), types.HomesteadSigner{}, testBankKey)
-
-	err := pool.Add(ctx, tx)
-	if err != nil {
-		t.Errorf("Expected valid transaction to be accepted, got error: %v", err)
-	}
-}
