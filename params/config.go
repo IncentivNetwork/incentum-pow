@@ -245,6 +245,7 @@ var (
 		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
+		FastBlock:                     big.NewInt(319000),
 		MergeNetsplitBlock:            nil,
 		ShanghaiTime:                  newUint64(1755167074),
 		CancunTime:                    nil,
@@ -275,6 +276,7 @@ var (
 		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
 		ArrowGlacierBlock:             big.NewInt(0),
 		GrayGlacierBlock:              big.NewInt(0),
+		FastBlock:                     big.NewInt(0),
 		MergeNetsplitBlock:            nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -335,6 +337,7 @@ var (
 		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
 		ArrowGlacierBlock:             big.NewInt(0),
 		GrayGlacierBlock:              big.NewInt(0),
+		FastBlock:                     big.NewInt(0),
 		MergeNetsplitBlock:            nil,
 		ShanghaiTime:                  newUint64(0), // Enable PUSH0 from genesis
 		CancunTime:                    nil,
@@ -466,6 +469,7 @@ type ChainConfig struct {
 	FeePoolBlock        *big.Int `json:"feePoolBlock,omitempty"`        // Fee pool switch block (nil = no fork, 0 = already on fee pool)
 	ArrowGlacierBlock   *big.Int `json:"arrowGlacierBlock,omitempty"`   // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	GrayGlacierBlock    *big.Int `json:"grayGlacierBlock,omitempty"`    // Eip-5133 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	FastBlock           *big.Int `json:"fastBlock,omitempty"`           // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
 	MergeNetsplitBlock  *big.Int `json:"mergeNetsplitBlock,omitempty"`  // Virtual fork after The Merge to use as a network splitter
 
 	// Fork scheduling was switched from blocks to timestamps here
@@ -671,6 +675,11 @@ func (c *ChainConfig) IsArrowGlacier(num *big.Int) bool {
 // IsGrayGlacier returns whether num is either equal to the Gray Glacier (EIP-5133) fork block or greater.
 func (c *ChainConfig) IsGrayGlacier(num *big.Int) bool {
 	return isBlockForked(c.GrayGlacierBlock, num)
+}
+
+// IsFast returns whether num is either equal to the Fast consensus algorithm fork block or greater.
+func (c *ChainConfig) IsFast(num *big.Int) bool {
+	return isBlockForked(c.FastBlock, num)
 }
 
 // IsTerminalPoWBlock returns whether the given block is the last block of PoW stage.
