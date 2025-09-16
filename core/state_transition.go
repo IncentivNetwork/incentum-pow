@@ -406,10 +406,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			feePoolTipFee.Div(feePoolTipFee, big.NewInt(params.FeePercentDivisor))
 
 			if rules.IsLondon && st.evm.Context.BaseFee != nil {
-				minerBaseFee := new(big.Int).Mul(st.evm.Context.BaseFee, big.NewInt(params.MinerFeePercent))
+				baseFeeTotal := new(big.Int).Mul(gasUsed, st.evm.Context.BaseFee)
+				minerBaseFee := new(big.Int).Mul(baseFeeTotal, big.NewInt(params.MinerFeePercent))
 				minerBaseFee.Div(minerBaseFee, big.NewInt(params.FeePercentDivisor))
 
-				feePoolBaseFee := new(big.Int).Mul(st.evm.Context.BaseFee, big.NewInt(params.FeePoolPercent))
+				feePoolBaseFee := new(big.Int).Mul(baseFeeTotal, big.NewInt(params.FeePoolPercent))
 				feePoolBaseFee.Div(feePoolBaseFee, big.NewInt(params.FeePercentDivisor))
 
 				// Add base fees to respective accounts
