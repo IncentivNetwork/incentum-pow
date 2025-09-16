@@ -3604,8 +3604,9 @@ func TestEIP1559Transition(t *testing.T) {
 	minerTipReward := new(big.Int).Mul(tipFee, big.NewInt(params.MinerFeePercent))
 	minerTipReward.Div(minerTipReward, big.NewInt(params.FeePercentDivisor))
 	baseFee := block.BaseFee()
-	//// minerBaseReward = baseFee * MinerFeePercent / FeePercentDivisor
-	minerBaseReward := new(big.Int).Mul(baseFee, big.NewInt(params.MinerFeePercent))
+	baseFeeTotal := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), baseFee)
+	// minerBaseReward = baseFeeTotal * MinerFeePercent / FeePercentDivisor
+	minerBaseReward := new(big.Int).Mul(baseFeeTotal, big.NewInt(params.MinerFeePercent))
 	minerBaseReward.Div(minerBaseReward, big.NewInt(params.FeePercentDivisor))
 
 	// expected = minerTipReward + minerBaseReward
@@ -3652,8 +3653,9 @@ func TestEIP1559Transition(t *testing.T) {
 	minerTipReward.Div(minerTipReward, big.NewInt(params.FeePercentDivisor))
 
 	baseFee = block.BaseFee()
-	//// minerBaseReward = baseFee * MinerFeePercent / FeePercentDivisor
-	minerBaseReward = new(big.Int).Mul(baseFee, big.NewInt(params.MinerFeePercent))
+	baseFeeTotal = new(big.Int).Mul(new(big.Int).SetUint64(block.GasUsed()), baseFee)
+	// minerBaseReward = baseFeeTotal * MinerFeePercent / FeePercentDivisor
+	minerBaseReward = new(big.Int).Mul(baseFeeTotal, big.NewInt(params.MinerFeePercent))
 	minerBaseReward.Div(minerBaseReward, big.NewInt(params.FeePercentDivisor))
 
 	// expected = minerTipReward + minerBaseReward
@@ -4347,9 +4349,11 @@ func TestEIP3651(t *testing.T) {
 	tipFee := new(big.Int).SetUint64(block.GasUsed() * block.Transactions()[0].GasTipCap().Uint64())
 	minerTipReward := new(big.Int).Mul(tipFee, big.NewInt(params.MinerFeePercent))
 	minerTipReward.Div(minerTipReward, big.NewInt(params.FeePercentDivisor))
+
 	baseFee := block.BaseFee()
-	//// minerBaseReward = baseFee * MinerFeePercent / FeePercentDivisor
-	minerBaseReward := new(big.Int).Mul(baseFee, big.NewInt(params.MinerFeePercent))
+	baseFeeTotal := new(big.Int).Mul(new(big.Int).SetUint64(block.GasUsed()), baseFee)
+	// minerBaseReward = baseFeeTotal * MinerFeePercent / FeePercentDivisor
+	minerBaseReward := new(big.Int).Mul(baseFeeTotal, big.NewInt(params.MinerFeePercent))
 	minerBaseReward.Div(minerBaseReward, big.NewInt(params.FeePercentDivisor))
 
 	// expected = minerTipReward + minerBaseReward
