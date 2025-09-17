@@ -72,7 +72,8 @@ var (
 		MuirGlacierBlock:              big.NewInt(9_200_000),
 		BerlinBlock:                   big.NewInt(12_244_000),
 		LondonBlock:                   big.NewInt(12_965_000),
-		FeePoolBlock:                  big.NewInt(13_000_000), // Activate fee pool after London
+		FeePoolBlock:                  big.NewInt(13_000_000),
+		ZeroRewardBlock:               nil, // No zero reward fork planned for mainnet
 		ArrowGlacierBlock:             big.NewInt(13_773_000),
 		GrayGlacierBlock:              big.NewInt(15_050_000),
 		TerminalTotalDifficulty:       MainnetTerminalTotalDifficulty, // 58_750_000_000_000_000_000_000
@@ -118,7 +119,8 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
+		FeePoolBlock:                  big.NewInt(0),
+		ZeroRewardBlock:               nil, // No zero reward fork for Sepolia
 		TerminalTotalDifficulty:       big.NewInt(17_000_000_000_000_000),
 		TerminalTotalDifficultyPassed: true,
 		MergeNetsplitBlock:            big.NewInt(1735371),
@@ -150,7 +152,8 @@ var (
 		MuirGlacierBlock:    nil,
 		BerlinBlock:         big.NewInt(8_290_928),
 		LondonBlock:         big.NewInt(8_897_988),
-		FeePoolBlock:        big.NewInt(8_900_000), // Activate fee pool after London
+		FeePoolBlock:        big.NewInt(8_900_000),
+		ZeroRewardBlock:     nil, // No zero reward fork for Rinkeby
 		ArrowGlacierBlock:   nil,
 		Clique: &CliqueConfig{
 			Period: 15,
@@ -194,7 +197,8 @@ var (
 		MuirGlacierBlock:              nil,
 		BerlinBlock:                   big.NewInt(4_460_644),
 		LondonBlock:                   big.NewInt(5_062_605),
-		FeePoolBlock:                  big.NewInt(5_065_000), // Activate fee pool after London
+		FeePoolBlock:                  big.NewInt(5_065_000),
+		ZeroRewardBlock:               nil, // No zero reward fork for Goerli
 		ArrowGlacierBlock:             nil,
 		TerminalTotalDifficulty:       big.NewInt(10_790_000),
 		TerminalTotalDifficultyPassed: true,
@@ -242,10 +246,11 @@ var (
 		MuirGlacierBlock:              nil,
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
+		FeePoolBlock:                  big.NewInt(471000),
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		FastBlock:                     big.NewInt(319000),
+		ZeroRewardBlock:               big.NewInt(471000),
 		MergeNetsplitBlock:            nil,
 		ShanghaiTime:                  newUint64(1755167074),
 		CancunTime:                    nil,
@@ -273,10 +278,11 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
+		FeePoolBlock:                  big.NewInt(0),
 		ArrowGlacierBlock:             big.NewInt(0),
 		GrayGlacierBlock:              big.NewInt(0),
 		FastBlock:                     big.NewInt(0),
+		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -304,7 +310,8 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
+		FeePoolBlock:                  big.NewInt(0),
+		ZeroRewardBlock:               big.NewInt(0),
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		MergeNetsplitBlock:            nil,
@@ -334,10 +341,11 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0), // Activate fee pool from genesis since London is at 0
+		FeePoolBlock:                  big.NewInt(0),
 		ArrowGlacierBlock:             big.NewInt(0),
 		GrayGlacierBlock:              big.NewInt(0),
 		FastBlock:                     big.NewInt(0),
+		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
 		ShanghaiTime:                  newUint64(0), // Enable PUSH0 from genesis
 		CancunTime:                    nil,
@@ -467,6 +475,7 @@ type ChainConfig struct {
 	BerlinBlock         *big.Int `json:"berlinBlock,omitempty"`         // Berlin switch block (nil = no fork, 0 = already on berlin)
 	LondonBlock         *big.Int `json:"londonBlock,omitempty"`         // London switch block (nil = no fork, 0 = already on london)
 	FeePoolBlock        *big.Int `json:"feePoolBlock,omitempty"`        // Fee pool switch block (nil = no fork, 0 = already on fee pool)
+	ZeroRewardBlock     *big.Int `json:"zeroRewardBlock,omitempty"`     // Zero reward switch block (nil = no fork, 0 = already on zero reward)
 	ArrowGlacierBlock   *big.Int `json:"arrowGlacierBlock,omitempty"`   // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	GrayGlacierBlock    *big.Int `json:"grayGlacierBlock,omitempty"`    // Eip-5133 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	FastBlock           *big.Int `json:"fastBlock,omitempty"`           // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
@@ -660,6 +669,11 @@ func (c *ChainConfig) IsBerlin(num *big.Int) bool {
 // IsLondon returns whether num is either equal to the London fork block or greater.
 func (c *ChainConfig) IsLondon(num *big.Int) bool {
 	return isBlockForked(c.LondonBlock, num)
+}
+
+// IsZeroReward returns whether num is either equal to the Zero Reward fork block or greater.
+func (c *ChainConfig) IsZeroReward(num *big.Int) bool {
+	return isBlockForked(c.ZeroRewardBlock, num)
 }
 
 // IsFeePool returns whether num is either equal to the Fee Pool fork block or greater.
