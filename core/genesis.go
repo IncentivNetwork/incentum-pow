@@ -48,12 +48,19 @@ var errGenesisNoConfig = errors.New("genesis has no chain configuration")
 const (
 	IncentivTestnetAddr1    = "0x3d8eBBDa14e61a0f6B278112EcB99cd895Bcbf3e"
 	IncentivTestnetAddr2    = "0x683d8cb71DC0caa58AD75986292F22d830B87B75"
-	IncentivTestnetBalance1 = "500000000000000000000000000000" // 500,000,000,000 tokens
-	IncentivTestnetBalance2 = "500000000000000000000000000000" // 500,000,000,000 tokens
+	IncentivTestnetBalance1 = "500000000000000000000000000000" // 50,000,000,000 tokens
+	IncentivTestnetBalance2 = "500000000000000000000000000000" // 50,000,000,000 tokens
 	// IncentivTestnetGasLimit is set to 30M gas (6.4x higher than standard 4.7M)
 	// to support higher transaction throughput and complex smart contract operations
 	// suitable for testnet environment with increased block capacity
 	IncentivTestnetGasLimit = 0x1c9c380 // 30,000,000 gas
+)
+
+// IncentivMainnet genesis configuration constants
+const (
+	IncentivMainnetAddr1    = "0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b"
+	IncentivMainnetBalance1 = "100000000000000000000000000000" // 100,000,000,000 tokens (100 billion tokens, 100% of total supply)
+	IncentivMainnetGasLimit = 0x1c9c380 // 30,000,000 gas
 )
 
 // Genesis specifies the header fields, state of a genesis block. It also defines hard
@@ -209,6 +216,8 @@ func CommitGenesisState(db ethdb.Database, triedb *trie.Database, blockhash comm
 			genesis = DefaultSepoliaGenesisBlock()
 		case params.IncentivTestnetGenesisHash:
 			genesis = DefaultIncentivTestnetGenesisBlock()
+		case params.IncentivMainnetGenesisHash:
+			genesis = DefaultIncentivMainnetGenesisBlock()
 		}
 		if genesis != nil {
 			alloc = genesis.Alloc
@@ -662,6 +671,37 @@ func DeveloperGenesisBlock(period uint64, gasLimit uint64, faucet common.Address
 			faucet:                           {Balance: new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9))},
 		},
 	}
+}
+
+// DefaultIncentivMainnetGenesisBlock returns the Incentiv Mainnet genesis block.
+func DefaultIncentivMainnetGenesisBlock() *Genesis {
+	if !common.IsHexAddress(IncentivMainnetAddr1) {
+		panic("DefaultIncentivMainnetGenesisBlock: invalid pre-allocation address: " + IncentivMainnetAddr1)
+	}
+
+	balance1, ok1 := new(big.Int).SetString(IncentivMainnetBalance1, 10)
+	if !ok1 {
+		panic("DefaultIncentivMainnetGenesisBlock: invalid balance1 string: " + IncentivMainnetBalance1)
+	}
+
+	baseFee := big.NewInt(1800000000000) // 1800 gwei in wei
+
+	genesis := &Genesis{
+		Config:     params.IncentivMainnetChainConfig,
+		Nonce:      0x42,
+		ExtraData:  []byte{},
+		GasLimit:   IncentivMainnetGasLimit,
+		Difficulty: big.NewInt(0x1),
+		Timestamp:  0,
+		BaseFee:    baseFee,
+		Alloc: GenesisAlloc{
+			common.HexToAddress(IncentivMainnetAddr1): {
+				Balance: balance1,
+			},
+		},
+	}
+
+	return genesis
 }
 
 func decodePrealloc(data string) GenesisAlloc {

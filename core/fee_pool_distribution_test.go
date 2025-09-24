@@ -103,7 +103,7 @@ func TestFeePoolRewardDistribution_BaseFeeTimesGasUsed(t *testing.T) {
 		t.Fatalf("miner balance incorrect: expected %v, got %v", expectedMiner, minerBal)
 	}
 
-	poolBal := state.GetBalance(params.FeePoolContractAddress)
+	poolBal := state.GetBalance(gspec.Config.GetFeePoolContractAddress())
 	if poolBal.Cmp(expectedPool) != 0 {
 		t.Fatalf("fee pool balance incorrect: expected %v, got %v", expectedPool, poolBal)
 	}
