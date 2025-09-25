@@ -60,7 +60,7 @@ const (
 const (
 	IncentivMainnetAddr1    = "0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b"
 	IncentivMainnetBalance1 = "100000000000000000000000000000" // 100,000,000,000 tokens (100 billion tokens, 100% of total supply)
-	IncentivMainnetGasLimit = 0x1c9c380 // 30,000,000 gas
+	IncentivMainnetGasLimit = 0x1c9c380                        // 30,000,000 gas
 )
 
 // Genesis specifies the header fields, state of a genesis block. It also defines hard
