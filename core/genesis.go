@@ -61,6 +61,7 @@ const (
 	IncentivMainnetAddr1    = "0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b"
 	IncentivMainnetBalance1 = "100000000000000000000000000000" // 100,000,000,000 tokens (100 billion tokens, 100% of total supply)
 	IncentivMainnetGasLimit = 0x1c9c380                        // 30,000,000 gas
+	IncentivMainnetBaseFee  = 1800000000000                    // 1800 gwei in wei
 )
 
 // Genesis specifies the header fields, state of a genesis block. It also defines hard
@@ -684,8 +685,6 @@ func DefaultIncentivMainnetGenesisBlock() *Genesis {
 		panic("DefaultIncentivMainnetGenesisBlock: invalid balance1 string: " + IncentivMainnetBalance1)
 	}
 
-	baseFee := big.NewInt(1800000000000) // 1800 gwei in wei
-
 	genesis := &Genesis{
 		Config:     params.IncentivMainnetChainConfig,
 		Nonce:      0x42,
@@ -693,7 +692,7 @@ func DefaultIncentivMainnetGenesisBlock() *Genesis {
 		GasLimit:   IncentivMainnetGasLimit,
 		Difficulty: big.NewInt(0x1),
 		Timestamp:  0,
-		BaseFee:    baseFee,
+		BaseFee:    big.NewInt(IncentivMainnetBaseFee),
 		Alloc: GenesisAlloc{
 			common.HexToAddress(IncentivMainnetAddr1): {
 				Balance: balance1,
