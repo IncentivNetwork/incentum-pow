@@ -28,7 +28,8 @@ func TestFeePoolRewardDistribution_BaseFeeTimesGasUsed(t *testing.T) {
 			IstanbulBlock:            big.NewInt(0),
 			BerlinBlock:              big.NewInt(0),
 			LondonBlock:              big.NewInt(0),
-			FeePoolBlock:             big.NewInt(0), // enable fee pool from genesis
+			FeePoolBlock:             big.NewInt(0),
+			ZeroRewardBlock:          big.NewInt(0),
 			Ethash:                   new(params.EthashConfig),
 		},
 		Alloc:   GenesisAlloc{},
