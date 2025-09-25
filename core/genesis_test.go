@@ -384,12 +384,6 @@ func TestIncentivMainnetConstants(t *testing.T) {
 	expectedTotalSupply.SetString("100000000000000000000000000000", 10)
 	require.Equal(t, expectedTotalSupply, balance1, "Balance should be 100 billion tokens")
 
-	// Test total supply (100 billion tokens)
-	totalSupply := balance1
-	expectedTotalSupply = new(big.Int)
-	expectedTotalSupply.SetString("100000000000000000000000000000", 10)
-	require.Equal(t, expectedTotalSupply, totalSupply, "Total supply should be 100 billion tokens")
-
 	// Test gas limit constant
 	require.Equal(t, uint64(0x1c9c380), uint64(IncentivMainnetGasLimit), "Gas limit constant should be 30M")
 	require.Equal(t, uint64(30000000), uint64(IncentivMainnetGasLimit), "Gas limit should be 30,000,000")
