@@ -176,6 +176,7 @@ func TestGenesisHashes(t *testing.T) {
 		{DefaultRinkebyGenesisBlock(), params.RinkebyGenesisHash},
 		{DefaultSepoliaGenesisBlock(), params.SepoliaGenesisHash},
 		{DefaultIncentivTestnetGenesisBlock(), params.IncentivTestnetGenesisHash},
+		{DefaultIncentivMainnetGenesisBlock(), params.IncentivMainnetGenesisHash},
 	} {
 		// Test via MustCommit
 		if have := c.genesis.MustCommit(rawdb.NewMemoryDatabase()).Hash(); have != c.want {
@@ -321,4 +322,73 @@ func TestIncentivTestnetConstants(t *testing.T) {
 	// Verify gas limit is significantly higher than standard genesis gas limit
 	require.Greater(t, uint64(IncentivTestnetGasLimit), params.GenesisGasLimit,
 		"Incentiv testnet gas limit should be higher than standard genesis gas limit")
+}
+
+func TestIncentivMainnetGenesis(t *testing.T) {
+	genesis := DefaultIncentivMainnetGenesisBlock()
+
+	// Test basic genesis parameters
+	require.Equal(t, uint64(24101), genesis.Config.ChainID.Uint64(), "Chain ID should be 24101")
+	require.Equal(t, uint64(IncentivMainnetGasLimit), genesis.GasLimit, "Gas limit should match constant")
+	require.Equal(t, uint64(1), genesis.Difficulty.Uint64(), "Difficulty should be 1")
+
+	// Test base fee (1800 gwei)
+	expectedBaseFee := big.NewInt(1800000000000) // 1800 gwei in wei
+	require.Equal(t, expectedBaseFee, genesis.BaseFee, "Base fee should be 1800 gwei")
+
+	// Test pre-allocations using constants
+	expectedAllocs := map[string]string{
+		IncentivMainnetAddr1: IncentivMainnetBalance1,
+	}
+
+	require.Equal(t, len(expectedAllocs), len(genesis.Alloc), "Number of allocations should match")
+
+	for addrStr, expectedBalanceStr := range expectedAllocs {
+		addr := common.HexToAddress(addrStr)
+		account, exists := genesis.Alloc[addr]
+		require.True(t, exists, "Allocation should exist for address %s", addrStr)
+
+		expectedBalance, success := new(big.Int).SetString(expectedBalanceStr, 10)
+		require.True(t, success, "Expected balance should be valid")
+		require.Equal(t, expectedBalance, account.Balance, "Balance should match for address %s", addrStr)
+	}
+
+	// Test genesis hash
+	block := genesis.ToBlock()
+	require.Equal(t, params.IncentivMainnetGenesisHash, block.Hash(), "Genesis hash should match expected value")
+}
+
+func TestIncentivMainnetGenesisValidation(t *testing.T) {
+	// Test that the current implementation has proper validation
+	// This should not panic with valid configuration
+	genesis := DefaultIncentivMainnetGenesisBlock()
+	require.NotNil(t, genesis, "DefaultIncentivMainnetGenesisBlock() should not return nil")
+
+	// Verify that validation is actually happening by checking consistency
+	block := genesis.ToBlock()
+	require.Equal(t, params.IncentivMainnetGenesisHash, block.Hash(),
+		"Validation should ensure genesis hash matches expected value")
+}
+
+func TestIncentivMainnetConstants(t *testing.T) {
+	// Test that constants are valid
+	require.True(t, common.IsHexAddress(IncentivMainnetAddr1), "Addr1 constant should be valid hex address")
+
+	// Test that balance constants can be parsed
+	balance1, ok1 := new(big.Int).SetString(IncentivMainnetBalance1, 10)
+	require.True(t, ok1, "Balance1 constant should be valid")
+	require.NotNil(t, balance1, "Balance1 should not be nil")
+
+	// Test expected balance value (100 billion tokens total)
+	expectedTotalSupply := new(big.Int)
+	expectedTotalSupply.SetString("100000000000000000000000000000", 10)
+	require.Equal(t, expectedTotalSupply, balance1, "Balance should be 100 billion tokens")
+
+	// Test gas limit constant
+	require.Equal(t, uint64(0x1c9c380), uint64(IncentivMainnetGasLimit), "Gas limit constant should be 30M")
+	require.Equal(t, uint64(30000000), uint64(IncentivMainnetGasLimit), "Gas limit should be 30,000,000")
+
+	// Verify gas limit is significantly higher than standard genesis gas limit
+	require.Greater(t, uint64(IncentivMainnetGasLimit), params.GenesisGasLimit,
+		"Incentiv mainnet gas limit should be higher than standard genesis gas limit")
 }

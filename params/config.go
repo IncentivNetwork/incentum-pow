@@ -32,6 +32,14 @@ var (
 	RinkebyGenesisHash         = common.HexToHash("0x6341fd3daf94b748c72ced5a5b26028f2474f5f00d824504e4fa37a75767e177")
 	GoerliGenesisHash          = common.HexToHash("0xbf7e331f7f7c1dd2e05159666b3bf8bc7a8a3a9eb1d518969eab529dd9b88c1a")
 	IncentivTestnetGenesisHash = common.HexToHash("0xfdd345ccc24a0cbc1fdb136949c66387691e3fe3fd4b1a9960f99d4341c309bd")
+	IncentivMainnetGenesisHash = common.HexToHash("0x08c68c7667787a081a2bef5ddae2f09b968f2ac6a873929cae4591c475376c73")
+)
+
+// FeePool contract addresses for different networks.
+var (
+	DefaultFeePoolAddress         = common.HexToAddress("0xEaCA46260024f4b5a76fccCCa85716B626888361") // Default address for unknown networks (calculated from test mnemonic)
+	IncentivTestnetFeePoolAddress = common.HexToAddress("0xDCe91614dDf6665d93105D5aCDdaDC02bc64Ed45") // FeeDistributor Proxy address for Incentiv Testnet
+	IncentivMainnetFeePoolAddress = common.HexToAddress("0x9a86f26E7eC81A9e4d97bE2200fa7b66A82046B2") // FeeDistributor Proxy address for Incentiv Mainnet
 )
 
 // TrustedCheckpoints associates each known checkpoint with the genesis hash of
@@ -251,6 +259,37 @@ var (
 		GrayGlacierBlock:              nil,
 		FastBlock:                     big.NewInt(319000),
 		ZeroRewardBlock:               big.NewInt(471000),
+		MergeNetsplitBlock:            nil,
+		ShanghaiTime:                  newUint64(1755203160),
+		CancunTime:                    nil,
+		PragueTime:                    nil,
+		TerminalTotalDifficulty:       nil,
+		TerminalTotalDifficultyPassed: false,
+		Ethash:                        new(EthashConfig),
+		Clique:                        nil,
+	}
+
+	// IncentivMainnetChainConfig contains the chain parameters to run a node on the Incentiv main network.
+	IncentivMainnetChainConfig = &ChainConfig{
+		ChainID:                       big.NewInt(24101),
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  nil,
+		DAOForkSupport:                false,
+		EIP150Block:                   big.NewInt(0),
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              nil,
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		FeePoolBlock:                  big.NewInt(0),
+		ArrowGlacierBlock:             nil,
+		GrayGlacierBlock:              nil,
+		FastBlock:                     big.NewInt(0),
+		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -1008,6 +1047,22 @@ func (err *ConfigCompatError) Error() string {
 		return fmt.Sprintf("mismatching %s in database (have block %d, want block %d, rewindto block %d)", err.What, err.StoredBlock, err.NewBlock, err.RewindToBlock)
 	}
 	return fmt.Sprintf("mismatching %s in database (have timestamp %d, want timestamp %d, rewindto timestamp %d)", err.What, err.StoredTime, err.NewTime, err.RewindToTime)
+}
+
+// GetFeePoolContractAddress returns the appropriate FeePool contract address based on the chain ID
+func (c *ChainConfig) GetFeePoolContractAddress() common.Address {
+	if c.ChainID == nil {
+		return DefaultFeePoolAddress
+	}
+
+	switch c.ChainID.Uint64() {
+	case 28802: // Incentiv Testnet
+		return IncentivTestnetFeePoolAddress
+	case 24101: // Incentiv Mainnet
+		return IncentivMainnetFeePoolAddress
+	default:
+		return DefaultFeePoolAddress
+	}
 }
 
 // Rules wraps ChainConfig and is merely syntactic sugar or can be used for functions

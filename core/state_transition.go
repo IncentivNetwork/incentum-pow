@@ -415,11 +415,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 
 				// Add base fees to respective accounts
 				st.state.AddBalance(st.evm.Context.Coinbase, minerBaseFee)
-				st.state.AddBalance(params.FeePoolContractAddress, feePoolBaseFee)
+				st.state.AddBalance(st.evm.ChainConfig().GetFeePoolContractAddress(), feePoolBaseFee)
 			}
 
 			st.state.AddBalance(st.evm.Context.Coinbase, minerTipFee)
-			st.state.AddBalance(params.FeePoolContractAddress, feePoolTipFee)
+			st.state.AddBalance(st.evm.ChainConfig().GetFeePoolContractAddress(), feePoolTipFee)
 		} else {
 			fee := new(big.Int).Mul(gasUsed, effectiveTip)
 			st.state.AddBalance(st.evm.Context.Coinbase, fee)

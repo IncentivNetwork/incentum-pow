@@ -6,9 +6,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -17,19 +17,20 @@ import (
 func TestFeePoolRewardDistribution_BaseFeeTimesGasUsed(t *testing.T) {
 	gspec := &Genesis{
 		Config: &params.ChainConfig{
-			ChainID:                  big.NewInt(1337),
-			HomesteadBlock:           big.NewInt(0),
-			EIP150Block:              big.NewInt(0),
-			EIP155Block:              big.NewInt(0),
-			EIP158Block:              big.NewInt(0),
-			ByzantiumBlock:           big.NewInt(0),
-			ConstantinopleBlock:      big.NewInt(0),
-			PetersburgBlock:          big.NewInt(0),
-			IstanbulBlock:            big.NewInt(0),
-			BerlinBlock:              big.NewInt(0),
-			LondonBlock:              big.NewInt(0),
-			FeePoolBlock:             big.NewInt(0), // enable fee pool from genesis
-			Ethash:                   new(params.EthashConfig),
+			ChainID:             big.NewInt(1337),
+			HomesteadBlock:      big.NewInt(0),
+			EIP150Block:         big.NewInt(0),
+			EIP155Block:         big.NewInt(0),
+			EIP158Block:         big.NewInt(0),
+			ByzantiumBlock:      big.NewInt(0),
+			ConstantinopleBlock: big.NewInt(0),
+			PetersburgBlock:     big.NewInt(0),
+			IstanbulBlock:       big.NewInt(0),
+			BerlinBlock:         big.NewInt(0),
+			LondonBlock:         big.NewInt(0),
+			FeePoolBlock:        big.NewInt(0),
+			ZeroRewardBlock:     big.NewInt(0),
+			Ethash:              new(params.EthashConfig),
 		},
 		Alloc:   GenesisAlloc{},
 		BaseFee: big.NewInt(params.InitialBaseFee),
@@ -103,7 +104,7 @@ func TestFeePoolRewardDistribution_BaseFeeTimesGasUsed(t *testing.T) {
 		t.Fatalf("miner balance incorrect: expected %v, got %v", expectedMiner, minerBal)
 	}
 
-	poolBal := state.GetBalance(params.FeePoolContractAddress)
+	poolBal := state.GetBalance(gspec.Config.GetFeePoolContractAddress())
 	if poolBal.Cmp(expectedPool) != 0 {
 		t.Fatalf("fee pool balance incorrect: expected %v, got %v", expectedPool, poolBal)
 	}

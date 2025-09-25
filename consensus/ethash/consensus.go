@@ -503,8 +503,8 @@ func calcDifficultyFast(time uint64, parent *types.Header) *big.Int {
 
 	// 1 - ((block_timestamp - parent_timestamp + 2) // 5) for precise 5-second target
 	x.Sub(bigTime, bigParentTime)
-	x.Add(x, big2)  // Add 2 to shift the target to exactly 5 seconds
-	x.Div(x, big5)  // Divide by 5 for 5-second intervals
+	x.Add(x, big2) // Add 2 to shift the target to exactly 5 seconds
+	x.Div(x, big5) // Divide by 5 for 5-second intervals
 	x.Sub(big1, x)
 
 	// max(1 - ((block_timestamp - parent_timestamp + 2) // 5), -99)
