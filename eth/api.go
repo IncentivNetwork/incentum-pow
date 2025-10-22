@@ -71,6 +71,40 @@ func (api *EthereumAPI) Mining() bool {
 	return api.e.IsMining()
 }
 
+// NodeStatus represents the current status of the node.
+type NodeStatus struct {
+	BlockNumber   hexutil.Uint64      `json:"blockNumber"`
+	BlockHash     common.Hash         `json:"blockHash"`
+	Mining        bool                `json:"mining"`
+	Syncing       interface{}         `json:"syncing"`
+	PeerCount     hexutil.Uint        `json:"peerCount"`
+	TxpoolPending hexutil.Uint        `json:"txpoolPending"`
+	TxpoolQueued  hexutil.Uint        `json:"txpoolQueued"`
+}
+
+// NodeStatus returns the current status of the node, including block details, mining status, sync progress, peer count, and transaction pool stats.
+func (api *EthereumAPI) NodeStatus() (*NodeStatus, error) {
+	header := api.e.BlockChain().CurrentBlock()
+	if header == nil {
+		return nil, errors.New("no current block")
+	}
+	syncProgress := api.e.APIBackend.SyncProgress()
+	if syncProgress.CurrentBlock < syncProgress.HighestBlock {
+		return nil, errors.New("node is syncing")
+	}
+	pending, queued := api.e.TxPool().Stats()
+	srv := api.e.P2PServer()
+	return &NodeStatus{
+		BlockNumber:   hexutil.Uint64(header.Number.Uint64()),
+		BlockHash:     header.Hash(),
+		Mining:        api.e.IsMining(),
+		Syncing:       syncProgress,
+		PeerCount:     hexutil.Uint(srv.PeerCount()),
+		TxpoolPending: hexutil.Uint(pending),
+		TxpoolQueued:  hexutil.Uint(queued),
+	}, nil
+}
+
 // MinerAPI provides an API to control the miner.
 type MinerAPI struct {
 	e *Ethereum
