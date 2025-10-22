@@ -105,10 +105,13 @@ func TestNodeStatusIntegrationGenesisOnly(t *testing.T) {
 	if status.BlockHash == (common.Hash{}) {
 		t.Errorf("BlockHash should not be zero (genesis hash)")
 	}
-	if status.Mining != false {
+	if status.Mining {
 		t.Errorf("Mining should be false (not mining), got %v", status.Mining)
 	}
 	if status.Syncing == nil {
+		if status.IsReady {
+			t.Errorf("IsReady should be false (no peers), got %v", status.IsReady)
+		}
 		t.Errorf("Syncing should not be nil")
 	}
 }
@@ -258,10 +261,13 @@ func TestNodeStatusIntegrationSingleNodeMining(t *testing.T) {
 	if status.BlockHash == (common.Hash{}) {
 		t.Errorf("BlockHash should not be zero (latest block hash)")
 	}
-	if status.Mining != false {
+	if status.Mining {
 		t.Errorf("Mining should be false (not mining), got %v", status.Mining)
 	}
 	if status.Syncing == nil {
+		if status.IsReady {
+			t.Errorf("IsReady should be false (no peers), got %v", status.IsReady)
+		}
 		t.Errorf("Syncing should not be nil")
 	}
 }
