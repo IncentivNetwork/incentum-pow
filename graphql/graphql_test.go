@@ -332,7 +332,7 @@ func TestGraphQLConcurrentResolvers(t *testing.T) {
 		// Multiple fields of block race to resolve header and body.
 		{
 			body: "{ block { number hash gasLimit ommerCount transactionCount totalDifficulty } }",
-			want: fmt.Sprintf(`{"block":{"number":1,"hash":"%s","gasLimit":11500000,"ommerCount":0,"transactionCount":3,"totalDifficulty":"0x200000"}}`, chain[len(chain)-1].Hash()),
+			want: fmt.Sprintf(`{"block":{"number":1,"hash":"%s","gasLimit":11500000,"ommerCount":0,"transactionCount":3,"totalDifficulty":"0x1ffe00"}}`, chain[len(chain)-1].Hash()),
 		},
 		// Multiple fields of a block race to resolve the header and body.
 		{

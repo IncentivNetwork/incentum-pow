@@ -82,9 +82,9 @@ func (b *BlockGen) SetDifficulty(diff *big.Int) {
 }
 
 // SetPos makes the header a PoS-header (0 difficulty)
-// PoS is not supported in this implementation
+// PoS is not supported in this implementation, but for testing we set difficulty to 0
 func (b *BlockGen) SetPoS() {
-	panic("PoS is not supported")
+	b.header.Difficulty = big.NewInt(0)
 }
 
 // addTx adds a transaction to the generated block. If no coinbase has

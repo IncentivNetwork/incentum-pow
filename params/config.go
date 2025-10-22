@@ -349,7 +349,7 @@ var (
 		MuirGlacierBlock:              big.NewInt(0),
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0),
+		FeePoolBlock:                  nil,
 		ZeroRewardBlock:               big.NewInt(0),
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
