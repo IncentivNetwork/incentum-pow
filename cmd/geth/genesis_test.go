@@ -199,8 +199,8 @@ func TestIncentivTestnetFlag(t *testing.T) {
 
 	geth := runGeth(t, "--datadir", datadir, "--incentiv-testnet", "--port", "0", "--authrpc.port", "0",
 		"--maxpeers", "0", "--nodiscover", "--nat", "none", "--ipcdisable",
-		"--exec", "eth.chainId", "console")
+		"--exec", "eth.chainId()", "console")
 
-	geth.ExpectRegexp("28802")
+	geth.ExpectRegexp("0x7082")
 	geth.ExpectExit()
 }
