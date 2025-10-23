@@ -81,9 +81,13 @@ func (b *BlockGen) SetDifficulty(diff *big.Int) {
 	b.header.Difficulty = diff
 }
 
-// SetPos makes the header a PoS-header (0 difficulty)
-// PoS is not supported in this implementation, but for testing we set difficulty to 0
+// SetPoS sets the header difficulty to 0, simulating a PoS block.
+// In PoW-only configurations (TerminalTotalDifficulty == nil), this panics with "PoS is not supported".
+// In PoS-enabled configurations, it enables PoS mode for testing.
 func (b *BlockGen) SetPoS() {
+	if b.config.TerminalTotalDifficulty == nil {
+		panic("PoS is not supported")
+	}
 	b.header.Difficulty = big.NewInt(0)
 }
 
