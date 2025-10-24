@@ -71,7 +71,7 @@ func (basic *snapshotTestBasic) prepare(t *testing.T) (*BlockChain, []*types.Blo
 	// Initialize a fresh chain
 	var (
 		chainConfig = *params.AllEthashProtocolChanges
-		gspec = &Genesis{
+		gspec       = &Genesis{
 			BaseFee: big.NewInt(params.InitialBaseFee),
 			Config:  &chainConfig,
 		}

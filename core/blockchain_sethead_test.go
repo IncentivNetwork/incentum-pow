@@ -1968,7 +1968,7 @@ func testSetHead(t *testing.T, tt *rewindTest, snapshots bool) {
 	// Initialize a fresh chain
 	var (
 		chainConfig = *params.AllEthashProtocolChanges
-		gspec = &Genesis{
+		gspec       = &Genesis{
 			BaseFee: big.NewInt(params.InitialBaseFee),
 			Config:  &chainConfig,
 		}
