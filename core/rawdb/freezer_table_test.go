@@ -77,8 +77,8 @@ func TestFreezerBasics(t *testing.T) {
 // TestFreezerBasicsClosing tests same as TestFreezerBasics, but also closes and reopens the freezer between
 // every operation
 func TestFreezerBasicsClosing(t *testing.T) {
-	tmpdir := t.TempDir()
 	t.Parallel()
+	tmpdir := t.TempDir()
 	// set cutoff at 50 bytes
 	var (
 		fname      = fmt.Sprintf("basics-close-%d", rand.Uint64())
@@ -307,8 +307,8 @@ func assertFileSize(f string, size int64) error {
 // TestFreezerRepairDanglingIndex checks that if the index has more entries than there are data,
 // the index is repaired
 func TestFreezerRepairDanglingIndex(t *testing.T) {
-	tmpdir := t.TempDir()
 	t.Parallel()
+	tmpdir := t.TempDir()
 	rm, wm, sg := metrics.NewMeter(), metrics.NewMeter(), metrics.NewGauge()
 	fname := fmt.Sprintf("dangling_indextest-%d", rand.Uint64())
 
@@ -365,8 +365,8 @@ func TestFreezerRepairDanglingIndex(t *testing.T) {
 }
 
 func TestFreezerTruncate(t *testing.T) {
-	tmpdir := t.TempDir()
 	t.Parallel()
+	tmpdir := t.TempDir()
 	rm, wm, sg := metrics.NewMeter(), metrics.NewMeter(), metrics.NewGauge()
 	fname := fmt.Sprintf("truncation-%d", rand.Uint64())
 
@@ -407,8 +407,8 @@ func TestFreezerTruncate(t *testing.T) {
 // TestFreezerRepairFirstFile tests a head file with the very first item only half-written.
 // That will rewind the index, and _should_ truncate the head file
 func TestFreezerRepairFirstFile(t *testing.T) {
-	tmpdir := t.TempDir()
 	t.Parallel()
+	tmpdir := t.TempDir()
 	rm, wm, sg := metrics.NewMeter(), metrics.NewMeter(), metrics.NewGauge()
 	fname := fmt.Sprintf("truncationfirst-%d", rand.Uint64())
 
@@ -476,8 +476,8 @@ func TestFreezerRepairFirstFile(t *testing.T) {
 // - truncate so those files are 'removed'
 // - check that we did not keep the rdonly file descriptors
 func TestFreezerReadAndTruncate(t *testing.T) {
-	tmpdir := t.TempDir()
 	t.Parallel()
+	tmpdir := t.TempDir()
 	rm, wm, sg := metrics.NewMeter(), metrics.NewMeter(), metrics.NewGauge()
 	fname := fmt.Sprintf("read_truncate-%d", rand.Uint64())
 
@@ -525,8 +525,8 @@ func TestFreezerReadAndTruncate(t *testing.T) {
 }
 
 func TestFreezerOffset(t *testing.T) {
-	tmpdir := t.TempDir()
 	t.Parallel()
+	tmpdir := t.TempDir()
 	rm, wm, sg := metrics.NewMeter(), metrics.NewMeter(), metrics.NewGauge()
 	fname := fmt.Sprintf("offset-%d", rand.Uint64())
 
@@ -669,8 +669,8 @@ func TestFreezerOffset(t *testing.T) {
 }
 
 func TestTruncateTail(t *testing.T) {
-	tmpdir := t.TempDir()
 	t.Parallel()
+	tmpdir := t.TempDir()
 	rm, wm, sg := metrics.NewMeter(), metrics.NewMeter(), metrics.NewGauge()
 	fname := fmt.Sprintf("truncate-tail-%d", rand.Uint64())
 
@@ -785,8 +785,8 @@ func TestTruncateTail(t *testing.T) {
 }
 
 func TestTruncateHead(t *testing.T) {
-	tmpdir := t.TempDir()
 	t.Parallel()
+	tmpdir := t.TempDir()
 	rm, wm, sg := metrics.NewMeter(), metrics.NewMeter(), metrics.NewGauge()
 	fname := fmt.Sprintf("truncate-head-blow-tail-%d", rand.Uint64())
 
@@ -960,6 +960,7 @@ func TestSequentialRead(t *testing.T) {
 // but also properly do all the deferred reads for the previous data, regardless
 // of whether the data crosses a file boundary or not.
 func TestSequentialReadByteLimit(t *testing.T) {
+	t.Parallel()
 	tmpdir := t.TempDir()
 	rm, wm, sg := metrics.NewMeter(), metrics.NewMeter(), metrics.NewGauge()
 	fname := fmt.Sprintf("batchread-2-%d", rand.Uint64())
