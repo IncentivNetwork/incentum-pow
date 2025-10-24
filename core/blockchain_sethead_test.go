@@ -1967,9 +1967,10 @@ func testSetHead(t *testing.T, tt *rewindTest, snapshots bool) {
 
 	// Initialize a fresh chain
 	var (
+		chainConfig = *params.AllEthashProtocolChanges
 		gspec = &Genesis{
 			BaseFee: big.NewInt(params.InitialBaseFee),
-			Config:  params.AllEthashProtocolChanges,
+			Config:  &chainConfig,
 		}
 		engine = ethash.NewFullFaker()
 		config = &CacheConfig{
@@ -1979,6 +1980,8 @@ func testSetHead(t *testing.T, tt *rewindTest, snapshots bool) {
 			SnapshotLimit:  0, // Disable snapshot
 		}
 	)
+	// Disable ZeroRewardBlock fork to avoid zero miner rewards disrupting test expectations
+	chainConfig.ZeroRewardBlock = nil
 	if snapshots {
 		config.SnapshotLimit = 256
 		config.SnapshotWait = true

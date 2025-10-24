@@ -1767,9 +1767,10 @@ func testRepair(t *testing.T, tt *rewindTest, snapshots bool) {
 
 	// Initialize a fresh chain
 	var (
+		chainConfig = *params.AllEthashProtocolChanges
 		gspec = &Genesis{
 			BaseFee: big.NewInt(params.InitialBaseFee),
-			Config:  params.AllEthashProtocolChanges,
+			Config:  &chainConfig,
 		}
 		engine = ethash.NewFullFaker()
 		config = &CacheConfig{
@@ -1779,6 +1780,8 @@ func testRepair(t *testing.T, tt *rewindTest, snapshots bool) {
 			SnapshotLimit:  0, // Disable snapshot by default
 		}
 	)
+	// Disable zero reward fork for these tests to avoid breaking expectations
+	chainConfig.ZeroRewardBlock = nil
 	defer engine.Close()
 	if snapshots {
 		config.SnapshotLimit = 256
@@ -1903,8 +1906,9 @@ func TestIssue23496(t *testing.T) {
 
 	// Initialize a fresh chain
 	var (
+		chainConfig = *params.TestChainConfig
 		gspec = &Genesis{
-			Config:  params.TestChainConfig,
+			Config:  &chainConfig,
 			BaseFee: big.NewInt(params.InitialBaseFee),
 		}
 		engine = ethash.NewFullFaker()
@@ -1916,6 +1920,8 @@ func TestIssue23496(t *testing.T) {
 			SnapshotWait:   true,
 		}
 	)
+	// Disable ZeroRewardBlock fork to avoid zero miner rewards disrupting test expectations
+	chainConfig.ZeroRewardBlock = nil
 	chain, err := NewBlockChain(db, config, gspec, nil, engine, vm.Config{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to create chain: %v", err)
