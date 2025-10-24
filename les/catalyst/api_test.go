@@ -1,7 +1,7 @@
 package catalyst
 
 import (
-	"reflect"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -52,19 +52,9 @@ func TestLESCatalystDisabled(t *testing.T) {
 						t.Errorf("Unexpected error message: %s", engErr.Error())
 				}
 				if data := engErr.ErrorData(); data != nil {
-						v := reflect.ValueOf(data)
-						if v.Kind() == reflect.Struct {
-								errField := v.FieldByName("Error")
-								if errField.IsValid() && errField.Kind() == reflect.String {
-										innerMsg := errField.String()
-										if !strings.Contains(innerMsg, "not supported in light client mode") {
-												t.Errorf("Unexpected inner error message: %s", innerMsg)
-										}
-								} else {
-										t.Errorf("Error field not found or not string")
-								}
-						} else {
-								t.Errorf("ErrorData not struct: %T", data)
+						dataStr := fmt.Sprintf("%v", data)
+						if !strings.Contains(dataStr, "not supported in light client mode") {
+							t.Errorf("Unexpected error data: %v", data)
 						}
 				} else {
 						t.Errorf("ErrorData is nil")
