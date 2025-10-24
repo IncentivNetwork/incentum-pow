@@ -1,8 +1,11 @@
 package catalyst
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -33,6 +36,30 @@ func TestPoSDisabledInLES(t *testing.T) {
 }
 
 func TestLESCatalystDisabled(t *testing.T) {
-	t.Log("LES catalyst registration is disabled in PoW-only mode")
-	t.Log("This test confirms that les/catalyst package exists but is not functional")
+	// Test that PoS functionality is disabled in LES mode for PoW fork
+	api := &ConsensusAPI{les: nil} // les is not used in GetPayloadV1
+
+	_, err := api.GetPayloadV1([8]byte{1, 2, 3, 4, 5, 6, 7, 8})
+	if err == nil {
+		t.Error("Expected error for GetPayloadV1 in LES mode")
+	}
+	// Check that it's a server error and contains the expected message
+	if engErr, ok := err.(*engine.EngineAPIError); ok {
+		if engErr.ErrorCode() != -32000 {
+			t.Errorf("Unexpected error code: %d", engErr.ErrorCode())
+		}
+		if engErr.Error() != "Server error" {
+			t.Errorf("Unexpected error message: %s", engErr.Error())
+		}
+		if data := engErr.ErrorData(); data != nil {
+			dataStr := fmt.Sprintf("%v", data)
+			if !strings.Contains(dataStr, "not supported in light client mode") {
+				t.Errorf("Unexpected error data: %v", data)
+			}
+		} else {
+			t.Errorf("ErrorData is nil")
+		}
+	} else {
+		t.Errorf("Expected *engine.EngineAPIError, got %T: %v", err, err)
+	}
 }

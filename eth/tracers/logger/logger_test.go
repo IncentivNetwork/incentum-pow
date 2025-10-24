@@ -48,9 +48,18 @@ type dummyStatedb struct {
 	state.StateDB
 }
 
-func (*dummyStatedb) GetRefund() uint64                                       { return 1337 }
-func (*dummyStatedb) GetState(_ common.Address, _ common.Hash) common.Hash    { return common.Hash{} }
+func (*dummyStatedb) GetRefund() uint64                                    { return 1337 }
+func (*dummyStatedb) GetState(_ common.Address, _ common.Hash) common.Hash { return common.Hash{} }
+func (*dummyStatedb) GetCommittedState(_ common.Address, _ common.Hash) common.Hash {
+	return common.Hash{}
+}
 func (*dummyStatedb) SetState(_ common.Address, _ common.Hash, _ common.Hash) {}
+func (*dummyStatedb) SlotInAccessList(_ common.Address, _ common.Hash) (bool, bool) {
+	return true, false
+}
+func (*dummyStatedb) AddSlotToAccessList(_ common.Address, _ common.Hash) {}
+func (*dummyStatedb) AddAddressToAccessList(_ common.Address)             {}
+func (*dummyStatedb) AddressInAccessList(_ common.Address) bool           { return true }
 
 func TestStoreCapture(t *testing.T) {
 	var (

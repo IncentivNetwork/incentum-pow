@@ -70,9 +70,10 @@ func (basic *snapshotTestBasic) prepare(t *testing.T) (*BlockChain, []*types.Blo
 	}
 	// Initialize a fresh chain
 	var (
-		gspec = &Genesis{
+		chainConfig = *params.AllEthashProtocolChanges
+		gspec       = &Genesis{
 			BaseFee: big.NewInt(params.InitialBaseFee),
-			Config:  params.AllEthashProtocolChanges,
+			Config:  &chainConfig,
 		}
 		engine = ethash.NewFullFaker()
 
@@ -81,6 +82,8 @@ func (basic *snapshotTestBasic) prepare(t *testing.T) (*BlockChain, []*types.Blo
 		// will happen during the block insertion.
 		cacheConfig = defaultCacheConfig
 	)
+	// Disable ZeroRewardBlock fork to avoid zero miner rewards disrupting test expectations
+	chainConfig.ZeroRewardBlock = nil
 	chain, err := NewBlockChain(db, cacheConfig, gspec, nil, engine, vm.Config{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to create chain: %v", err)
@@ -300,7 +303,7 @@ func (snaptest *gappedSnapshotTest) test(t *testing.T) {
 
 	// Insert blocks without enabling snapshot if gapping is required.
 	chain.Stop()
-	gappedBlocks, _ := GenerateChain(params.TestChainConfig, blocks[len(blocks)-1], snaptest.engine, snaptest.genDb, snaptest.gapped, func(i int, b *BlockGen) {})
+	gappedBlocks, _ := GenerateChain(snaptest.gspec.Config, blocks[len(blocks)-1], snaptest.engine, snaptest.genDb, snaptest.gapped, func(i int, b *BlockGen) {})
 
 	// Insert a few more blocks without enabling snapshot
 	var cacheConfig = &CacheConfig{
@@ -384,7 +387,7 @@ func (snaptest *wipeCrashSnapshotTest) test(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to recreate chain: %v", err)
 	}
-	newBlocks, _ := GenerateChain(params.TestChainConfig, blocks[len(blocks)-1], snaptest.engine, snaptest.genDb, snaptest.newBlocks, func(i int, b *BlockGen) {})
+	newBlocks, _ := GenerateChain(snaptest.gspec.Config, blocks[len(blocks)-1], snaptest.engine, snaptest.genDb, snaptest.newBlocks, func(i int, b *BlockGen) {})
 	newchain.InsertChain(newBlocks)
 	newchain.Stop()
 

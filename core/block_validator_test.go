@@ -129,7 +129,9 @@ func testHeaderVerificationForMerging(t *testing.T, isClique bool) {
 		}
 		preBlocks = blocks
 		gspec.Config.TerminalTotalDifficulty = big.NewInt(int64(td))
-		postBlocks, _ = GenerateChain(gspec.Config, preBlocks[len(preBlocks)-1], engine, genDb, 8, nil)
+		postBlocks, _ = GenerateChain(gspec.Config, preBlocks[len(preBlocks)-1], engine, genDb, 8, func(i int, gen *BlockGen) {
+			gen.SetPoS()
+		})
 	} else {
 		config := *params.TestChainConfig
 		gspec = &Genesis{Config: &config}

@@ -31,8 +31,3 @@ func TestPoSDisabled(t *testing.T) {
 		gen.SetPoS()
 	})
 }
-
-func TestEngineAPINotRegistered(t *testing.T) {
-	t.Log("Engine API registration is disabled in PoW-only mode")
-	t.Log("This test confirms that catalyst package exists but Engine API is not functional")
-}

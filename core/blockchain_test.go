@@ -2822,6 +2822,10 @@ func TestSideImportPrunedBlocks(t *testing.T) {
 		Config:  params.TestChainConfig,
 		BaseFee: big.NewInt(params.InitialBaseFee),
 	}
+
+	// Disable zero reward fork to maintain trie size for pruning test
+	genesis.Config.ZeroRewardBlock = nil
+
 	// Generate and import the canonical chain
 	_, blocks, _ := GenerateChainWithGenesis(genesis, engine, 2*TriesInMemory, nil)
 
