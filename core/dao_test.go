@@ -32,6 +32,7 @@ func TestDAOForkRangeExtradata(t *testing.T) {
 	forkBlock := big.NewInt(32)
 	chainConfig := *params.NonActivatedConfig
 	chainConfig.HomesteadBlock = big.NewInt(0)
+	chainConfig.ShanghaiTime = nil
 
 	// Generate a common prefix for both pro-forkers and non-forkers
 	gspec := &Genesis{
@@ -44,6 +45,7 @@ func TestDAOForkRangeExtradata(t *testing.T) {
 	proDb := rawdb.NewMemoryDatabase()
 	proConf := *params.NonActivatedConfig
 	proConf.HomesteadBlock = big.NewInt(0)
+	proConf.ShanghaiTime = nil
 	proConf.DAOForkBlock = forkBlock
 	proConf.DAOForkSupport = true
 	progspec := &Genesis{
@@ -56,6 +58,7 @@ func TestDAOForkRangeExtradata(t *testing.T) {
 	conDb := rawdb.NewMemoryDatabase()
 	conConf := *params.NonActivatedConfig
 	conConf.HomesteadBlock = big.NewInt(0)
+	conConf.ShanghaiTime = nil
 	conConf.DAOForkBlock = forkBlock
 	conConf.DAOForkSupport = false
 	congspec := &Genesis{
