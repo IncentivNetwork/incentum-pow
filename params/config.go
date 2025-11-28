@@ -33,6 +33,7 @@ var (
 	GoerliGenesisHash          = common.HexToHash("0xbf7e331f7f7c1dd2e05159666b3bf8bc7a8a3a9eb1d518969eab529dd9b88c1a")
 	IncentivTestnetGenesisHash = common.HexToHash("0xfdd345ccc24a0cbc1fdb136949c66387691e3fe3fd4b1a9960f99d4341c309bd")
 	IncentivMainnetGenesisHash = common.HexToHash("0x08c68c7667787a081a2bef5ddae2f09b968f2ac6a873929cae4591c475376c73")
+	IncentivDevnetGenesisHash  = common.HexToHash("0x08c68c7667787a081a2bef5ddae2f09b968f2ac6a873929cae4591c475376c73")
 )
 
 // FeePool contract addresses for different networks.
@@ -300,6 +301,37 @@ var (
 		Clique:                        nil,
 	}
 
+	// IncentivDevnetChainConfig contains the chain parameters to run a node on the Incentiv dev network.
+	IncentivDevnetChainConfig = &ChainConfig{
+		ChainID:                       big.NewInt(12730),
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  nil,
+		DAOForkSupport:                false,
+		EIP150Block:                   big.NewInt(0),
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              nil,
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		FeePoolBlock:                  big.NewInt(0),
+		ArrowGlacierBlock:             nil,
+		GrayGlacierBlock:              nil,
+		FastBlock:                     big.NewInt(0),
+		ZeroRewardBlock:               big.NewInt(0),
+		MergeNetsplitBlock:            nil,
+		ShanghaiTime:                  newUint64(1755203160),
+		CancunTime:                    nil,
+		PragueTime:                    nil,
+		TerminalTotalDifficulty:       nil,
+		TerminalTotalDifficultyPassed: false,
+		Ethash:                        new(EthashConfig),
+		Clique:                        nil,
+	}
+
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Ethash consensus.
 	AllEthashProtocolChanges = &ChainConfig{
@@ -433,6 +465,7 @@ var NetworkNames = map[string]string{
 	GoerliChainConfig.ChainID.String():          "goerli",
 	SepoliaChainConfig.ChainID.String():         "sepolia",
 	IncentivTestnetChainConfig.ChainID.String(): "incentiv-testnet",
+	IncentivDevnetChainConfig.ChainID.String():  "incentiv-devnet",
 }
 
 // TrustedCheckpoint represents a set of post-processed trie roots (CHT and

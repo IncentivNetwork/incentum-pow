@@ -64,6 +64,14 @@ const (
 	IncentivMainnetBaseFee  = 1800000000000                    // 1800 gwei in wei
 )
 
+// IncentivDevnet genesis configuration constants
+const (
+	IncentivDevnetAddr1    = "0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b"
+	IncentivDevnetBalance1 = "100000000000000000000000000000" // 100,000,000,000 tokens (100 billion tokens, 100% of total supply)
+	IncentivDevnetGasLimit = 0x1c9c380                        // 30,000,000 gas
+	IncentivDevnetBaseFee  = 0x1a3185c5000                    // 1800 gwei in wei
+)
+
 // Genesis specifies the header fields, state of a genesis block. It also defines hard
 // fork switch-over blocks through the chain configuration.
 type Genesis struct {
@@ -219,6 +227,8 @@ func CommitGenesisState(db ethdb.Database, triedb *trie.Database, blockhash comm
 			genesis = DefaultIncentivTestnetGenesisBlock()
 		case params.IncentivMainnetGenesisHash:
 			genesis = DefaultIncentivMainnetGenesisBlock()
+		case params.IncentivDevnetGenesisHash:
+			genesis = DefaultIncentivDevnetGenesisBlock()
 		}
 		if genesis != nil {
 			alloc = genesis.Alloc
@@ -703,6 +713,39 @@ func DefaultIncentivMainnetGenesisBlock() *Genesis {
 	return genesis
 }
 
+// DefaultIncentivDevnetGenesisBlock returns the Incentiv Devnet genesis block.
+func DefaultIncentivDevnetGenesisBlock() *Genesis {
+	if !common.IsHexAddress(IncentivDevnetAddr1) {
+		panic("DefaultIncentivDevnetGenesisBlock: invalid pre-allocation address: " + IncentivDevnetAddr1)
+	}
+
+	balance1, ok1 := new(big.Int).SetString(IncentivDevnetBalance1, 10)
+	if !ok1 {
+		panic("DefaultIncentivDevnetGenesisBlock: invalid balance1 string: " + IncentivDevnetBalance1)
+	}
+
+	genesis := &Genesis{
+		Config:     params.IncentivDevnetChainConfig,
+		Nonce:      0x42,
+		ExtraData:  []byte{},
+		GasLimit:   IncentivDevnetGasLimit,
+		Difficulty: big.NewInt(0x1),
+		Timestamp:  0,
+		BaseFee:    big.NewInt(IncentivDevnetBaseFee),
+		Alloc: GenesisAlloc{
+			common.HexToAddress(IncentivDevnetAddr1): {
+				Balance: balance1,
+			},
+		},
+	}
+
+	// Validate genesis hash to ensure consistency
+	if genesis.ToBlock().Hash() != params.IncentivDevnetGenesisHash {
+		panic("DefaultIncentivDevnetGenesisBlock: genesis hash mismatch - parameters may have been modified incorrectly")
+	}
+
+	return genesis
+}
 func decodePrealloc(data string) GenesisAlloc {
 	var p []struct{ Addr, Balance *big.Int }
 	if err := rlp.NewStream(strings.NewReader(data), 0).Decode(&p); err != nil {
