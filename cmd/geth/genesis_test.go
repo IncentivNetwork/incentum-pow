@@ -204,3 +204,16 @@ func TestIncentivTestnetFlag(t *testing.T) {
 	geth.ExpectRegexp("0x7082")
 	geth.ExpectExit()
 }
+
+func TestIncentivDevnetFlag(t *testing.T) {
+	t.Parallel()
+
+	datadir := t.TempDir()
+
+	geth := runGeth(t, "--datadir", datadir, "--incentiv-devnet", "--port", "0", "--authrpc.port", "0",
+		"--maxpeers", "0", "--nodiscover", "--nat", "none", "--ipcdisable",
+		"--exec", "eth.chainId()", "console")
+
+	geth.ExpectRegexp("0x31ba")
+	geth.ExpectExit()
+}

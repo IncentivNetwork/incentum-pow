@@ -41,6 +41,7 @@ var (
 	DefaultFeePoolAddress         = common.HexToAddress("0xEaCA46260024f4b5a76fccCCa85716B626888361") // Default address for unknown networks (calculated from test mnemonic)
 	IncentivTestnetFeePoolAddress = common.HexToAddress("0xDCe91614dDf6665d93105D5aCDdaDC02bc64Ed45") // FeeDistributor Proxy address for Incentiv Testnet
 	IncentivMainnetFeePoolAddress = common.HexToAddress("0x9a86f26E7eC81A9e4d97bE2200fa7b66A82046B2") // FeeDistributor Proxy address for Incentiv Mainnet
+	IncentivDevnetFeePoolAddress  = common.HexToAddress("0x9a86f26E7eC81A9e4d97bE2200fa7b66A82046B2") // FeeDistributor Proxy address for Incentiv Devnet
 )
 
 // TrustedCheckpoints associates each known checkpoint with the genesis hash of
@@ -1093,6 +1094,8 @@ func (c *ChainConfig) GetFeePoolContractAddress() common.Address {
 		return IncentivTestnetFeePoolAddress
 	case 24101: // Incentiv Mainnet
 		return IncentivMainnetFeePoolAddress
+	case 12730: // Incentiv Devnet
+		return IncentivDevnetFeePoolAddress
 	default:
 		return DefaultFeePoolAddress
 	}

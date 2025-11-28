@@ -165,6 +165,11 @@ var (
 		Usage:    "Incentiv Mainnet: pre-configured proof-of-work main network",
 		Category: flags.EthCategory,
 	}
+	IncentivDevnetFlag = &cli.BoolFlag{
+		Name:     "incentiv-devnet",
+		Usage:    "Incentiv Devnet: pre-configured proof-of-work dev network",
+		Category: flags.EthCategory,
+	}
 
 	// Dev mode
 	DeveloperFlag = &cli.BoolFlag{
@@ -1011,6 +1016,7 @@ var (
 		GoerliFlag,
 		SepoliaFlag,
 		IncentivTestnetFlag,
+		IncentivDevnetFlag,
 	}
 	// NetworkFlags is the flag group of all built-in supported networks.
 	NetworkFlags = append([]cli.Flag{MainnetFlag, IncentivMainnetFlag}, TestnetFlags...)
@@ -1737,7 +1743,7 @@ func CheckExclusive(ctx *cli.Context, args ...interface{}) {
 // SetEthConfig applies eth-related command line flags to the config.
 func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	// Avoid conflicting network flags
-	CheckExclusive(ctx, MainnetFlag, IncentivMainnetFlag, DeveloperFlag, RinkebyFlag, GoerliFlag, SepoliaFlag, IncentivTestnetFlag)
+	CheckExclusive(ctx, MainnetFlag, IncentivMainnetFlag, DeveloperFlag, RinkebyFlag, GoerliFlag, SepoliaFlag, IncentivTestnetFlag, IncentivDevnetFlag)
 	CheckExclusive(ctx, LightServeFlag, SyncModeFlag, "light")
 	CheckExclusive(ctx, DeveloperFlag, ExternalSignerFlag) // Can't use both ephemeral unlocked and external signer
 	if ctx.String(GCModeFlag.Name) == "archive" && ctx.Uint64(TxLookupLimitFlag.Name) != 0 {
@@ -1915,6 +1921,12 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		}
 		cfg.Genesis = core.DefaultIncentivMainnetGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.IncentivMainnetGenesisHash)
+	case ctx.Bool(IncentivDevnetFlag.Name):
+		if !ctx.IsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 12730
+		}
+		cfg.Genesis = core.DefaultIncentivDevnetGenesisBlock()
+		SetDNSDiscoveryDefaults(cfg, params.IncentivDevnetGenesisHash)
 	case ctx.Bool(DeveloperFlag.Name):
 		if !ctx.IsSet(NetworkIdFlag.Name) {
 			cfg.NetworkId = 1337
@@ -2237,6 +2249,8 @@ func MakeGenesis(ctx *cli.Context) *core.Genesis {
 		genesis = core.DefaultIncentivTestnetGenesisBlock()
 	case ctx.Bool(IncentivMainnetFlag.Name):
 		genesis = core.DefaultIncentivMainnetGenesisBlock()
+	case ctx.Bool(IncentivDevnetFlag.Name):
+		genesis = core.DefaultIncentivDevnetGenesisBlock()
 	case ctx.Bool(DeveloperFlag.Name):
 		Fatalf("Developer chains are ephemeral")
 	}

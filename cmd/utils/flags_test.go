@@ -102,3 +102,40 @@ func TestIncentivTestnetFlag(t *testing.T) {
 		t.Fatalf("Failed to run app: %v", err)
 	}
 }
+
+func TestIncentivDevnetFlag(t *testing.T) {
+	// Test that MakeGenesis creates the correct genesis for Incentiv devnet
+	app := &cli.App{
+		Flags: []cli.Flag{
+			IncentivDevnetFlag,
+		},
+		Action: func(ctx *cli.Context) error {
+			genesis := MakeGenesis(ctx)
+			if genesis == nil {
+				t.Fatal("Expected genesis block, got nil")
+			}
+
+			if genesis.Config.ChainID.Uint64() != 12730 {
+				t.Errorf("Expected chain ID 12730, got %d", genesis.Config.ChainID.Uint64())
+			}
+
+			// Verify it matches the default Incentiv devnet genesis
+			expected := core.DefaultIncentivDevnetGenesisBlock()
+			if genesis.Config.ChainID.Uint64() != expected.Config.ChainID.Uint64() {
+				t.Errorf("Genesis chain ID doesn't match default")
+			}
+
+			if len(genesis.Alloc) != len(expected.Alloc) {
+				t.Errorf("Genesis allocation count doesn't match default")
+			}
+
+			return nil
+		},
+	}
+
+	// Run app with --incentiv-devnet flag
+	err := app.Run([]string{"test", "--incentiv-devnet"})
+	if err != nil {
+		t.Fatalf("Failed to run app: %v", err)
+	}
+}
