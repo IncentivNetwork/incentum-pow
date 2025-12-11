@@ -81,13 +81,22 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 		return num.Add(parent.BaseFee, baseFeeDelta)
 	} else {
 		// Otherwise if the parent block used less gas than its target, the baseFee should decrease.
-		// max(0, parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator)
+		// Compute the decrease amount: parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator,
+		// subtract it from parentBaseFee, then apply the minimum base fee floor if the fork is activated.
 		num.SetUint64(parentGasTarget - parent.GasUsed)
 		num.Mul(num, parent.BaseFee)
 		num.Div(num, denom.SetUint64(parentGasTarget))
 		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
 		baseFee := num.Sub(parent.BaseFee, num)
 
+		// Apply minimum base fee floor if MinBaseFee fork is activated for the current block
+		// Check parent.Number + 1 since this function calculates the fee for the next block
+		if config.IsMinBaseFee(new(big.Int).Add(parent.Number, common.Big1)) {
+			minimumBaseFee := new(big.Int).SetUint64(params.MinimumBaseFee)
+			return math.BigMax(baseFee, minimumBaseFee)
+		}
+
+		// Before MinBaseFee fork, allow baseFee to decrease to zero
 		return math.BigMax(baseFee, common.Big0)
 	}
 }
