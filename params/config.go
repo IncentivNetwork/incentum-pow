@@ -288,7 +288,7 @@ var (
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
 		FeePoolBlock:                  big.NewInt(0),
-		MinBaseFeeBlock:               big.NewInt(1291000),
+		MinBaseFeeBlock:               big.NewInt(1295000),
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		FastBlock:                     big.NewInt(0),
