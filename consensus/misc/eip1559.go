@@ -81,7 +81,8 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 		return num.Add(parent.BaseFee, baseFeeDelta)
 	} else {
 		// Otherwise if the parent block used less gas than its target, the baseFee should decrease.
-		// max(minimumBaseFee or 0, parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator)
+		// Compute the decrease amount: parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator,
+		// subtract it from parentBaseFee, then apply the minimum base fee floor after the calculation below.
 		num.SetUint64(parentGasTarget - parent.GasUsed)
 		num.Mul(num, parent.BaseFee)
 		num.Div(num, denom.SetUint64(parentGasTarget))
