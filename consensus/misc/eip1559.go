@@ -88,8 +88,9 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
 		baseFee := num.Sub(parent.BaseFee, num)
 
-		// Apply minimum base fee floor if MinBaseFee fork is activated
-		if config.IsMinBaseFee(parent.Number) {
+		// Apply minimum base fee floor if MinBaseFee fork is activated for the current block
+		// Check parent.Number + 1 since this function calculates the fee for the next block
+		if config.IsMinBaseFee(new(big.Int).Add(parent.Number, common.Big1)) {
 			minimumBaseFee := new(big.Int).SetUint64(params.MinimumBaseFee)
 			return math.BigMax(baseFee, minimumBaseFee)
 		}
