@@ -69,7 +69,7 @@ const (
 	IncentivDevnetAddr1    = "0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b"
 	IncentivDevnetBalance1 = "100000000000000000000000000000" // 100,000,000,000 tokens (100 billion tokens, 100% of total supply)
 	IncentivDevnetGasLimit = 0x1c9c380                        // 30,000,000 gas
-	IncentivDevnetBaseFee  = 0x1a3185c5000                    // 1800 gwei in wei
+	IncentivDevnetBaseFee  = 1800000000000                    // 1800 gwei in wei
 )
 
 // Genesis specifies the header fields, state of a genesis block. It also defines hard
