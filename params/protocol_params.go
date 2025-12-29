@@ -126,6 +126,7 @@ const (
 	DefaultElasticityMultiplier     = 2              // Bounds the maximum gas limit an EIP-1559 block may have.
 	InitialBaseFee                  = 1000000000     // Initial base fee for EIP-1559 blocks.
 	MinimumBaseFee                  = 40000000000000 // Minimum base fee: 40000 gwei in wei
+	MinBaseFeeUpdated               = 12600000000000 // Updated minimum base fee: 12600 gwei in wei
 
 	// Fee distribution constants for fee pool mechanism
 	MinerFeePercent   = 125  // 12.5% of base fee goes to miner (125/1000)

@@ -289,6 +289,7 @@ var (
 		LondonBlock:                   big.NewInt(0),
 		FeePoolBlock:                  big.NewInt(0),
 		MinBaseFeeBlock:               big.NewInt(1295000),
+		MinBaseFeeChangeHeight:        big.NewInt(1582500),
 		ArrowGlacierBlock:             nil,
 		GrayGlacierBlock:              nil,
 		FastBlock:                     big.NewInt(0),
@@ -548,10 +549,11 @@ type ChainConfig struct {
 	IstanbulBlock       *big.Int `json:"istanbulBlock,omitempty"`       // Istanbul switch block (nil = no fork, 0 = already on istanbul)
 	MuirGlacierBlock    *big.Int `json:"muirGlacierBlock,omitempty"`    // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	BerlinBlock         *big.Int `json:"berlinBlock,omitempty"`         // Berlin switch block (nil = no fork, 0 = already on berlin)
-	LondonBlock         *big.Int `json:"londonBlock,omitempty"`         // London switch block (nil = no fork, 0 = already on london)
-	FeePoolBlock        *big.Int `json:"feePoolBlock,omitempty"`        // Fee pool switch block (nil = no fork, 0 = already on fee pool)
-	MinBaseFeeBlock     *big.Int `json:"minBaseFeeBlock,omitempty"`     // Min base fee switch block (nil = no fork, 0 = already activated)
-	ZeroRewardBlock     *big.Int `json:"zeroRewardBlock,omitempty"`     // Zero reward switch block (nil = no fork, 0 = already on zero reward)
+	LondonBlock              *big.Int `json:"londonBlock,omitempty"`              // London switch block (nil = no fork, 0 = already on london)
+	FeePoolBlock             *big.Int `json:"feePoolBlock,omitempty"`             // Fee pool switch block (nil = no fork, 0 = already on fee pool)
+	MinBaseFeeBlock          *big.Int `json:"minBaseFeeBlock,omitempty"`          // Min base fee switch block (nil = no fork, 0 = already activated)
+	MinBaseFeeChangeHeight  *big.Int `json:"minBaseFeeChangeHeight,omitempty"`  // Min base fee change height (not a fork parameter, doesn't affect fork ID)
+	ZeroRewardBlock         *big.Int `json:"zeroRewardBlock,omitempty"`         // Zero reward switch block (nil = no fork, 0 = already on zero reward)
 	ArrowGlacierBlock   *big.Int `json:"arrowGlacierBlock,omitempty"`   // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	GrayGlacierBlock    *big.Int `json:"grayGlacierBlock,omitempty"`    // Eip-5133 (bomb delay) switch block (nil = no fork, 0 = already activated)
 	FastBlock           *big.Int `json:"fastBlock,omitempty"`           // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
@@ -760,6 +762,11 @@ func (c *ChainConfig) IsFeePool(num *big.Int) bool {
 // IsMinBaseFee returns whether num is either equal to the Min Base Fee fork block or greater.
 func (c *ChainConfig) IsMinBaseFee(num *big.Int) bool {
 	return isBlockForked(c.MinBaseFeeBlock, num)
+}
+
+// IsMinBaseFeeChange returns whether num is either equal to the Min Base Fee Change height or greater.
+func (c *ChainConfig) IsMinBaseFeeChange(num *big.Int) bool {
+	return isBlockForked(c.MinBaseFeeChangeHeight, num)
 }
 
 // IsArrowGlacier returns whether num is either equal to the Arrow Glacier (EIP-4345) fork block or greater.

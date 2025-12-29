@@ -91,8 +91,14 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 
 		// Apply minimum base fee floor if MinBaseFee fork is activated for the current block
 		// Check parent.Number + 1 since this function calculates the fee for the next block
-		if config.IsMinBaseFee(new(big.Int).Add(parent.Number, common.Big1)) {
-			minimumBaseFee := new(big.Int).SetUint64(params.MinimumBaseFee)
+		nextBlockNum := new(big.Int).Add(parent.Number, common.Big1)
+		if config.IsMinBaseFee(nextBlockNum) {
+			var minimumBaseFee *big.Int
+			if config.IsMinBaseFeeChange(nextBlockNum) {
+				minimumBaseFee = new(big.Int).SetUint64(params.MinBaseFeeUpdated)
+			} else {
+				minimumBaseFee = new(big.Int).SetUint64(params.MinimumBaseFee)
+			}
 			return math.BigMax(baseFee, minimumBaseFee)
 		}
 
