@@ -257,7 +257,8 @@ func (beacon *Beacon) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 		return consensus.ErrInvalidNumber
 	}
 	// Verify the header's EIP-1559 attributes.
-	if err := misc.VerifyEip1559Header(chain.Config(), parent, header); err != nil {
+	// Note: stateDB is nil here, so dynamic min base fee will fallback to hardcoded values
+	if err := misc.VerifyEip1559Header(chain.Config(), parent, header, nil); err != nil {
 		return err
 	}
 	// Verify existence / non-existence of withdrawalsHash.

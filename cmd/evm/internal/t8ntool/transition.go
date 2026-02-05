@@ -256,7 +256,7 @@ func Transition(ctx *cli.Context) error {
 				GasUsed:  prestate.Env.ParentGasUsed,
 				GasLimit: prestate.Env.ParentGasLimit,
 			}
-			prestate.Env.BaseFee = misc.CalcBaseFee(chainConfig, parent)
+			prestate.Env.BaseFee = misc.CalcBaseFee(chainConfig, parent, nil)
 		} else {
 			return NewError(ErrorConfig, errors.New("EIP-1559 config but missing 'currentBaseFee' in env section"))
 		}

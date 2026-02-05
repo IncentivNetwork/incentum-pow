@@ -6,6 +6,42 @@ This project builds upon the rock-solid foundation of Geth while enabling protoc
 
 > **Note:** This is an independent fork maintained under the Incentum project. It is **not** affiliated with the Ethereum Foundation or the upstream Geth maintainers.
 
+## Incentum-Specific Features
+
+### Dynamic Minimum Base Fee
+
+Incentum implements a governance-controlled minimum base fee system through the **MinBaseFeeGovernor** smart contract. This allows the network to set a floor for the EIP-1559 base fee, providing economic stability while maintaining fee market dynamics.
+
+**Key Features:**
+- **Timelock Security**: 2-day delay between proposal and execution
+- **Activation Delay**: Changes activate after 13,000 blocks (~18 hours at 5s/block)
+- **Safety Bounds**: Values constrained between 1 gwei and 100 ETH
+- **Change Limits**: Maximum 3x increase or 1/3x decrease per proposal
+- **Emergency Controls**: Pause mechanism with fallback value
+- **Full History**: Binary search over historical configurations
+
+**Documentation:**
+- [MinBaseFeeGovernor Contract](contracts/minbasefee/README.md) - Contract overview and quick start
+- [Deployment Guide](docs/minbasefee/deployment.md) - Complete deployment and governance procedures
+- [Performance Benchmarks](docs/minbasefee/BENCHMARKS.md) - Performance analysis and results
+
+**Monitoring:**
+- Prometheus metrics: `chain_minbasefee_*`, `chain_basefee_*`
+- Event logs: `MinBaseFeeProposed`, `ProposalExecuted`, `Paused`
+
+**Testing:**
+```bash
+# Generate contract artifacts (ABI, bytecode, Go bindings)
+cd contracts/minbasefee && go generate
+# Or: bash scripts/generate-minbasefee-bindings.sh
+
+# Run integration tests
+go test -v ./contracts/minbasefee/test
+
+# Run Foundry tests (requires WSL on Windows)
+forge test -vv
+```
+
 ## Building the source
 
 For prerequisites and detailed build instructions please read the [Installation Instructions](https://geth.ethereum.org/docs/getting-started/installing-geth).
@@ -77,13 +113,13 @@ This command will:
    causing it to download more data in exchange for avoiding processing the entire history
    of the Ethereum network, which is very CPU intensive.
  * Start the built-in interactive [JavaScript console](https://geth.ethereum.org/docs/interacting-with-geth/javascript-console),
-   (via the trailing `console` subcommand) through which you can interact using [`web3` methods](https://github.com/ChainSafe/web3.js/blob/0.20.7/DOCUMENTATION.md) 
+   (via the trailing `console` subcommand) through which you can interact using [`web3` methods](https://github.com/ChainSafe/web3.js/blob/0.20.7/DOCUMENTATION.md)
    (note: the `web3` version bundled within `geth` is very old, and not up to date with official docs),
    as well as `geth`'s own [management APIs](https://geth.ethereum.org/docs/interacting-with-geth/rpc).
    This tool is optional and if you leave it out you can always attach it to an already running
    `geth` instance with `geth attach`.
 
-### A Full node on the Görli test network
+### A Full node on the Goerli test network
 
 Transitioning towards developers, if you'd like to play around with creating Ethereum
 contracts, you almost certainly would like to do that without any real money involved until
@@ -100,7 +136,7 @@ useful on the testnet too.
 
 Specifying the `--goerli` flag, however, will reconfigure your `geth` instance a bit:
 
- * Instead of connecting to the main Ethereum network, the client will connect to the Görli
+ * Instead of connecting to the main Ethereum network, the client will connect to the Goerli
    test network, which uses different P2P bootnodes, different network IDs and genesis
    states.
  * Instead of using the default data directory (`~/.ethereum` on Linux for example), `geth`
@@ -338,7 +374,7 @@ testing procedures.
 ### Contributing to geth.ethereum.org
 
 For contributions to the [go-ethereum website](https://geth.ethereum.org), please checkout and raise pull requests against the `website` branch.
-For more detailed instructions please see the `website` branch [README](https://github.com/ethereum/go-ethereum/tree/website#readme) or the 
+For more detailed instructions please see the `website` branch [README](https://github.com/ethereum/go-ethereum/tree/website#readme) or the
 [contributing](https://geth.ethereum.org/docs/developers/geth-developer/contributing) page of the website.
 
 ## License

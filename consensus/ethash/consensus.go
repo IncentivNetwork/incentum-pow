@@ -302,8 +302,9 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 		if err := misc.VerifyGaslimit(parent.GasLimit, header.GasLimit); err != nil {
 			return err
 		}
-	} else if err := misc.VerifyEip1559Header(chain.Config(), parent, header); err != nil {
+	} else if err := misc.VerifyEip1559Header(chain.Config(), parent, header, nil); err != nil {
 		// Verify the header's EIP-1559 attributes.
+		// Note: stateDB is nil here, so dynamic min base fee will fallback to hardcoded values
 		return err
 	}
 	// Verify that the block number is parent's +1

@@ -22,14 +22,28 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/consensus/minbasefee"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+)
+
+var (
+	// Metrics for monitoring minimum base fee
+	minBaseFeeGauge = metrics.NewRegisteredGauge("chain/minbasefee/current", nil)
+	minBaseFeeFromContractGauge = metrics.NewRegisteredGauge("chain/minbasefee/contract", nil)
+	minBaseFeeReadErrorsMeter = metrics.NewRegisteredMeter("chain/minbasefee/readerrors", nil)
+	minBaseFeeActiveGauge = metrics.NewRegisteredGauge("chain/minbasefee/active", nil)
+	baseFeeBeforeFloorGauge = metrics.NewRegisteredGauge("chain/basefee/beforefloor", nil)
+	baseFeeAfterFloorGauge = metrics.NewRegisteredGauge("chain/basefee/afterfloor", nil)
 )
 
 // VerifyEip1559Header verifies some header attributes which were changed in EIP-1559,
 // - gas limit check
 // - basefee check
-func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Header) error {
+func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Header, stateDB *state.StateDB) error {
 	// Verify that the gas limit remains within allowed bounds
 	parentGasLimit := parent.GasLimit
 	if !config.IsLondon(parent.Number) {
@@ -43,7 +57,7 @@ func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Heade
 		return fmt.Errorf("header is missing baseFee")
 	}
 	// Verify the baseFee is correct based on the parent header.
-	expectedBaseFee := CalcBaseFee(config, parent)
+	expectedBaseFee := CalcBaseFee(config, parent, stateDB)
 	if header.BaseFee.Cmp(expectedBaseFee) != 0 {
 		return fmt.Errorf("invalid baseFee: have %s, want %s, parentBaseFee %s, parentGasUsed %d",
 			header.BaseFee, expectedBaseFee, parent.BaseFee, parent.GasUsed)
@@ -52,7 +66,8 @@ func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Heade
 }
 
 // CalcBaseFee calculates the basefee of the header.
-func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
+// stateDB is optional and only required when DynamicMinBaseFee fork is active.
+func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *state.StateDB) *big.Int {
 	// If the current block is the first EIP-1559 block, return the InitialBaseFee.
 	if !config.IsLondon(parent.Number) {
 		return new(big.Int).SetUint64(params.InitialBaseFee)
@@ -92,6 +107,31 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 		// Apply minimum base fee floor if MinBaseFee fork is activated for the current block
 		// Check parent.Number + 1 since this function calculates the fee for the next block
 		nextBlockNum := new(big.Int).Add(parent.Number, common.Big1)
+
+		// Priority 1: Dynamic min base fee (read from contract)
+		if config.IsDynamicMinBaseFee(nextBlockNum) {
+			minBaseFeeActiveGauge.Update(1)
+			baseFeeBeforeFloorGauge.Update(baseFee.Int64())
+
+			minimumBaseFee, err := readMinBaseFeeFromContract(config, stateDB, nextBlockNum)
+			if err != nil {
+				// Log error but don't panic - fall back to previous behavior
+				log.Error("Failed to read min base fee from contract, using hardcoded fallback",
+					"block", nextBlockNum, "err", err)
+				minBaseFeeReadErrorsMeter.Mark(1)
+				// Fall through to legacy logic
+			} else {
+				minBaseFeeFromContractGauge.Update(minimumBaseFee.Int64())
+				result := math.BigMax(baseFee, minimumBaseFee)
+				baseFeeAfterFloorGauge.Update(result.Int64())
+				minBaseFeeGauge.Update(minimumBaseFee.Int64())
+				return result
+			}
+		} else {
+			minBaseFeeActiveGauge.Update(0)
+		}
+
+		// Priority 2: Legacy hardcoded min base fee logic
 		if config.IsMinBaseFee(nextBlockNum) {
 			var minimumBaseFee *big.Int
 			if config.IsMinBaseFeeChange(nextBlockNum) {
@@ -105,4 +145,35 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 		// Before MinBaseFee fork, allow baseFee to decrease to zero
 		return math.BigMax(baseFee, common.Big0)
 	}
+}
+
+// readMinBaseFeeFromContract reads the minimum base fee from the governance contract
+func readMinBaseFeeFromContract(config *params.ChainConfig, stateDB *state.StateDB, blockNumber *big.Int) (*big.Int, error) {
+	if stateDB == nil {
+		return nil, fmt.Errorf("stateDB is required for dynamic min base fee")
+	}
+
+	// Check if contract address is configured
+	if config.MinBaseFeeContractAddr == (common.Address{}) {
+		return nil, fmt.Errorf("MinBaseFeeContractAddr not configured")
+	}
+
+	reader := minbasefee.NewReader(config.MinBaseFeeContractAddr)
+	minBaseFee, err := reader.ReadMinBaseFee(stateDB, blockNumber)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read from contract: %w", err)
+	}
+
+	// Validate that the value is reasonable (non-zero and not too large)
+	if minBaseFee.Sign() <= 0 {
+		return nil, fmt.Errorf("invalid min base fee from contract: %s (must be positive)", minBaseFee)
+	}
+
+	// Sanity check: min base fee shouldn't be absurdly large (e.g., > 1000 ETH)
+	maxReasonable := new(big.Int).Mul(big.NewInt(1000), big.NewInt(params.Ether))
+	if minBaseFee.Cmp(maxReasonable) > 0 {
+		return nil, fmt.Errorf("min base fee from contract too large: %s (max %s)", minBaseFee, maxReasonable)
+	}
+
+	return minBaseFee, nil
 }

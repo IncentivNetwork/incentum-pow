@@ -48,6 +48,17 @@ profile.cov
 
 **/yarn-error.log
 logs/
+
+# Foundry
+cache_forge/
+out/
+lib/
+
+# Compiled contract artifacts
+contracts/**/*.bin
+contracts/**/*.abi
+contracts/**/bindings.go
+
 geth
 
 **/allowlist.json
