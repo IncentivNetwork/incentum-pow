@@ -262,6 +262,7 @@ var (
 		FastBlock:                     big.NewInt(319000),
 		ZeroRewardBlock:               big.NewInt(471000),
 		MergeNetsplitBlock:            nil,
+		IrregularStateChangeHeight:    nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
 		PragueTime:                    nil,
@@ -295,6 +296,7 @@ var (
 		FastBlock:                     big.NewInt(0),
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
+		IrregularStateChangeHeight:    big.NewInt(2429000),
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
 		PragueTime:                    nil,
@@ -327,6 +329,7 @@ var (
 		FastBlock:                     big.NewInt(0),
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
+		IrregularStateChangeHeight:    nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
 		PragueTime:                    nil,
@@ -543,21 +546,23 @@ type ChainConfig struct {
 	EIP155Block *big.Int `json:"eip155Block,omitempty"` // EIP155 HF block
 	EIP158Block *big.Int `json:"eip158Block,omitempty"` // EIP158 HF block
 
-	ByzantiumBlock      *big.Int `json:"byzantiumBlock,omitempty"`      // Byzantium switch block (nil = no fork, 0 = already on byzantium)
-	ConstantinopleBlock *big.Int `json:"constantinopleBlock,omitempty"` // Constantinople switch block (nil = no fork, 0 = already activated)
-	PetersburgBlock     *big.Int `json:"petersburgBlock,omitempty"`     // Petersburg switch block (nil = same as Constantinople)
-	IstanbulBlock       *big.Int `json:"istanbulBlock,omitempty"`       // Istanbul switch block (nil = no fork, 0 = already on istanbul)
-	MuirGlacierBlock    *big.Int `json:"muirGlacierBlock,omitempty"`    // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	BerlinBlock         *big.Int `json:"berlinBlock,omitempty"`         // Berlin switch block (nil = no fork, 0 = already on berlin)
-	LondonBlock              *big.Int `json:"londonBlock,omitempty"`              // London switch block (nil = no fork, 0 = already on london)
-	FeePoolBlock             *big.Int `json:"feePoolBlock,omitempty"`             // Fee pool switch block (nil = no fork, 0 = already on fee pool)
-	MinBaseFeeBlock          *big.Int `json:"minBaseFeeBlock,omitempty"`          // Min base fee switch block (nil = no fork, 0 = already activated)
-	MinBaseFeeChangeHeight  *big.Int `json:"minBaseFeeChangeHeight,omitempty"`  // Min base fee change height (not a fork parameter, doesn't affect fork ID)
-	ZeroRewardBlock         *big.Int `json:"zeroRewardBlock,omitempty"`         // Zero reward switch block (nil = no fork, 0 = already on zero reward)
-	ArrowGlacierBlock   *big.Int `json:"arrowGlacierBlock,omitempty"`   // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	GrayGlacierBlock    *big.Int `json:"grayGlacierBlock,omitempty"`    // Eip-5133 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	FastBlock           *big.Int `json:"fastBlock,omitempty"`           // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
-	MergeNetsplitBlock  *big.Int `json:"mergeNetsplitBlock,omitempty"`  // Virtual fork after The Merge to use as a network splitter
+	ByzantiumBlock         *big.Int `json:"byzantiumBlock,omitempty"`         // Byzantium switch block (nil = no fork, 0 = already on byzantium)
+	ConstantinopleBlock    *big.Int `json:"constantinopleBlock,omitempty"`    // Constantinople switch block (nil = no fork, 0 = already activated)
+	PetersburgBlock        *big.Int `json:"petersburgBlock,omitempty"`        // Petersburg switch block (nil = same as Constantinople)
+	IstanbulBlock          *big.Int `json:"istanbulBlock,omitempty"`          // Istanbul switch block (nil = no fork, 0 = already on istanbul)
+	MuirGlacierBlock       *big.Int `json:"muirGlacierBlock,omitempty"`       // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	BerlinBlock            *big.Int `json:"berlinBlock,omitempty"`            // Berlin switch block (nil = no fork, 0 = already on berlin)
+	LondonBlock            *big.Int `json:"londonBlock,omitempty"`            // London switch block (nil = no fork, 0 = already on london)
+	FeePoolBlock           *big.Int `json:"feePoolBlock,omitempty"`           // Fee pool switch block (nil = no fork, 0 = already on fee pool)
+	MinBaseFeeBlock        *big.Int `json:"minBaseFeeBlock,omitempty"`        // Min base fee switch block (nil = no fork, 0 = already activated)
+	MinBaseFeeChangeHeight *big.Int `json:"minBaseFeeChangeHeight,omitempty"` // Min base fee change height (not a fork parameter, doesn't affect fork ID)
+	ZeroRewardBlock        *big.Int `json:"zeroRewardBlock,omitempty"`        // Zero reward switch block (nil = no fork, 0 = already on zero reward)
+	ArrowGlacierBlock      *big.Int `json:"arrowGlacierBlock,omitempty"`      // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	GrayGlacierBlock       *big.Int `json:"grayGlacierBlock,omitempty"`       // Eip-5133 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	FastBlock              *big.Int `json:"fastBlock,omitempty"`              // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
+	MergeNetsplitBlock     *big.Int `json:"mergeNetsplitBlock,omitempty"`     // Virtual fork after The Merge to use as a network splitter
+
+	IrregularStateChangeHeight *big.Int `json:"irregularStateChangeHeight,omitempty"` // Irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
 
 	// Fork scheduling was switched from blocks to timestamps here
 
@@ -782,6 +787,14 @@ func (c *ChainConfig) IsGrayGlacier(num *big.Int) bool {
 // IsFast returns whether num is either equal to the Fast consensus algorithm fork block or greater.
 func (c *ChainConfig) IsFast(num *big.Int) bool {
 	return isBlockForked(c.FastBlock, num)
+}
+
+// IsIrregularStateChange returns whether num is equal to the irregular state change height.
+func (c *ChainConfig) IsIrregularStateChange(num *big.Int) bool {
+	if c.IrregularStateChangeHeight == nil || num == nil {
+		return false
+	}
+	return c.IrregularStateChangeHeight.Cmp(num) == 0
 }
 
 // IsTerminalPoWBlock returns whether the given block is the last block of PoW stage.
