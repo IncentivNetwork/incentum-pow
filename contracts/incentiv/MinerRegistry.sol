@@ -85,11 +85,11 @@ contract MinerRegistry {
     error InsufficientStake();
     error AlreadyStaked();
     error NotStaked();
-    error CallerNotMiner();
     error UnstakeDelayNotMet();
     error OnlyGovernance();
     error StakingCurrentlyPaused();
     error EmptyReason();
+    error InvalidRefundRecipient();
     error ReentrantCall();
 
     // ============================================================
@@ -187,9 +187,10 @@ contract MinerRegistry {
         string calldata reason
     ) external onlyGovernance nonReentrant {
         if (bytes(reason).length == 0) revert EmptyReason();
+        if (refundRecipient == address(0)) revert InvalidRefundRecipient();
 
         bool wasActive = miners[miner];
-        uint256 stakedAt = stakeTime[miner];
+        bool hasStake = wasActive || stakeBlock[miner] != 0 || unstakeRequestTime[miner] != 0 || stakeTime[miner] != 0;
 
         if (wasActive) {
             activeMinerCount--;
@@ -200,7 +201,7 @@ contract MinerRegistry {
         delete stakeBlock[miner];
         delete unstakeRequestTime[miner];
 
-        if (stakedAt != 0) {
+        if (hasStake) {
             centToken.safeTransfer(refundRecipient, STAKE_AMOUNT);
         }
 

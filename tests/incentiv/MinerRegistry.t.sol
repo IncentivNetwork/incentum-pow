@@ -9,7 +9,7 @@ import "../../contracts/incentiv/mocks/ReentrantCENT.sol";
 import "../../contracts/incentiv/mocks/ReentrantEmergencyCENT.sol";
 
 contract MinerRegistryTest is Test {
-    uint256 internal constant STAKE_AMOUNT = 100_000_000 * 10 ** 18;
+    uint256 internal stakeAmount;
 
     MinerRegistry internal registry;
     MockCENT internal cent;
@@ -27,10 +27,12 @@ contract MinerRegistryTest is Test {
         cent = new MockCENT();
         registry = new MinerRegistry(address(cent), timelock);
 
-        cent.mint(miner, STAKE_AMOUNT);
+        stakeAmount = registry.STAKE_AMOUNT();
+
+        cent.mint(miner, stakeAmount);
 
         vm.prank(miner);
-        cent.approve(address(registry), STAKE_AMOUNT);
+        cent.approve(address(registry), stakeAmount);
     }
 
     function testStake_SetsState() public {
@@ -42,7 +44,7 @@ contract MinerRegistryTest is Test {
         assertEq(registry.stakeBlock(miner), block.number);
         assertEq(registry.activeMinerCount(), 1);
         assertEq(cent.balanceOf(miner), 0);
-        assertEq(cent.balanceOf(address(registry)), STAKE_AMOUNT);
+        assertEq(cent.balanceOf(address(registry)), stakeAmount);
     }
 
     function testStake_EmitsMinerStakedEvent() public {
@@ -56,7 +58,7 @@ contract MinerRegistryTest is Test {
     function testStake_RevertsWithoutAllowance() public {
         address minerNoApproval = address(0xABCD);
 
-        cent.mint(minerNoApproval, STAKE_AMOUNT);
+        cent.mint(minerNoApproval, stakeAmount);
 
         vm.expectRevert(MinerRegistry.InsufficientStake.selector);
 
@@ -68,7 +70,7 @@ contract MinerRegistryTest is Test {
         address minerNoBalance = address(0xDCBA);
 
         vm.prank(minerNoBalance);
-        cent.approve(address(registry), STAKE_AMOUNT);
+        cent.approve(address(registry), stakeAmount);
 
         vm.expectRevert(MinerRegistry.InsufficientStake.selector);
 
@@ -163,7 +165,7 @@ contract MinerRegistryTest is Test {
         assertEq(registry.stakeBlock(miner), 0);
         assertEq(registry.unstakeRequestTime(miner), 0);
 
-        assertEq(cent.balanceOf(miner), STAKE_AMOUNT);
+        assertEq(cent.balanceOf(miner), stakeAmount);
         assertEq(cent.balanceOf(address(registry)), 0);
     }
 
@@ -177,7 +179,7 @@ contract MinerRegistryTest is Test {
         vm.warp(block.timestamp + registry.UNSTAKE_DELAY());
 
         vm.expectEmit(true, false, false, true, address(registry));
-        emit MinerUnstaked(miner, STAKE_AMOUNT);
+        emit MinerUnstaked(miner, stakeAmount);
 
         vm.prank(miner);
         registry.finalizeUnstake();
@@ -286,10 +288,10 @@ contract MinerRegistryTest is Test {
     function testSetPaused_BlocksNewStake() public {
         address miner2 = address(0xB0B);
 
-        cent.mint(miner2, STAKE_AMOUNT);
+        cent.mint(miner2, stakeAmount);
 
         vm.prank(miner2);
-        cent.approve(address(registry), STAKE_AMOUNT);
+        cent.approve(address(registry), stakeAmount);
 
         vm.prank(timelock);
         registry.setPaused(true);
@@ -303,10 +305,10 @@ contract MinerRegistryTest is Test {
     function testSetPaused_FalseReenablesStake() public {
         address miner2 = address(0xB0C);
 
-        cent.mint(miner2, STAKE_AMOUNT);
+        cent.mint(miner2, stakeAmount);
 
         vm.prank(miner2);
-        cent.approve(address(registry), STAKE_AMOUNT);
+        cent.approve(address(registry), stakeAmount);
 
         vm.prank(timelock);
         registry.setPaused(true);
@@ -350,7 +352,7 @@ contract MinerRegistryTest is Test {
         assertEq(registry.unstakeRequestTime(miner), 0);
         assertEq(registry.activeMinerCount(), 0);
 
-        assertEq(cent.balanceOf(refundRecipient), STAKE_AMOUNT);
+        assertEq(cent.balanceOf(refundRecipient), stakeAmount);
         assertEq(cent.balanceOf(address(registry)), 0);
     }
 
@@ -387,7 +389,24 @@ contract MinerRegistryTest is Test {
         assertEq(registry.unstakeRequestTime(miner), 0);
         assertEq(registry.activeMinerCount(), 0);
 
-        assertEq(cent.balanceOf(refundRecipient), STAKE_AMOUNT);
+        assertEq(cent.balanceOf(refundRecipient), stakeAmount);
+        assertEq(cent.balanceOf(address(registry)), 0);
+    }
+
+    function testEmergencyRemoveMiner_RefundsWhenStakeTimestampIsZero() public {
+        address refundRecipient = address(0xABCD);
+
+        vm.warp(0);
+
+        vm.prank(miner);
+        registry.stake();
+
+        assertEq(registry.stakeTime(miner), 0);
+
+        vm.prank(timelock);
+        registry.emergencyRemoveMiner(miner, refundRecipient, "zero timestamp");
+
+        assertEq(cent.balanceOf(refundRecipient), stakeAmount);
         assertEq(cent.balanceOf(address(registry)), 0);
     }
 
@@ -408,7 +427,7 @@ contract MinerRegistryTest is Test {
         vm.prank(timelock);
         registry.emergencyRemoveMiner(miner, refundRecipient, "cleanup");
 
-        assertEq(cent.balanceOf(miner), STAKE_AMOUNT);
+        assertEq(cent.balanceOf(miner), stakeAmount);
         assertEq(cent.balanceOf(refundRecipient), 0);
         assertEq(cent.balanceOf(address(registry)), 0);
 
@@ -426,6 +445,16 @@ contract MinerRegistryTest is Test {
 
         vm.prank(timelock);
         registry.emergencyRemoveMiner(miner, address(0x1234), "");
+    }
+
+    function testEmergencyRemoveMiner_RevertsOnZeroRefundRecipient() public {
+        vm.prank(miner);
+        registry.stake();
+
+        vm.expectRevert(MinerRegistry.InvalidRefundRecipient.selector);
+
+        vm.prank(timelock);
+        registry.emergencyRemoveMiner(miner, address(0), "zero recipient");
     }
 
     function testEmergencyRemoveMiner_OnEmptyState_DoesNotRefundAndDoesNotRevert() public {
@@ -467,10 +496,10 @@ contract MinerRegistryTest is Test {
         MinerRegistry reentrantRegistry = new MinerRegistry(address(reentrantToken), timelock);
 
         reentrantToken.setRegistry(address(reentrantRegistry));
-        reentrantToken.mint(miner, STAKE_AMOUNT);
+        reentrantToken.mint(miner, stakeAmount);
 
         vm.prank(miner);
-        reentrantToken.approve(address(reentrantRegistry), STAKE_AMOUNT);
+        reentrantToken.approve(address(reentrantRegistry), stakeAmount);
 
         vm.expectRevert(MinerRegistry.ReentrantCall.selector);
 
@@ -482,10 +511,10 @@ contract MinerRegistryTest is Test {
         ReentrantEmergencyCENT reentrantToken = new ReentrantEmergencyCENT();
         MinerRegistry reentrantRegistry = new MinerRegistry(address(reentrantToken), timelock);
 
-        reentrantToken.mint(miner, STAKE_AMOUNT);
+        reentrantToken.mint(miner, stakeAmount);
 
         vm.prank(miner);
-        reentrantToken.approve(address(reentrantRegistry), STAKE_AMOUNT);
+        reentrantToken.approve(address(reentrantRegistry), stakeAmount);
 
         vm.prank(miner);
         reentrantRegistry.stake();

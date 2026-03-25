@@ -7,7 +7,7 @@ import "../../contracts/incentiv/MinerRegistry.sol";
 import "../../contracts/incentiv/mocks/MockCENT.sol";
 
 contract MinerRegistryStorageTest is Test {
-    uint256 internal constant STAKE_AMOUNT = 100_000_000 * 10 ** 18;
+    uint256 internal stakeAmount;
 
     MinerRegistry internal registry;
     MockCENT internal cent;
@@ -19,10 +19,12 @@ contract MinerRegistryStorageTest is Test {
         cent = new MockCENT();
         registry = new MinerRegistry(address(cent), timelock);
 
-        cent.mint(miner, STAKE_AMOUNT);
+        stakeAmount = registry.STAKE_AMOUNT();
+
+        cent.mint(miner, stakeAmount);
 
         vm.prank(miner);
-        cent.approve(address(registry), STAKE_AMOUNT);
+        cent.approve(address(registry), stakeAmount);
     }
 
     function testConsensusStorageSlots_AreStable() public {

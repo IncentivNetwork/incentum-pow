@@ -2,6 +2,7 @@
 src = "contracts/incentiv"
 out = "out"
 libs = ["lib"]
+remappings = ["forge-std/=lib/forge-std/src/", "@openzeppelin/=lib/openzeppelin-contracts/"]
 test = "tests/incentiv"
 cache_path = "cache_forge"
 solc_version = "0.8.23"
