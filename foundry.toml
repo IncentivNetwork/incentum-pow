@@ -1,0 +1,20 @@
+[profile.default]
+src = "contracts/incentiv"
+out = "out"
+libs = ["lib"]
+test = "tests/incentiv"
+cache_path = "cache_forge"
+solc_version = "0.8.23"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+evm_version = "paris"
+
+[profile.default.fuzz]
+runs = 256
+
+[profile.ci.fuzz]
+runs = 5000
+
+[profile.ci.invariant]
+runs = 1000

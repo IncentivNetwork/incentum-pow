@@ -51,3 +51,8 @@ logs/
 geth
 
 **/allowlist.json
+
+cache_forge/
+out/
+lib/
+lcov.info
