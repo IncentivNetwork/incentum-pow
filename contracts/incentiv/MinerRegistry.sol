@@ -64,7 +64,6 @@ contract MinerRegistry {
     // ============================================================
 
     event MinerStaked(
-        address indexed payer,
         address indexed miner,
         uint256 stakeTime,
         uint256 stakeBlock
@@ -82,8 +81,11 @@ contract MinerRegistry {
     // Errors
     // ============================================================
 
-    error InsufficientStake();
+    error ZeroAddress();
+    error InsufficientBalance();
+    error InsufficientAllowance();
     error AlreadyStaked();
+    error UnstakeInProgress();
     error NotStaked();
     error UnstakeDelayNotMet();
     error OnlyGovernance();
@@ -118,6 +120,8 @@ contract MinerRegistry {
     // ============================================================
 
     constructor(address centToken_, address timelock_) {
+        if (centToken_ == address(0) || timelock_ == address(0)) revert ZeroAddress();
+
         centToken = IERC20(centToken_);
         timelock = TimelockController(payable(timelock_));
         _reentrancyStatus = _NOT_ENTERED;
@@ -127,16 +131,16 @@ contract MinerRegistry {
     // Core functions
     // ============================================================
 
+    /// @notice Stakes exactly STAKE_AMOUNT of CENT for the caller.
+    /// @dev Self-only staking: msg.sender is always the miner. Third-party staking is intentionally unsupported.
     function stake() external nonReentrant whenStakingNotPaused {
         address miner = msg.sender;
 
         if (miners[miner]) revert AlreadyStaked();
-        if (unstakeRequestTime[miner] != 0) revert AlreadyStaked();
+        if (unstakeRequestTime[miner] != 0) revert UnstakeInProgress();
 
-        if (centToken.balanceOf(msg.sender) < STAKE_AMOUNT)
-            revert InsufficientStake();
-        if (centToken.allowance(msg.sender, address(this)) < STAKE_AMOUNT)
-            revert InsufficientStake();
+        if (centToken.balanceOf(msg.sender) < STAKE_AMOUNT) revert InsufficientBalance();
+        if (centToken.allowance(msg.sender, address(this)) < STAKE_AMOUNT) revert InsufficientAllowance();
 
         centToken.safeTransferFrom(msg.sender, address(this), STAKE_AMOUNT);
 
@@ -145,9 +149,11 @@ contract MinerRegistry {
         stakeBlock[miner] = block.number;
         activeMinerCount++;
 
-        emit MinerStaked(msg.sender, miner, block.timestamp, block.number);
+        emit MinerStaked(miner, block.timestamp, block.number);
     }
 
+    /// @notice Starts unstaking for the caller and removes them from the active miner set.
+    /// @dev stakeTime and stakeBlock are intentionally preserved until finalizeUnstake() so emergencyRemoveMiner() can still determine refund eligibility.
     function requestUnstake() external nonReentrant {
         address miner = msg.sender;
 
@@ -157,9 +163,13 @@ contract MinerRegistry {
         miners[miner] = false;
         activeMinerCount--;
 
+        // stakeTime and stakeBlock are intentionally preserved here;
+        // they are cleared only in finalizeUnstake() to support emergencyRemoveMiner refund logic.
         emit UnstakeRequested(miner, block.timestamp);
     }
 
+    /// @notice Finalizes unstaking for the caller after UNSTAKE_DELAY and returns the locked stake.
+    /// @dev Self-only flow: only the original staker/miner can finalize their unstake.
     function finalizeUnstake() external nonReentrant {
         address miner = msg.sender;
         uint256 requestTime = unstakeRequestTime[miner];
@@ -176,11 +186,19 @@ contract MinerRegistry {
         emit MinerUnstaked(miner, STAKE_AMOUNT);
     }
 
+    /// @notice Pauses or unpauses new staking.
+    /// @dev Governance-only operation.
+    /// @param paused True to pause new staking, false to re-enable it.
     function setPaused(bool paused) external onlyGovernance {
         stakingPaused = paused;
         emit StakingPaused(paused);
     }
 
+    /// @notice Force-removes a miner and refunds their locked stake to the specified recipient.
+    /// @dev Governance-only emergency path.
+    /// @param miner Miner address whose state will be removed.
+    /// @param refundRecipient Address that receives the refunded stake.
+    /// @param reason Non-empty human-readable reason for the action.
     function emergencyRemoveMiner(
         address miner,
         address refundRecipient,
@@ -208,6 +226,9 @@ contract MinerRegistry {
         emit EmergencyRemoval(miner, refundRecipient, reason);
     }
 
+    /// @notice Returns whether a miner is currently authorized for block production.
+    /// @dev Authorization requires active stake status and both maturity thresholds to be satisfied.
+    /// @param miner Miner address to check.
     function isAuthorizedMiner(address miner) external view returns (bool) {
         return miners[miner]
             && block.timestamp >= stakeTime[miner] + MATURITY_TIME

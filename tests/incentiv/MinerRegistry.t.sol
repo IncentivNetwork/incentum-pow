@@ -17,7 +17,7 @@ contract MinerRegistryTest is Test {
     address internal miner = address(0xBEEF);
     address internal timelock = address(0xCAFE);
 
-    event MinerStaked(address indexed payer, address indexed miner, uint256 stakeTime, uint256 stakeBlock);
+    event MinerStaked(address indexed miner, uint256 stakeTime, uint256 stakeBlock);
     event UnstakeRequested(address indexed miner, uint256 requestTime);
     event MinerUnstaked(address indexed miner, uint256 amount);
     event EmergencyRemoval(address indexed miner, address indexed refundRecipient, string reason);
@@ -48,8 +48,8 @@ contract MinerRegistryTest is Test {
     }
 
     function testStake_EmitsMinerStakedEvent() public {
-        vm.expectEmit(true, true, false, true, address(registry));
-        emit MinerStaked(miner, miner, block.timestamp, block.number);
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit MinerStaked(miner, block.timestamp, block.number);
 
         vm.prank(miner);
         registry.stake();
@@ -60,7 +60,7 @@ contract MinerRegistryTest is Test {
 
         cent.mint(minerNoApproval, stakeAmount);
 
-        vm.expectRevert(MinerRegistry.InsufficientStake.selector);
+        vm.expectRevert(MinerRegistry.InsufficientAllowance.selector);
 
         vm.prank(minerNoApproval);
         registry.stake();
@@ -72,7 +72,7 @@ contract MinerRegistryTest is Test {
         vm.prank(minerNoBalance);
         cent.approve(address(registry), stakeAmount);
 
-        vm.expectRevert(MinerRegistry.InsufficientStake.selector);
+        vm.expectRevert(MinerRegistry.InsufficientBalance.selector);
 
         vm.prank(minerNoBalance);
         registry.stake();
@@ -95,7 +95,7 @@ contract MinerRegistryTest is Test {
         vm.prank(miner);
         registry.requestUnstake();
 
-        vm.expectRevert(MinerRegistry.AlreadyStaked.selector);
+        vm.expectRevert(MinerRegistry.UnstakeInProgress.selector);
 
         vm.prank(miner);
         registry.stake();
@@ -507,7 +507,7 @@ contract MinerRegistryTest is Test {
         reentrantRegistry.stake();
     }
 
-    function testFinalizeUnstake_RevertsOnReentrancy() public {
+    function testFinalizeUnstake_RevertsOnReentrantToken() public {
         ReentrantEmergencyCENT reentrantToken = new ReentrantEmergencyCENT();
         MinerRegistry reentrantRegistry = new MinerRegistry(address(reentrantToken), timelock);
 

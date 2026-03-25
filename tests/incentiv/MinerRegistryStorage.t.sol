@@ -27,6 +27,16 @@ contract MinerRegistryStorageTest is Test {
         cent.approve(address(registry), stakeAmount);
     }
 
+    function testConstructor_RevertsOnZeroAddresses() public {
+        cent = new MockCENT();
+
+        vm.expectRevert(MinerRegistry.ZeroAddress.selector);
+        new MinerRegistry(address(0), timelock);
+
+        vm.expectRevert(MinerRegistry.ZeroAddress.selector);
+        new MinerRegistry(address(cent), address(0));
+    }
+
     function testConsensusStorageSlots_AreStable() public {
         vm.prank(miner);
         registry.stake();
@@ -45,6 +55,25 @@ contract MinerRegistryStorageTest is Test {
         assertEq(uint256(rawStakeTime), block.timestamp);
         assertEq(uint256(rawStakeBlock), block.number);
         assertEq(uint256(rawUnstakeRequestTime), 0);
+    }
+
+    function testStorageSlots_NoReentrancyGuardInheritance() public {
+        vm.prank(miner);
+        registry.stake();
+
+        bytes32 minersSlot = _mappingSlot(miner, 0);
+        bytes32 rawMiner = vm.load(address(registry), minersSlot);
+        bytes32 rootSlotZero = vm.load(address(registry), bytes32(uint256(0)));
+
+        assertEq(uint256(rawMiner), 1);
+        assertEq(uint256(rootSlotZero), 0);
+    }
+
+    function testStorageSlots_ExportRawKeys() public {
+        emit log_bytes32(_mappingSlot(miner, 0));
+        emit log_bytes32(_mappingSlot(miner, 1));
+        emit log_bytes32(_mappingSlot(miner, 2));
+        emit log_bytes32(_mappingSlot(miner, 3));
     }
 
     function _mappingSlot(address key, uint256 slot) internal pure returns (bytes32) {
