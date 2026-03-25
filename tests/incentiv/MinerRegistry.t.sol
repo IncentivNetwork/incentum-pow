@@ -111,7 +111,7 @@ contract MinerRegistryTest is Test {
         registry.requestUnstake();
 
         assertFalse(registry.miners(miner));
-        assertEq(registry.unstakeRequestTime(miner), block.timestamp);
+        assertEq(registry.unstakeRequestTime(miner), block.timestamp + 1);
         assertEq(registry.activeMinerCount(), 0);
     }
 
@@ -408,6 +408,33 @@ contract MinerRegistryTest is Test {
 
         assertEq(cent.balanceOf(refundRecipient), stakeAmount);
         assertEq(cent.balanceOf(address(registry)), 0);
+    }
+
+    function testRequestUnstakeAtZeroTimestamp_CanFinalizeAfterDelay() public {
+        vm.warp(0);
+
+        vm.prank(miner);
+        registry.stake();
+
+        assertEq(registry.stakeTime(miner), 0);
+
+        vm.prank(miner);
+        registry.requestUnstake();
+
+        assertEq(registry.unstakeRequestTime(miner), 1);
+
+        vm.warp(block.timestamp + registry.UNSTAKE_DELAY());
+
+        vm.prank(miner);
+        registry.finalizeUnstake();
+
+        assertEq(cent.balanceOf(miner), stakeAmount);
+        assertEq(cent.balanceOf(address(registry)), 0);
+
+        assertFalse(registry.miners(miner));
+        assertEq(registry.stakeTime(miner), 0);
+        assertEq(registry.stakeBlock(miner), 0);
+        assertEq(registry.unstakeRequestTime(miner), 0);
     }
 
     function testEmergencyRemoveMiner_AfterFinalizeUnstake_DoesNotDoubleRefund() public {

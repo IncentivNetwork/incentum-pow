@@ -159,7 +159,7 @@ contract MinerRegistry {
 
         if (!miners[miner]) revert NotStaked();
 
-        unstakeRequestTime[miner] = block.timestamp;
+        unstakeRequestTime[miner] = block.timestamp + 1;
         miners[miner] = false;
         activeMinerCount--;
 
@@ -172,9 +172,11 @@ contract MinerRegistry {
     /// @dev Self-only flow: only the original staker/miner can finalize their unstake.
     function finalizeUnstake() external nonReentrant {
         address miner = msg.sender;
-        uint256 requestTime = unstakeRequestTime[miner];
+        uint256 requestMarker = unstakeRequestTime[miner];
 
-        if (requestTime == 0) revert NotStaked();
+        if (requestMarker == 0) revert NotStaked();
+
+        uint256 requestTime = requestMarker - 1;
         if (block.timestamp < requestTime + UNSTAKE_DELAY) revert UnstakeDelayNotMet();
 
         delete stakeTime[miner];
