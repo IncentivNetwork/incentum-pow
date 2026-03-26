@@ -7,6 +7,7 @@ import "../../contracts/incentiv/MinerRegistry.sol";
 import "../../contracts/incentiv/mocks/MockCENT.sol";
 import "../../contracts/incentiv/mocks/ReentrantCENT.sol";
 import "../../contracts/incentiv/mocks/ReentrantEmergencyCENT.sol";
+import "../../contracts/incentiv/mocks/FeeOnTransferCENT.sol";
 
 contract MinerRegistryTest is Test {
     uint256 internal stakeAmount;
@@ -78,6 +79,21 @@ contract MinerRegistryTest is Test {
         registry.stake();
     }
 
+    function testStake_RevertsOnFeeOnTransferToken() public {
+        FeeOnTransferCENT feeToken = new FeeOnTransferCENT();
+        MinerRegistry feeRegistry = new MinerRegistry(address(feeToken), timelock);
+
+        feeToken.mint(miner, stakeAmount);
+
+        vm.prank(miner);
+        feeToken.approve(address(feeRegistry), stakeAmount);
+
+        vm.expectRevert(MinerRegistry.InvalidStakeTransfer.selector);
+
+        vm.prank(miner);
+        feeRegistry.stake();
+    }
+
     function testStake_RevertsIfAlreadyStaked() public {
         vm.prank(miner);
         registry.stake();
@@ -111,7 +127,7 @@ contract MinerRegistryTest is Test {
         registry.requestUnstake();
 
         assertFalse(registry.miners(miner));
-        assertEq(registry.unstakeRequestTime(miner), block.timestamp + 1);
+        assertEq(registry.unstakeRequestTime(miner), block.timestamp);
         assertEq(registry.activeMinerCount(), 0);
     }
 
@@ -421,7 +437,7 @@ contract MinerRegistryTest is Test {
         vm.prank(miner);
         registry.requestUnstake();
 
-        assertEq(registry.unstakeRequestTime(miner), 1);
+        assertEq(registry.unstakeRequestTime(miner), 0);
 
         vm.warp(block.timestamp + registry.UNSTAKE_DELAY());
 

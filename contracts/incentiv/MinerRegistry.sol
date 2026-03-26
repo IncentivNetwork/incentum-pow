@@ -51,6 +51,9 @@ contract MinerRegistry {
     /// @custom:storage-slot 3
     mapping(address miner => uint256 timestamp) public unstakeRequestTime;
 
+    /// @custom:storage-slot 4
+    mapping(address miner => bool isPending) private unstakeRequested;
+
     // ============================================================
     // Non-consensus storage (must stay after slots 0-3)
     // ============================================================
@@ -92,6 +95,7 @@ contract MinerRegistry {
     error StakingCurrentlyPaused();
     error EmptyReason();
     error InvalidRefundRecipient();
+    error InvalidStakeTransfer();
     error ReentrantCall();
 
     // ============================================================
@@ -137,12 +141,16 @@ contract MinerRegistry {
         address miner = msg.sender;
 
         if (miners[miner]) revert AlreadyStaked();
-        if (unstakeRequestTime[miner] != 0) revert UnstakeInProgress();
+        if (unstakeRequested[miner]) revert UnstakeInProgress();
 
         if (centToken.balanceOf(msg.sender) < STAKE_AMOUNT) revert InsufficientBalance();
         if (centToken.allowance(msg.sender, address(this)) < STAKE_AMOUNT) revert InsufficientAllowance();
 
+        uint256 balanceBefore = centToken.balanceOf(address(this));
         centToken.safeTransferFrom(msg.sender, address(this), STAKE_AMOUNT);
+        uint256 balanceAfter = centToken.balanceOf(address(this));
+
+        if (balanceAfter != balanceBefore + STAKE_AMOUNT) revert InvalidStakeTransfer();
 
         miners[miner] = true;
         stakeTime[miner] = block.timestamp;
@@ -159,7 +167,8 @@ contract MinerRegistry {
 
         if (!miners[miner]) revert NotStaked();
 
-        unstakeRequestTime[miner] = block.timestamp + 1;
+        unstakeRequestTime[miner] = block.timestamp;
+        unstakeRequested[miner] = true;
         miners[miner] = false;
         activeMinerCount--;
 
@@ -172,16 +181,16 @@ contract MinerRegistry {
     /// @dev Self-only flow: only the original staker/miner can finalize their unstake.
     function finalizeUnstake() external nonReentrant {
         address miner = msg.sender;
-        uint256 requestMarker = unstakeRequestTime[miner];
 
-        if (requestMarker == 0) revert NotStaked();
+        if (!unstakeRequested[miner]) revert NotStaked();
 
-        uint256 requestTime = requestMarker - 1;
+        uint256 requestTime = unstakeRequestTime[miner];
         if (block.timestamp < requestTime + UNSTAKE_DELAY) revert UnstakeDelayNotMet();
 
         delete stakeTime[miner];
         delete stakeBlock[miner];
         delete unstakeRequestTime[miner];
+        delete unstakeRequested[miner];
 
         centToken.safeTransfer(miner, STAKE_AMOUNT);
 
@@ -210,7 +219,7 @@ contract MinerRegistry {
         if (refundRecipient == address(0)) revert InvalidRefundRecipient();
 
         bool wasActive = miners[miner];
-        bool hasStake = wasActive || stakeBlock[miner] != 0 || unstakeRequestTime[miner] != 0 || stakeTime[miner] != 0;
+        bool hasStake = wasActive || unstakeRequested[miner] || stakeBlock[miner] != 0 || unstakeRequestTime[miner] != 0 || stakeTime[miner] != 0;
 
         if (wasActive) {
             activeMinerCount--;
@@ -220,6 +229,7 @@ contract MinerRegistry {
         delete stakeTime[miner];
         delete stakeBlock[miner];
         delete unstakeRequestTime[miner];
+        delete unstakeRequested[miner];
 
         if (hasStake) {
             centToken.safeTransfer(refundRecipient, STAKE_AMOUNT);
