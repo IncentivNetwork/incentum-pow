@@ -63,6 +63,10 @@ var CheckpointOracles = map[common.Hash]*CheckpointOracleConfig{
 
 func newUint64(val uint64) *uint64 { return &val }
 
+func newAddress(val common.Address) *common.Address {
+	return &val
+}
+
 var (
 	MainnetTerminalTotalDifficulty, _ = new(big.Int).SetString("58_750_000_000_000_000_000_000", 0)
 
@@ -262,6 +266,8 @@ var (
 		FastBlock:                     big.NewInt(319000),
 		ZeroRewardBlock:               big.NewInt(471000),
 		MergeNetsplitBlock:            nil,
+		DPoWBlock:                     big.NewInt(500000),
+		MinerRegistryAddress:          newAddress(common.HexToAddress("0x0000000000000000000000000000000000005002")),
 		IrregularStateChangeHeight:    nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -296,6 +302,8 @@ var (
 		FastBlock:                     big.NewInt(0),
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
+		DPoWBlock:                     big.NewInt(2000000),
+		MinerRegistryAddress:          newAddress(common.HexToAddress("0x0000000000000000000000000000000000002001")),
 		IrregularStateChangeHeight:    big.NewInt(2429000),
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -329,6 +337,10 @@ var (
 		FastBlock:                     big.NewInt(0),
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
+		DPoWBlock:                     big.NewInt(100),
+		MinerRegistryAddress:          newAddress(common.HexToAddress("0x0000000000000000000000000000000000000100")),
+		DPoWMaturityTime:              300,
+		DPoWMaturityBlocks:            60,
 		IrregularStateChangeHeight:    nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -562,6 +574,11 @@ type ChainConfig struct {
 	FastBlock              *big.Int `json:"fastBlock,omitempty"`              // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
 	MergeNetsplitBlock     *big.Int `json:"mergeNetsplitBlock,omitempty"`     // Virtual fork after The Merge to use as a network splitter
 
+	DPoWBlock *big.Int `json:"dpowBlock,omitempty"`								//DPoWBlock is the block number at which Delegated Proof-of-Work activates. nil = never activates.
+	MinerRegistryAddress *common.Address `json:"minerRegistryAddress,omitempty"`	//MinerRegistryAddress is the address of the on-chain MinerRegistry contract. Must be set when DPoWBlock is non-nil.
+	DPoWMaturityTime uint64 `json:"dpowMaturityTime,omitempty"`					// DPoWMaturityTime is the minimum number of seconds a miner must be staked before their blocks are accepted. Defaults to 86400 (24 hours) if zero.
+	DPoWMaturityBlocks uint64 `json:"dpowMaturityBlocks,omitempty"` 			//DPoWMaturityBlocks is the minimum number of blocks a miner must be staked before their blocks are accepted. Defaults to 17280 if zero.
+
 	IrregularStateChangeHeight *big.Int `json:"irregularStateChangeHeight,omitempty"` // Irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
 
 	// Fork scheduling was switched from blocks to timestamps here
@@ -789,6 +806,49 @@ func (c *ChainConfig) IsFast(num *big.Int) bool {
 	return isBlockForked(c.FastBlock, num)
 }
 
+// IsDPoW returns whether num is either equal to the DPoW fork block or greater.
+func (c *ChainConfig) IsDPoW(num *big.Int) bool {
+	return isBlockForked(c.DPoWBlock, num)
+}
+
+// GetMinerRegistryAddress returns the configured miner registry address or zero address if unset.
+func (c *ChainConfig) GetMinerRegistryAddress() common.Address {
+	if c.MinerRegistryAddress == nil {
+		return common.Address{}
+	}
+	return *c.MinerRegistryAddress
+}
+
+// GetDPoWMaturityTime returns the configured maturity time in seconds,
+// or the default 24h (86400s) if unset.
+func (c *ChainConfig) GetDPoWMaturityTime() uint64 {
+	if c.DPoWMaturityTime == 0 {
+		return 86400
+	}
+	return c.DPoWMaturityTime
+}
+
+// GetDPoWMaturityBlocks returns the required staking block count as *big.Int.
+// Returns the mainnet default (17280) if not explicitly set.
+func (c *ChainConfig) GetDPoWMaturityBlocks() *big.Int {
+	if c.DPoWMaturityBlocks == 0 {
+		return big.NewInt(17_280)
+	}
+	return new(big.Int).SetUint64(c.DPoWMaturityBlocks)
+}
+
+// CheckDPoWConfig validates DPoW-specific chain config invariants.
+func (c *ChainConfig) CheckDPoWConfig() error {
+	switch {
+	case c.DPoWBlock == nil:
+		return nil
+	case c.MinerRegistryAddress == nil || *c.MinerRegistryAddress == (common.Address{}):
+		return fmt.Errorf("dpowBlock is set to %s but minerRegistryAddress is missing or zero address", c.DPoWBlock.String())
+	default:
+		return nil
+	}
+}
+
 // IsIrregularStateChange returns whether num is equal to the irregular state change height.
 func (c *ChainConfig) IsIrregularStateChange(num *big.Int) bool {
 	if c.IrregularStateChangeHeight == nil || num == nil {
@@ -967,6 +1027,18 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if isForkBlockIncompatible(c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock, headNumber) {
 		return newBlockCompatError("Merge netsplit fork block", c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock)
+	}
+	if isForkBlockIncompatible(c.DPoWBlock, newcfg.DPoWBlock, headNumber) {
+		return newBlockCompatError("DPoW fork block", c.DPoWBlock, newcfg.DPoWBlock)
+	}
+	if c.IsDPoW(headNumber) && c.GetMinerRegistryAddress() != newcfg.GetMinerRegistryAddress() {
+		return newBlockCompatError("DPoW miner registry address", c.DPoWBlock, newcfg.DPoWBlock)
+	}
+	if c.IsDPoW(headNumber) && c.GetDPoWMaturityTime() != newcfg.GetDPoWMaturityTime() {
+		return newBlockCompatError("DPoW maturity time", c.DPoWBlock, newcfg.DPoWBlock)
+	}
+	if c.IsDPoW(headNumber) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
+		return newBlockCompatError("DPoW maturity blocks", c.DPoWBlock, newcfg.DPoWBlock)
 	}
 	if isForkTimestampIncompatible(c.ShanghaiTime, newcfg.ShanghaiTime, headTimestamp) {
 		return newTimestampCompatError("Shanghai fork timestamp", c.ShanghaiTime, newcfg.ShanghaiTime)

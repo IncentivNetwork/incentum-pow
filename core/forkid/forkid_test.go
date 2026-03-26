@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"math"
 	"testing"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -405,6 +406,135 @@ func TestEncoding(t *testing.T) {
 		}
 		if !bytes.Equal(have, tt.want) {
 			t.Errorf("test %d: RLP mismatch: have %x, want %x", i, have, tt.want)
+		}
+	}
+}
+
+func TestDPoWForkIDBehavior(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000000100")
+	genesis := common.HexToHash("0x1234")
+
+	base := &params.ChainConfig{
+		ChainID:               big.NewInt(1),
+		DPoWBlock:             big.NewInt(100),
+		MinerRegistryAddress:  &addr,
+		DPoWMaturityTime:      300,
+		DPoWMaturityBlocks:    60,
+	}
+
+	sameForkDifferentMaturity := &params.ChainConfig{
+		ChainID:               big.NewInt(1),
+		DPoWBlock:             big.NewInt(100),
+		MinerRegistryAddress:  &addr,
+		DPoWMaturityTime:      999,
+		DPoWMaturityBlocks:    999,
+	}
+
+	differentDPoWBlock := &params.ChainConfig{
+		ChainID:               big.NewInt(1),
+		DPoWBlock:             big.NewInt(200),
+		MinerRegistryAddress:  &addr,
+		DPoWMaturityTime:      300,
+		DPoWMaturityBlocks:    60,
+	}
+
+	// DPoWMaturityTime / DPoWMaturityBlocks must NOT affect forkid.
+	id1 := NewID(base, genesis, 1000, 0)
+	id2 := NewID(sameForkDifferentMaturity, genesis, 1000, 0)
+	if id1 != id2 {
+		t.Fatalf("forkid changed when only DPoW maturity settings changed: have=%x want=%x", id2, id1)
+	}
+
+	// DPoWBlock MUST affect forkid.
+	id3 := NewID(differentDPoWBlock, genesis, 1000, 0)
+	if id1 == id3 {
+		t.Fatalf("forkid did not change when DPoWBlock changed: id1=%x id3=%x", id1, id3)
+	}
+
+	// Before activation, DPoWBlock should appear as the next fork.
+	preFork := NewID(base, genesis, 0, 0)
+	if preFork.Next != 100 {
+		t.Fatalf("unexpected next fork before DPoW activation: have=%d want=%d", preFork.Next, 100)
+	}
+}
+
+func TestIncentivDPoWForkIDs(t *testing.T) {
+	tests := []struct {
+		name    string
+		config   *params.ChainConfig
+		genesis common.Hash
+		head    uint64
+		want    ID
+	}{
+		{
+			name:    "incentiv-mainnet before dpow",
+			config:   params.IncentivMainnetChainConfig,
+			genesis: params.IncentivMainnetGenesisHash,
+			head:    1999999,
+			want:    ID{Hash: checksumToBytes(0x2c9ccf97), Next: 2000000},
+		},
+		{
+			name:    "incentiv-mainnet at dpow",
+			config:   params.IncentivMainnetChainConfig,
+			genesis: params.IncentivMainnetGenesisHash,
+			head:    2000000,
+			want:    ID{Hash: checksumToBytes(0xb048c9cb), Next: 1755203160},
+		},
+		{
+			name:    "incentiv-mainnet after dpow",
+			config:   params.IncentivMainnetChainConfig,
+			genesis: params.IncentivMainnetGenesisHash,
+			head:    2000001,
+			want:    ID{Hash: checksumToBytes(0xb048c9cb), Next: 1755203160},
+		},
+		{
+			name:    "incentiv-testnet before dpow",
+			config:   params.IncentivTestnetChainConfig,
+			genesis: params.IncentivTestnetGenesisHash,
+			head:    499999,
+			want:    ID{Hash: checksumToBytes(0x8e97e66d), Next: 500000},
+		},
+		{
+			name:    "incentiv-testnet at dpow",
+			config:   params.IncentivTestnetChainConfig,
+			genesis: params.IncentivTestnetGenesisHash,
+			head:    500000,
+			want:    ID{Hash: checksumToBytes(0xc9346ac3), Next: 1755203160},
+		},
+		{
+			name:    "incentiv-testnet after dpow",
+			config:   params.IncentivTestnetChainConfig,
+			genesis: params.IncentivTestnetGenesisHash,
+			head:    500001,
+			want:    ID{Hash: checksumToBytes(0xc9346ac3), Next: 1755203160},
+		},
+		{
+			name:    "incentiv-devnet before dpow",
+			config:   params.IncentivDevnetChainConfig,
+			genesis: params.IncentivDevnetGenesisHash,
+			head:    99,
+			want:    ID{Hash: checksumToBytes(0xb89332ec), Next: 100},
+		},
+		{
+			name:    "incentiv-devnet at dpow",
+			config:   params.IncentivDevnetChainConfig,
+			genesis: params.IncentivDevnetGenesisHash,
+			head:    100,
+			want:    ID{Hash: checksumToBytes(0x7f3bd945), Next: 21800},
+		},
+		{
+			name:    "incentiv-devnet after dpow",
+			config:   params.IncentivDevnetChainConfig,
+			genesis: params.IncentivDevnetGenesisHash,
+			head:    101,
+			want:    ID{Hash: checksumToBytes(0x7f3bd945), Next: 21800},
+		},
+	}
+
+	for _, tt := range tests {
+		got := NewID(tt.config, tt.genesis, tt.head, 0)
+		if got != tt.want {
+			t.Fatalf("%s: unexpected forkid: got=%#v want=%#v", tt.name, got, tt.want)
 		}
 	}
 }
