@@ -399,6 +399,12 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 		newcfg = storedcfg
 		applyOverrides(newcfg)
 	}
+	if err := newcfg.CheckConfigForkOrder(); err != nil {
+		return newcfg, common.Hash{}, err
+	}
+	if err := newcfg.CheckDPoWConfig(); err != nil {
+		return newcfg, common.Hash{}, err
+	}
 	// Check config compatibility and write the config. Compatibility errors
 	// are returned to the caller unless we're already at block zero.
 	head := rawdb.ReadHeadHeader(db)

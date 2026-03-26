@@ -19,8 +19,8 @@ package forkid
 import (
 	"bytes"
 	"math"
-	"testing"
 	"math/big"
+	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -415,27 +415,27 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 	genesis := common.HexToHash("0x1234")
 
 	base := &params.ChainConfig{
-		ChainID:               big.NewInt(1),
-		DPoWBlock:             big.NewInt(100),
-		MinerRegistryAddress:  &addr,
-		DPoWMaturityTime:      300,
-		DPoWMaturityBlocks:    60,
+		ChainID:              big.NewInt(1),
+		DPoWBlock:            big.NewInt(100),
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     300,
+		DPoWMaturityBlocks:   60,
 	}
 
 	sameForkDifferentMaturity := &params.ChainConfig{
-		ChainID:               big.NewInt(1),
-		DPoWBlock:             big.NewInt(100),
-		MinerRegistryAddress:  &addr,
-		DPoWMaturityTime:      999,
-		DPoWMaturityBlocks:    999,
+		ChainID:              big.NewInt(1),
+		DPoWBlock:            big.NewInt(100),
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     999,
+		DPoWMaturityBlocks:   999,
 	}
 
 	differentDPoWBlock := &params.ChainConfig{
-		ChainID:               big.NewInt(1),
-		DPoWBlock:             big.NewInt(200),
-		MinerRegistryAddress:  &addr,
-		DPoWMaturityTime:      300,
-		DPoWMaturityBlocks:    60,
+		ChainID:              big.NewInt(1),
+		DPoWBlock:            big.NewInt(200),
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     300,
+		DPoWMaturityBlocks:   60,
 	}
 
 	// DPoWMaturityTime / DPoWMaturityBlocks must NOT affect forkid.
@@ -461,70 +461,70 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 func TestIncentivDPoWForkIDs(t *testing.T) {
 	tests := []struct {
 		name    string
-		config   *params.ChainConfig
+		config  *params.ChainConfig
 		genesis common.Hash
 		head    uint64
 		want    ID
 	}{
 		{
 			name:    "incentiv-mainnet before dpow",
-			config:   params.IncentivMainnetChainConfig,
+			config:  params.IncentivMainnetChainConfig,
 			genesis: params.IncentivMainnetGenesisHash,
 			head:    1999999,
 			want:    ID{Hash: checksumToBytes(0x2c9ccf97), Next: 2000000},
 		},
 		{
 			name:    "incentiv-mainnet at dpow",
-			config:   params.IncentivMainnetChainConfig,
+			config:  params.IncentivMainnetChainConfig,
 			genesis: params.IncentivMainnetGenesisHash,
 			head:    2000000,
 			want:    ID{Hash: checksumToBytes(0xb048c9cb), Next: 1755203160},
 		},
 		{
 			name:    "incentiv-mainnet after dpow",
-			config:   params.IncentivMainnetChainConfig,
+			config:  params.IncentivMainnetChainConfig,
 			genesis: params.IncentivMainnetGenesisHash,
 			head:    2000001,
 			want:    ID{Hash: checksumToBytes(0xb048c9cb), Next: 1755203160},
 		},
 		{
 			name:    "incentiv-testnet before dpow",
-			config:   params.IncentivTestnetChainConfig,
+			config:  params.IncentivTestnetChainConfig,
 			genesis: params.IncentivTestnetGenesisHash,
 			head:    499999,
 			want:    ID{Hash: checksumToBytes(0x8e97e66d), Next: 500000},
 		},
 		{
 			name:    "incentiv-testnet at dpow",
-			config:   params.IncentivTestnetChainConfig,
+			config:  params.IncentivTestnetChainConfig,
 			genesis: params.IncentivTestnetGenesisHash,
 			head:    500000,
 			want:    ID{Hash: checksumToBytes(0xc9346ac3), Next: 1755203160},
 		},
 		{
 			name:    "incentiv-testnet after dpow",
-			config:   params.IncentivTestnetChainConfig,
+			config:  params.IncentivTestnetChainConfig,
 			genesis: params.IncentivTestnetGenesisHash,
 			head:    500001,
 			want:    ID{Hash: checksumToBytes(0xc9346ac3), Next: 1755203160},
 		},
 		{
 			name:    "incentiv-devnet before dpow",
-			config:   params.IncentivDevnetChainConfig,
+			config:  params.IncentivDevnetChainConfig,
 			genesis: params.IncentivDevnetGenesisHash,
 			head:    99,
 			want:    ID{Hash: checksumToBytes(0xb89332ec), Next: 100},
 		},
 		{
 			name:    "incentiv-devnet at dpow",
-			config:   params.IncentivDevnetChainConfig,
+			config:  params.IncentivDevnetChainConfig,
 			genesis: params.IncentivDevnetGenesisHash,
 			head:    100,
 			want:    ID{Hash: checksumToBytes(0x7f3bd945), Next: 21800},
 		},
 		{
 			name:    "incentiv-devnet after dpow",
-			config:   params.IncentivDevnetChainConfig,
+			config:  params.IncentivDevnetChainConfig,
 			genesis: params.IncentivDevnetGenesisHash,
 			head:    101,
 			want:    ID{Hash: checksumToBytes(0x7f3bd945), Next: 21800},

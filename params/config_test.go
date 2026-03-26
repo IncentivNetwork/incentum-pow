@@ -249,11 +249,11 @@ func TestCheckCompatibleDPoW(t *testing.T) {
 	addr2 := common.HexToAddress("0x0000000000000000000000000000000000002222")
 
 	tests := []struct {
-		name        string
-		stored      *ChainConfig
-		new         *ChainConfig
-		headBlock   uint64
-		wantErr     *ConfigCompatError
+		name      string
+		stored    *ChainConfig
+		new       *ChainConfig
+		headBlock uint64
+		wantErr   *ConfigCompatError
 	}{
 		{
 			name: "dpow block mismatch before activation is allowed",
