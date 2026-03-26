@@ -241,6 +241,7 @@ contract MinerRegistry {
     /// @notice Returns whether a miner is currently authorized for block production.
     /// @dev Authorization requires active stake status and both maturity thresholds to be satisfied.
     /// @param miner Miner address to check.
+    /// @return isAuthorized True if the miner is active and both maturity thresholds are satisfied.
     function isAuthorizedMiner(address miner) external view returns (bool) {
         return miners[miner]
             && block.timestamp >= stakeTime[miner] + MATURITY_TIME

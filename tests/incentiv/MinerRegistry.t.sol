@@ -36,6 +36,16 @@ contract MinerRegistryTest is Test {
         cent.approve(address(registry), stakeAmount);
     }
 
+    function testConstructor_RevertsOnZeroAddresses() public {
+        cent = new MockCENT();
+
+        vm.expectRevert(MinerRegistry.ZeroAddress.selector);
+        new MinerRegistry(address(0), timelock);
+
+        vm.expectRevert(MinerRegistry.ZeroAddress.selector);
+        new MinerRegistry(address(cent), address(0));
+    }
+
     function testStake_SetsState() public {
         vm.prank(miner);
         registry.stake();
