@@ -51,12 +51,12 @@ contract MinerRegistry {
     /// @custom:storage-slot 3
     mapping(address miner => uint256 timestamp) public unstakeRequestTime;
 
-    /// @custom:storage-slot 4
-    mapping(address miner => bool isPending) private unstakeRequested;
-
     // ============================================================
     // Non-consensus storage (must stay after slots 0-3)
     // ============================================================
+
+    /// @custom:storage-slot 4
+    mapping(address miner => bool isPending) private unstakeRequested;
 
     uint256 public activeMinerCount;
     bool public stakingPaused;

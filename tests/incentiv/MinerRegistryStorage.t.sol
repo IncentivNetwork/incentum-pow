@@ -59,13 +59,6 @@ contract MinerRegistryStorageTest is Test {
         assertEq(uint256(rootSlotZero), 0);
     }
 
-    function testStorageSlots_ExportRawKeys() public {
-        emit log_bytes32(_mappingSlot(miner, 0));
-        emit log_bytes32(_mappingSlot(miner, 1));
-        emit log_bytes32(_mappingSlot(miner, 2));
-        emit log_bytes32(_mappingSlot(miner, 3));
-    }
-
     function _mappingSlot(address key, uint256 slot) internal pure returns (bytes32) {
         return keccak256(abi.encode(key, slot));
     }
