@@ -1196,9 +1196,9 @@ func newTimestampCompatError(what string, storedtime, newtime *uint64) *ConfigCo
 
 func (err *ConfigCompatError) Error() string {
 	if err.StoredBlock != nil {
-		return fmt.Sprintf("mismatching %s in database (have block %d, want block %d, rewindto block %d)", err.What, err.StoredBlock, err.NewBlock, err.RewindToBlock)
+		return fmt.Sprintf("mismatching %s in database (have block %v, want block %v, rewindto block %d)", err.What, err.StoredBlock, err.NewBlock, err.RewindToBlock)
 	}
-	return fmt.Sprintf("mismatching %s in database (have timestamp %d, want timestamp %d, rewindto timestamp %d)", err.What, err.StoredTime, err.NewTime, err.RewindToTime)
+	return fmt.Sprintf("mismatching %s in database (have timestamp %v, want timestamp %v, rewindto timestamp %d)", err.What, err.StoredTime, err.NewTime, err.RewindToTime)
 }
 
 // GetFeePoolContractAddress returns the appropriate FeePool contract address based on the chain ID
