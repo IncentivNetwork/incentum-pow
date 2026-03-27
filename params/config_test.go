@@ -181,6 +181,22 @@ func TestCheckDPoWConfig(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "negative dpow block is rejected",
+			cfg: &ChainConfig{
+				DPoWBlock:            big.NewInt(-1),
+				MinerRegistryAddress: &addr,
+			},
+			wantErr: true,
+		},
+		{
+			name: "dpow block exceeding uint64 is rejected",
+			cfg: &ChainConfig{
+				DPoWBlock:            new(big.Int).Lsh(big.NewInt(1), 64),
+				MinerRegistryAddress: &addr,
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

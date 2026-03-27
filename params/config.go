@@ -853,6 +853,10 @@ func (c *ChainConfig) CheckDPoWConfig() error {
 	switch {
 	case c.DPoWBlock == nil:
 		return nil
+	case c.DPoWBlock.Sign() < 0:
+		return fmt.Errorf("dpowBlock must be non-negative, got %s", c.DPoWBlock.String())
+	case c.DPoWBlock.BitLen() > 64:
+		return fmt.Errorf("dpowBlock exceeds uint64 range, got %s", c.DPoWBlock.String())
 	case c.MinerRegistryAddress == nil || *c.MinerRegistryAddress == (common.Address{}):
 		return fmt.Errorf("dpowBlock is set to %s but minerRegistryAddress is missing or zero address", c.DPoWBlock.String())
 	default:
