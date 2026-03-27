@@ -49,5 +49,5 @@ var (
 
 	// ErrMinerRegistryNotConfigured is returned when DPoW is active for the
 	// current block number but no MinerRegistryAddress is set in ChainConfig.
-	ErrMinerRegistryNotConfigured = errors.New("DPoW is active but MinerRegistryAddress is not configured")
+	ErrMinerRegistryNotConfigured = errors.New("miner registry not configured: dpow block is set but MinerRegistryAddress is not configured")
 )
