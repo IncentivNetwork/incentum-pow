@@ -574,10 +574,21 @@ type ChainConfig struct {
 	FastBlock              *big.Int `json:"fastBlock,omitempty"`              // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
 	MergeNetsplitBlock     *big.Int `json:"mergeNetsplitBlock,omitempty"`     // Virtual fork after The Merge to use as a network splitter
 
-	DPoWBlock            *big.Int        `json:"dpowBlock,omitempty"`            //DPoWBlock is the block number at which Delegated Proof-of-Work activates. nil = never activates.
-	MinerRegistryAddress *common.Address `json:"minerRegistryAddress,omitempty"` //MinerRegistryAddress is the address of the on-chain MinerRegistry contract. Must be set when DPoWBlock is non-nil.
-	DPoWMaturityTime     uint64          `json:"dpowMaturityTime,omitempty"`     // DPoWMaturityTime is the minimum number of seconds a miner must be staked before their blocks are accepted. Defaults to 86400 (24 hours) if zero.
-	DPoWMaturityBlocks   uint64          `json:"dpowMaturityBlocks,omitempty"`   //DPoWMaturityBlocks is the minimum number of blocks a miner must be staked before their blocks are accepted. Defaults to 17280 if zero.
+	// DPoWBlock is the block number at which Delegated Proof-of-Work activates.
+	// nil = never activates, 0 = already activated.
+	DPoWBlock *big.Int `json:"dpowBlock,omitempty"`
+
+	// MinerRegistryAddress is the address of the on-chain MinerRegistry contract.
+	// Must be set when DPoWBlock is non-nil.
+	MinerRegistryAddress *common.Address `json:"minerRegistryAddress,omitempty"`
+
+	// DPoWMaturityTime is the minimum number of seconds a miner must be staked
+	// before their blocks are accepted. Defaults to 86400 (24 hours) if zero.
+	DPoWMaturityTime uint64 `json:"dpowMaturityTime,omitempty"`
+
+	// DPoWMaturityBlocks is the minimum number of blocks a miner must be staked
+	// before their blocks are accepted. Defaults to 17280 if zero.
+	DPoWMaturityBlocks uint64 `json:"dpowMaturityBlocks,omitempty"`
 
 	IrregularStateChangeHeight *big.Int `json:"irregularStateChangeHeight,omitempty"` // Irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
 
