@@ -17,6 +17,7 @@
 package params
 
 import (
+	"encoding/json"
 	"math/big"
 	"reflect"
 	"testing"
@@ -204,6 +205,62 @@ func TestCheckDPoWConfig(t *testing.T) {
 		if (err != nil) != tt.wantErr {
 			t.Fatalf("%s: unexpected error state: err=%v wantErr=%v", tt.name, err, tt.wantErr)
 		}
+	}
+}
+
+func TestDPoWConfigJSONRoundTrip(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
+
+	empty := &ChainConfig{}
+	blob, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatalf("marshal empty config: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(blob, &raw); err != nil {
+		t.Fatalf("unmarshal empty config json: %v", err)
+	}
+
+	for _, field := range []string{
+		"dpowBlock",
+		"minerRegistryAddress",
+		"dpowMaturityTime",
+		"dpowMaturityBlocks",
+	} {
+		if _, ok := raw[field]; ok {
+			t.Fatalf("expected %s to be omitted from JSON when zero/nil", field)
+		}
+	}
+
+	cfg := &ChainConfig{
+		DPoWBlock:            big.NewInt(100),
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     300,
+		DPoWMaturityBlocks:   60,
+	}
+
+	blob, err = json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal full config: %v", err)
+	}
+
+	var got ChainConfig
+	if err := json.Unmarshal(blob, &got); err != nil {
+		t.Fatalf("unmarshal full config json: %v", err)
+	}
+
+	if got.DPoWBlock == nil || got.DPoWBlock.Cmp(cfg.DPoWBlock) != 0 {
+		t.Fatalf("unexpected DPoWBlock after round-trip: have=%v want=%v", got.DPoWBlock, cfg.DPoWBlock)
+	}
+	if got.MinerRegistryAddress == nil || *got.MinerRegistryAddress != addr {
+		t.Fatalf("unexpected MinerRegistryAddress after round-trip: have=%v want=%v", got.MinerRegistryAddress, addr)
+	}
+	if got.DPoWMaturityTime != cfg.DPoWMaturityTime {
+		t.Fatalf("unexpected DPoWMaturityTime after round-trip: have=%d want=%d", got.DPoWMaturityTime, cfg.DPoWMaturityTime)
+	}
+	if got.DPoWMaturityBlocks != cfg.DPoWMaturityBlocks {
+		t.Fatalf("unexpected DPoWMaturityBlocks after round-trip: have=%d want=%d", got.DPoWMaturityBlocks, cfg.DPoWMaturityBlocks)
 	}
 }
 
