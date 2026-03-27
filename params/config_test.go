@@ -17,11 +17,13 @@
 package params
 
 import (
+	"encoding/json"
 	"math/big"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 )
 
@@ -134,5 +136,311 @@ func TestConfigRules(t *testing.T) {
 	stamp = math.MaxInt64
 	if r := c.Rules(big.NewInt(0), true, stamp); !r.IsShanghai {
 		t.Errorf("expected %v to be shanghai", stamp)
+	}
+}
+
+func TestCheckDPoWConfig(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
+
+	tests := []struct {
+		name    string
+		cfg     *ChainConfig
+		wantErr bool
+	}{
+		{
+			name:    "dpow disabled and no registry",
+			cfg:     &ChainConfig{},
+			wantErr: false,
+		},
+		{
+			name: "dpow enabled with registry",
+			cfg: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr,
+			},
+			wantErr: false,
+		},
+		{
+			name: "dpow enabled without registry",
+			cfg: &ChainConfig{
+				DPoWBlock: big.NewInt(100),
+			},
+			wantErr: true,
+		},
+		{
+			name: "dpow enabled with zero registry address",
+			cfg: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: new(common.Address),
+			},
+			wantErr: true,
+		},
+		{
+			name: "registry without dpow block is ignored",
+			cfg: &ChainConfig{
+				MinerRegistryAddress: &addr,
+			},
+			wantErr: false,
+		},
+		{
+			name: "negative dpow block is rejected",
+			cfg: &ChainConfig{
+				DPoWBlock:            big.NewInt(-1),
+				MinerRegistryAddress: &addr,
+			},
+			wantErr: true,
+		},
+		{
+			name: "dpow block exceeding uint64 is rejected",
+			cfg: &ChainConfig{
+				DPoWBlock:            new(big.Int).Lsh(big.NewInt(1), 64),
+				MinerRegistryAddress: &addr,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		err := tt.cfg.CheckDPoWConfig()
+		if (err != nil) != tt.wantErr {
+			t.Fatalf("%s: unexpected error state: err=%v wantErr=%v", tt.name, err, tt.wantErr)
+		}
+	}
+}
+
+func TestDPoWConfigJSONRoundTrip(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
+
+	empty := &ChainConfig{}
+	blob, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatalf("marshal empty config: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(blob, &raw); err != nil {
+		t.Fatalf("unmarshal empty config json: %v", err)
+	}
+
+	for _, field := range []string{
+		"dpowBlock",
+		"minerRegistryAddress",
+		"dpowMaturityTime",
+		"dpowMaturityBlocks",
+	} {
+		if _, ok := raw[field]; ok {
+			t.Fatalf("expected %s to be omitted from JSON when zero/nil", field)
+		}
+	}
+
+	cfg := &ChainConfig{
+		DPoWBlock:            big.NewInt(100),
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     300,
+		DPoWMaturityBlocks:   60,
+	}
+
+	blob, err = json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal full config: %v", err)
+	}
+
+	var got ChainConfig
+	if err := json.Unmarshal(blob, &got); err != nil {
+		t.Fatalf("unmarshal full config json: %v", err)
+	}
+
+	if got.DPoWBlock == nil || got.DPoWBlock.Cmp(cfg.DPoWBlock) != 0 {
+		t.Fatalf("unexpected DPoWBlock after round-trip: have=%v want=%v", got.DPoWBlock, cfg.DPoWBlock)
+	}
+	if got.MinerRegistryAddress == nil || *got.MinerRegistryAddress != addr {
+		t.Fatalf("unexpected MinerRegistryAddress after round-trip: have=%v want=%v", got.MinerRegistryAddress, addr)
+	}
+	if got.DPoWMaturityTime != cfg.DPoWMaturityTime {
+		t.Fatalf("unexpected DPoWMaturityTime after round-trip: have=%d want=%d", got.DPoWMaturityTime, cfg.DPoWMaturityTime)
+	}
+	if got.DPoWMaturityBlocks != cfg.DPoWMaturityBlocks {
+		t.Fatalf("unexpected DPoWMaturityBlocks after round-trip: have=%d want=%d", got.DPoWMaturityBlocks, cfg.DPoWMaturityBlocks)
+	}
+}
+
+func TestDPoWHelpers(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
+
+	cfg := &ChainConfig{}
+	if cfg.IsDPoW(nil) {
+		t.Fatalf("expected IsDPoW(nil) to return false")
+	}
+	if cfg.IsDPoW(big.NewInt(0)) {
+		t.Fatalf("expected DPoW to be disabled when DPoWBlock is nil")
+	}
+	if got := cfg.GetMinerRegistryAddress(); got != (common.Address{}) {
+		t.Fatalf("unexpected zero registry address default: %v", got.Hex())
+	}
+	if got := cfg.GetDPoWMaturityTime(); got != 86400 {
+		t.Fatalf("unexpected default DPoW maturity time: %d", got)
+	}
+	if got := cfg.GetDPoWMaturityBlocks(); got.Cmp(big.NewInt(17280)) != 0 {
+		t.Fatalf("unexpected default DPoW maturity blocks: %v", got)
+	}
+
+	cfg = &ChainConfig{
+		DPoWBlock:            big.NewInt(1000),
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     300,
+		DPoWMaturityBlocks:   60,
+	}
+	if cfg.IsDPoW(big.NewInt(999)) {
+		t.Fatalf("expected DPoW to be inactive before block 1000")
+	}
+	if !cfg.IsDPoW(big.NewInt(1000)) {
+		t.Fatalf("expected DPoW to be active at block 1000")
+	}
+	if got := cfg.GetMinerRegistryAddress(); got != addr {
+		t.Fatalf("unexpected registry address: %v", got.Hex())
+	}
+	if got := cfg.GetDPoWMaturityTime(); got != 300 {
+		t.Fatalf("unexpected custom DPoW maturity time: %d", got)
+	}
+	if got := cfg.GetDPoWMaturityBlocks(); got.Cmp(big.NewInt(60)) != 0 {
+		t.Fatalf("unexpected custom DPoW maturity blocks: %v", got)
+	}
+}
+
+func TestIsDPoWImmediateActivation(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
+
+	cfg := &ChainConfig{
+		DPoWBlock:            big.NewInt(0),
+		MinerRegistryAddress: &addr,
+	}
+
+	if !cfg.IsDPoW(big.NewInt(0)) {
+		t.Fatalf("expected DPoW to be active at block 0 when DPoWBlock is 0")
+	}
+}
+
+func TestCheckCompatibleDPoW(t *testing.T) {
+	addr1 := common.HexToAddress("0x0000000000000000000000000000000000001111")
+	addr2 := common.HexToAddress("0x0000000000000000000000000000000000002222")
+
+	tests := []struct {
+		name      string
+		stored    *ChainConfig
+		new       *ChainConfig
+		headBlock uint64
+		wantErr   *ConfigCompatError
+	}{
+		{
+			name: "dpow block mismatch before activation is allowed",
+			stored: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+			},
+			new: &ChainConfig{
+				DPoWBlock:            big.NewInt(200),
+				MinerRegistryAddress: &addr1,
+			},
+			headBlock: 50,
+			wantErr:   nil,
+		},
+		{
+			name:   "dpow block introduced after head is already past activation",
+			stored: &ChainConfig{},
+			new: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+			},
+			headBlock: 150,
+			wantErr: &ConfigCompatError{
+				What:          "DPoW fork block",
+				StoredBlock:   nil,
+				NewBlock:      big.NewInt(100),
+				RewindToBlock: 99,
+			},
+		},
+		{
+			name: "dpow block mismatch after activation rewinds",
+			stored: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+			},
+			new: &ChainConfig{
+				DPoWBlock:            big.NewInt(200),
+				MinerRegistryAddress: &addr1,
+			},
+			headBlock: 150,
+			wantErr: &ConfigCompatError{
+				What:          "DPoW fork block",
+				StoredBlock:   big.NewInt(100),
+				NewBlock:      big.NewInt(200),
+				RewindToBlock: 99,
+			},
+		},
+		{
+			name: "registry mismatch after activation rewinds",
+			stored: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+			},
+			new: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr2,
+			},
+			headBlock: 150,
+			wantErr: &ConfigCompatError{
+				What:          "DPoW miner registry address",
+				StoredBlock:   big.NewInt(100),
+				NewBlock:      big.NewInt(100),
+				RewindToBlock: 99,
+			},
+		},
+		{
+			name: "maturity time mismatch after activation rewinds",
+			stored: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+				DPoWMaturityTime:     300,
+			},
+			new: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+				DPoWMaturityTime:     600,
+			},
+			headBlock: 150,
+			wantErr: &ConfigCompatError{
+				What:          "DPoW maturity time",
+				StoredBlock:   big.NewInt(100),
+				NewBlock:      big.NewInt(100),
+				RewindToBlock: 99,
+			},
+		},
+		{
+			name: "maturity blocks mismatch after activation rewinds",
+			stored: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+				DPoWMaturityBlocks:   60,
+			},
+			new: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+				DPoWMaturityBlocks:   120,
+			},
+			headBlock: 150,
+			wantErr: &ConfigCompatError{
+				What:          "DPoW maturity blocks",
+				StoredBlock:   big.NewInt(100),
+				NewBlock:      big.NewInt(100),
+				RewindToBlock: 99,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		err := tt.stored.CheckCompatible(tt.new, tt.headBlock, 0)
+		if !reflect.DeepEqual(err, tt.wantErr) {
+			t.Fatalf("%s: unexpected compatibility error: got=%v want=%v", tt.name, err, tt.wantErr)
+		}
 	}
 }
