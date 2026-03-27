@@ -40,7 +40,7 @@ func (ethash *Ethash) VerifyMinerAuthorization(
 	state *state.StateDB,
 	header *types.Header,
 ) error {
-	// Bypass in fake/test mining modes used by tests and devtools.
+	// Bypass in fake mining modes (ModeFake and ModeFullFake) used by tests and devtools.
 	if ethash.config.PowMode == ModeFake || ethash.config.PowMode == ModeFullFake {
 		return nil
 	}
