@@ -442,13 +442,13 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 	id1 := NewID(base, genesis, 1000, 0)
 	id2 := NewID(sameForkDifferentMaturity, genesis, 1000, 0)
 	if id1 != id2 {
-		t.Fatalf("forkid changed when only DPoW maturity settings changed: have=%x want=%x", id2, id1)
+		t.Fatalf("forkid changed when only DPoW maturity settings changed: have=%#v want=%#v", id2, id1)
 	}
 
 	// DPoWBlock MUST affect forkid.
 	id3 := NewID(differentDPoWBlock, genesis, 1000, 0)
 	if id1 == id3 {
-		t.Fatalf("forkid did not change when DPoWBlock changed: id1=%x id3=%x", id1, id3)
+		t.Fatalf("forkid did not change when DPoWBlock changed: id1=%#v id3=%#v", id1, id3)
 	}
 
 	// Before activation, DPoWBlock should appear as the next fork.

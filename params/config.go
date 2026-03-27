@@ -1043,17 +1043,25 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	if isForkBlockIncompatible(c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock, headNumber) {
 		return newBlockCompatError("Merge netsplit fork block", c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock)
 	}
+	storedDPoWBlock := c.DPoWBlock
+	if storedDPoWBlock == nil {
+		storedDPoWBlock = big.NewInt(0)
+	}
+	newDPoWBlock := newcfg.DPoWBlock
+	if newDPoWBlock == nil {
+		newDPoWBlock = big.NewInt(0)
+	}
 	if isForkBlockIncompatible(c.DPoWBlock, newcfg.DPoWBlock, headNumber) {
-		return newBlockCompatError("DPoW fork block", c.DPoWBlock, newcfg.DPoWBlock)
+		return newBlockCompatError("DPoW fork block", storedDPoWBlock, newDPoWBlock)
 	}
 	if c.IsDPoW(headNumber) && c.GetMinerRegistryAddress() != newcfg.GetMinerRegistryAddress() {
-		return newBlockCompatError("DPoW miner registry address", c.DPoWBlock, newcfg.DPoWBlock)
+		return newBlockCompatError("DPoW miner registry address", storedDPoWBlock, newDPoWBlock)
 	}
 	if c.IsDPoW(headNumber) && c.GetDPoWMaturityTime() != newcfg.GetDPoWMaturityTime() {
-		return newBlockCompatError("DPoW maturity time", c.DPoWBlock, newcfg.DPoWBlock)
+		return newBlockCompatError("DPoW maturity time", storedDPoWBlock, newDPoWBlock)
 	}
 	if c.IsDPoW(headNumber) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
-		return newBlockCompatError("DPoW maturity blocks", c.DPoWBlock, newcfg.DPoWBlock)
+		return newBlockCompatError("DPoW maturity blocks", storedDPoWBlock, newDPoWBlock)
 	}
 	if isForkTimestampIncompatible(c.ShanghaiTime, newcfg.ShanghaiTime, headTimestamp) {
 		return newTimestampCompatError("Shanghai fork timestamp", c.ShanghaiTime, newcfg.ShanghaiTime)
