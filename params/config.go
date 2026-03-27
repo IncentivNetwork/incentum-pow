@@ -1054,6 +1054,8 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	if isForkBlockIncompatible(c.DPoWBlock, newcfg.DPoWBlock, headNumber) {
 		return newBlockCompatError("DPoW fork block", storedDPoWBlock, newDPoWBlock)
 	}
+	// For any DPoW parameter change after activation, the rewind target is always
+	// the pre-DPoW boundary, so DPoWBlock is intentionally used for both sides.
 	if c.IsDPoW(headNumber) && c.GetMinerRegistryAddress() != newcfg.GetMinerRegistryAddress() {
 		return newBlockCompatError("DPoW miner registry address", storedDPoWBlock, newDPoWBlock)
 	}

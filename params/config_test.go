@@ -211,6 +211,9 @@ func TestDPoWHelpers(t *testing.T) {
 	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
 
 	cfg := &ChainConfig{}
+	if cfg.IsDPoW(nil) {
+		t.Fatalf("expected IsDPoW(nil) to return false")
+	}
 	if cfg.IsDPoW(big.NewInt(0)) {
 		t.Fatalf("expected DPoW to be disabled when DPoWBlock is nil")
 	}
