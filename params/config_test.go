@@ -288,6 +288,21 @@ func TestCheckCompatibleDPoW(t *testing.T) {
 			wantErr:   nil,
 		},
 		{
+			name:   "dpow block introduced after head is already past activation",
+			stored: &ChainConfig{},
+			new: &ChainConfig{
+				DPoWBlock:            big.NewInt(100),
+				MinerRegistryAddress: &addr1,
+			},
+			headBlock: 150,
+			wantErr: &ConfigCompatError{
+				What:          "DPoW fork block",
+				StoredBlock:   nil,
+				NewBlock:      big.NewInt(100),
+				RewindToBlock: 99,
+			},
+		},
+		{
 			name: "dpow block mismatch after activation rewinds",
 			stored: &ChainConfig{
 				DPoWBlock:            big.NewInt(100),
