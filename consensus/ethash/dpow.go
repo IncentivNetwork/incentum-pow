@@ -15,6 +15,9 @@ const (
 	dpowMinersSlot     = uint64(0)
 	dpowStakeTimeSlot  = uint64(1)
 	dpowStakeBlockSlot = uint64(2)
+	// Slot 3 (unstakeReq) is intentionally not read here. The unstake delay is
+	// enforced by the MinerRegistry contract, and slot 0 becomes false once the
+	// delay elapses.
 )
 
 func calculateMappingSlot(key common.Address, baseSlot uint64) common.Hash {
@@ -33,6 +36,15 @@ func calculateMappingSlot(key common.Address, baseSlot uint64) common.Hash {
 	data[63] = byte(baseSlot)
 
 	return crypto.Keccak256Hash(data[:])
+}
+
+func hashFitsUint64(h common.Hash) bool {
+	for _, b := range h[:24] {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (ethash *Ethash) VerifyMinerAuthorization(
@@ -64,16 +76,20 @@ func (ethash *Ethash) VerifyMinerAuthorization(
 	stakeBlockSlot := calculateMappingSlot(miner, dpowStakeBlockSlot)
 
 	isActiveRaw := state.GetState(registryAddr, isActiveSlot)
-	stakeTimeRaw := state.GetState(registryAddr, stakeTimeSlot)
-	stakeBlockRaw := state.GetState(registryAddr, stakeBlockSlot)
 
 	// slot 0 stores bool as uint256, so zero means inactive / unauthorized.
 	if isActiveRaw == (common.Hash{}) {
 		return consensus.ErrUnauthorizedMiner
 	}
 
+	stakeTimeRaw := state.GetState(registryAddr, stakeTimeSlot)
+	stakeBlockRaw := state.GetState(registryAddr, stakeBlockSlot)
+
 	// Time-based maturity check in overflow-safe subtraction form.
 	maturityTime := config.GetDPoWMaturityTime()
+	if !hashFitsUint64(stakeTimeRaw) {
+		return consensus.ErrMinerNotMature
+	}
 	stakeTime := stakeTimeRaw.Big().Uint64()
 	if header.Time < stakeTime || header.Time-stakeTime < maturityTime {
 		return consensus.ErrMinerNotMature
