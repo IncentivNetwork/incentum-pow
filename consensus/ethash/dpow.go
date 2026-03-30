@@ -70,7 +70,7 @@ func (ethash *Ethash) VerifyMinerAuthorization(
 
 	miner := header.Coinbase
 
-	// Read consensus-critical registry storage directly from state.
+	// Read active-miner status from registry storage (slot 0: bool as uint256).
 	isActiveSlot := calculateMappingSlot(miner, dpowMinersSlot)
 	isActiveRaw := state.GetState(registryAddr, isActiveSlot)
 
