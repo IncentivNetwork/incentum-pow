@@ -662,7 +662,7 @@ func (ethash *Ethash) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	// Returns a clean error for the local miner (e.g. stake not yet mature)
 	// instead of reaching the panic in Finalize().
 	if err := ethash.VerifyMinerAuthorization(chain.Config(), state, header); err != nil {
-		return nil, fmt.Errorf("DPoW: local miner %s not authorized: %w",
+		return nil, fmt.Errorf("DPoW: local miner %s not eligible: %w",
 			header.Coinbase.Hex(), err)
 	}
 	ethash.Finalize(chain, header, state, txs, uncles, nil)
