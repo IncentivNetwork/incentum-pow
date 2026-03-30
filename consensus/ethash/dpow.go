@@ -72,9 +72,6 @@ func (ethash *Ethash) VerifyMinerAuthorization(
 
 	// Read consensus-critical registry storage directly from state.
 	isActiveSlot := calculateMappingSlot(miner, dpowMinersSlot)
-	stakeTimeSlot := calculateMappingSlot(miner, dpowStakeTimeSlot)
-	stakeBlockSlot := calculateMappingSlot(miner, dpowStakeBlockSlot)
-
 	isActiveRaw := state.GetState(registryAddr, isActiveSlot)
 
 	// slot 0 stores bool as uint256, so zero means inactive / unauthorized.
@@ -82,6 +79,9 @@ func (ethash *Ethash) VerifyMinerAuthorization(
 		return consensus.ErrUnauthorizedMiner
 	}
 
+	// Compute and read maturity slots only after the active-miner check passes.
+	stakeTimeSlot := calculateMappingSlot(miner, dpowStakeTimeSlot)
+	stakeBlockSlot := calculateMappingSlot(miner, dpowStakeBlockSlot)
 	stakeTimeRaw := state.GetState(registryAddr, stakeTimeSlot)
 	stakeBlockRaw := state.GetState(registryAddr, stakeBlockSlot)
 
