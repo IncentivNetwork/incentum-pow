@@ -15,9 +15,9 @@ const (
 	dpowMinersSlot     = uint64(0)
 	dpowStakeTimeSlot  = uint64(1)
 	dpowStakeBlockSlot = uint64(2)
-	// Slot 3 (unstakeReq) is intentionally not read here. The unstake delay is
-	// enforced by the MinerRegistry contract, and slot 0 becomes false once the
-	// delay elapses.
+	// Slot 3 (unstakeReq) is intentionally not read here. In MinerRegistry,
+	// requestUnstake() immediately sets miners[miner] (slot 0) to false; the
+	// unstake delay only gates finalizeUnstake() and clearing stakeTime/stakeBlock.
 )
 
 func calculateMappingSlot(key common.Address, baseSlot uint64) common.Hash {
