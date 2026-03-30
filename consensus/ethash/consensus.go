@@ -642,6 +642,10 @@ func (ethash *Ethash) Prepare(chain consensus.ChainHeaderReader, header *types.H
 
 // Finalize implements consensus.Engine, accumulating the block and uncle rewards.
 func (ethash *Ethash) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+	if err := ethash.VerifyMinerAuthorization(chain.Config(), state, header); err != nil {
+		panic(fmt.Sprintf("DPoW consensus violation: block %s coinbase %s rejected: %v",
+			header.Number.String(), header.Coinbase.Hex(), err))
+	}
 	applyIrregularStateChange(chain.Config(), header.Number, state)
 
 	// Accumulate any block and uncle rewards
@@ -654,13 +658,15 @@ func (ethash *Ethash) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	if len(withdrawals) > 0 {
 		return nil, errors.New("ethash does not support withdrawals")
 	}
-	// Finalize block
+	// Check DPoW authorization before calling Finalize.
+	// Returns a clean error for the local miner (e.g. stake not yet mature)
+	// instead of reaching the panic in Finalize().
+	if err := ethash.VerifyMinerAuthorization(chain.Config(), state, header); err != nil {
+		return nil, fmt.Errorf("DPoW: local miner %s not authorized: %w",
+			header.Coinbase.Hex(), err)
+	}
 	ethash.Finalize(chain, header, state, txs, uncles, nil)
-
-	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
-
-	// Header seems complete, assemble into a block and return
 	return types.NewBlock(header, txs, uncles, receipts, trie.NewStackTrie(nil)), nil
 }
 
