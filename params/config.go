@@ -644,7 +644,11 @@ func (c *ChainConfig) Description() string {
 	switch {
 	case c.Ethash != nil:
 		if c.TerminalTotalDifficulty == nil {
-			banner += "Consensus: Ethash (proof-of-work)\n"
+			if c.DPoWBlock != nil {
+				banner += fmt.Sprintf("Consensus: Ethash + DPoW (authorized mining, activates at block #%-8v)\n", c.DPoWBlock)
+			} else {
+				banner += "Consensus: Ethash (proof-of-work)\n"
+			}
 		} else if !c.TerminalTotalDifficultyPassed {
 			banner += "Consensus: Beacon (proof-of-stake), merging from Ethash (proof-of-work)\n"
 		} else {
