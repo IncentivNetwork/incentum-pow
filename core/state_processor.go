@@ -91,7 +91,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if len(withdrawals) > 0 && !p.config.IsShanghai(block.Time()) {
 		return nil, nil, 0, fmt.Errorf("withdrawals before shanghai")
 	}
-	
+
 	// Check DPoW authorization before Finalize().
 	// VerifyHeader() cannot check DPoW (no state), so unauthorized blocks from peers
 	// would reach Finalize() and trigger a panic without this guard.
