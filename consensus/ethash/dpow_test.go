@@ -30,6 +30,8 @@ func buildTestState(t *testing.T, registryAddr, minerAddr common.Address, active
 	if active {
 		statedb.SetState(registryAddr, calculateMappingSlot(minerAddr, dpowMinersSlot), common.BigToHash(big.NewInt(1)))
 	}
+	// stakeTime/stakeBlock zero values are not written by this helper.
+	// Tests that need an explicit zero slot should overwrite it manually.
 	if stakeTime > 0 {
 		statedb.SetState(registryAddr, calculateMappingSlot(minerAddr, dpowStakeTimeSlot), common.BigToHash(new(big.Int).SetUint64(stakeTime)))
 	}
