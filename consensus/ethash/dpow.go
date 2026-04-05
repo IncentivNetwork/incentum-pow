@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+var _ consensus.DPoWVerifier = (*Ethash)(nil)
+
 const (
 	dpowMinersSlot     = uint64(0)
 	dpowStakeTimeSlot  = uint64(1)
