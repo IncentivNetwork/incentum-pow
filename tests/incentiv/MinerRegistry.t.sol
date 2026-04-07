@@ -46,6 +46,19 @@ contract MinerRegistryTest is Test {
         new MinerRegistry(address(cent), address(0), 24 hours, 17_280, 7 days);
     }
 
+    function testConstructor_RevertsOnZeroMaturityParams() public {
+        cent = new MockCENT();
+
+        vm.expectRevert(MinerRegistry.InvalidParam.selector);
+        new MinerRegistry(address(cent), timelock, 0, 17_280, 7 days);
+
+        vm.expectRevert(MinerRegistry.InvalidParam.selector);
+        new MinerRegistry(address(cent), timelock, 24 hours, 0, 7 days);
+
+        vm.expectRevert(MinerRegistry.InvalidParam.selector);
+        new MinerRegistry(address(cent), timelock, 24 hours, 17_280, 0);
+    }
+
     function testStake_SetsState() public {
         vm.prank(miner);
         registry.stake();

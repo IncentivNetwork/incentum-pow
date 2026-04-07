@@ -32,7 +32,10 @@ contract DeployDevnet is Script {
     uint256 constant MINER_GAS_FUND = 10 ether; // native CENT sent to miner for gas
 
     function run() external {
-        address deployer = vm.addr(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        require(block.chainid == 12_730, "DeployDevnet: wrong chain, expected 12730");
+
+        uint256 pk = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        address deployer = vm.addr(pk);
         address miner = vm.envAddress("MINER_ADDRESS");
         address governance = vm.envAddress("GOVERNANCE_ADDRESS");
 
@@ -42,7 +45,7 @@ contract DeployDevnet is Script {
         console.log("Governance: ", governance);
         console.log("Chain ID:   ", block.chainid);
 
-        vm.startBroadcast(vm.envUint("DEPLOYER_PRIVATE_KEY"));
+        vm.startBroadcast(pk);
 
         // 1. Deploy WCENT
         WCENT wcent = new WCENT();

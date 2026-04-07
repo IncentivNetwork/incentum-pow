@@ -93,6 +93,7 @@ contract MinerRegistry {
     error InvalidRefundRecipient();
     error InvalidStakeTransfer();
     error ReentrantCall();
+    error InvalidParam();
 
     // ============================================================
     // Modifiers
@@ -128,6 +129,9 @@ contract MinerRegistry {
     ) {
         if (centToken_ == address(0) || timelock_ == address(0)) {
             revert ZeroAddress();
+        }
+        if (maturityTime_ == 0 || maturityBlocks_ == 0 || unstakeDelay_ == 0) {
+            revert InvalidParam();
         }
 
         centToken = IERC20(centToken_);
