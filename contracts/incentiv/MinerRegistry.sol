@@ -3,9 +3,7 @@ pragma solidity ^0.8.23;
 
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {
-    SafeERC20
-} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title MinerRegistry
@@ -20,9 +18,6 @@ contract MinerRegistry {
     // ============================================================
 
     uint256 public constant STAKE_AMOUNT = 100_000_000 * 10 ** 18;
-    uint256 public constant MATURITY_TIME = 24 hours;
-    uint256 public constant MATURITY_BLOCKS = 17_280;
-    uint256 public constant UNSTAKE_DELAY = 7 days;
 
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
@@ -33,6 +28,15 @@ contract MinerRegistry {
 
     IERC20 public immutable centToken;
     TimelockController public immutable timelock;
+
+    /// @notice Minimum time (seconds) that must elapse after staking before a miner is authorized.
+    uint256 public immutable MATURITY_TIME;
+
+    /// @notice Minimum number of blocks that must be produced after staking before a miner is authorized.
+    uint256 public immutable MATURITY_BLOCKS;
+
+    /// @notice Delay (seconds) a miner must wait after requestUnstake() before finalizeUnstake() is allowed.
+    uint256 public immutable UNSTAKE_DELAY;
 
     // ============================================================
     // Consensus-critical storage layout (slots 0-3) - FROZEN
@@ -66,18 +70,10 @@ contract MinerRegistry {
     // Events
     // ============================================================
 
-    event MinerStaked(
-        address indexed miner,
-        uint256 stakeTime,
-        uint256 stakeBlock
-    );
+    event MinerStaked(address indexed miner, uint256 stakeTime, uint256 stakeBlock);
     event UnstakeRequested(address indexed miner, uint256 requestTime);
     event MinerUnstaked(address indexed miner, uint256 amount);
-    event EmergencyRemoval(
-        address indexed miner,
-        address indexed refundRecipient,
-        string reason
-    );
+    event EmergencyRemoval(address indexed miner, address indexed refundRecipient, string reason);
     event StakingPaused(bool paused);
 
     // ============================================================
@@ -123,11 +119,22 @@ contract MinerRegistry {
     // Constructor
     // ============================================================
 
-    constructor(address centToken_, address timelock_) {
-        if (centToken_ == address(0) || timelock_ == address(0)) revert ZeroAddress();
+    constructor(
+        address centToken_,
+        address timelock_,
+        uint256 maturityTime_,
+        uint256 maturityBlocks_,
+        uint256 unstakeDelay_
+    ) {
+        if (centToken_ == address(0) || timelock_ == address(0)) {
+            revert ZeroAddress();
+        }
 
         centToken = IERC20(centToken_);
         timelock = TimelockController(payable(timelock_));
+        MATURITY_TIME = maturityTime_;
+        MATURITY_BLOCKS = maturityBlocks_;
+        UNSTAKE_DELAY = unstakeDelay_;
         _reentrancyStatus = _NOT_ENTERED;
     }
 
@@ -144,7 +151,9 @@ contract MinerRegistry {
         if (unstakeRequested[miner]) revert UnstakeInProgress();
 
         if (centToken.balanceOf(msg.sender) < STAKE_AMOUNT) revert InsufficientBalance();
-        if (centToken.allowance(msg.sender, address(this)) < STAKE_AMOUNT) revert InsufficientAllowance();
+        if (centToken.allowance(msg.sender, address(this)) < STAKE_AMOUNT) {
+            revert InsufficientAllowance();
+        }
 
         uint256 balanceBefore = centToken.balanceOf(address(this));
         centToken.safeTransferFrom(msg.sender, address(this), STAKE_AMOUNT);
@@ -210,16 +219,17 @@ contract MinerRegistry {
     /// @param miner Miner address whose state will be removed.
     /// @param refundRecipient Address that receives the refunded stake.
     /// @param reason Non-empty human-readable reason for the action.
-    function emergencyRemoveMiner(
-        address miner,
-        address refundRecipient,
-        string calldata reason
-    ) external onlyGovernance nonReentrant {
+    function emergencyRemoveMiner(address miner, address refundRecipient, string calldata reason)
+        external
+        onlyGovernance
+        nonReentrant
+    {
         if (bytes(reason).length == 0) revert EmptyReason();
         if (refundRecipient == address(0)) revert InvalidRefundRecipient();
 
         bool wasActive = miners[miner];
-        bool hasStake = wasActive || unstakeRequested[miner] || stakeBlock[miner] != 0 || unstakeRequestTime[miner] != 0 || stakeTime[miner] != 0;
+        bool hasStake = wasActive || unstakeRequested[miner] || stakeBlock[miner] != 0
+            || unstakeRequestTime[miner] != 0 || stakeTime[miner] != 0;
 
         if (wasActive) {
             activeMinerCount--;
@@ -243,8 +253,7 @@ contract MinerRegistry {
     /// @param miner Miner address to check.
     /// @return isAuthorized True if the miner is active and both maturity thresholds are satisfied.
     function isAuthorizedMiner(address miner) external view returns (bool) {
-        return miners[miner]
-            && block.timestamp >= stakeTime[miner] + MATURITY_TIME
+        return miners[miner] && block.timestamp >= stakeTime[miner] + MATURITY_TIME
             && block.number >= stakeBlock[miner] + MATURITY_BLOCKS;
     }
 }
