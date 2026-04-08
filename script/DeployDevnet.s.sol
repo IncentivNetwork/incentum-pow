@@ -28,7 +28,6 @@ contract DeployDevnet is Script {
     uint256 constant MATURITY_TIME = 300; // 5 min for devnet (vs 24 h on mainnet)
     uint256 constant MATURITY_BLOCKS = 60; // ~5 min at 5 s/block (vs 17 280 on mainnet)
     uint256 constant UNSTAKE_DELAY = 600; // 10 min for devnet (vs 7 days on mainnet)
-    uint256 constant STAKE_AMOUNT = 100_000_000 * 10 ** 18;
     uint256 constant MINER_GAS_FUND = 10 ether; // native CENT sent to miner for gas
 
     function run() external {
@@ -74,16 +73,18 @@ contract DeployDevnet is Script {
         );
         console.log("MinerRegistry deployed at:      ", address(registry));
 
+        uint256 stakeAmount = registry.STAKE_AMOUNT();
+
         // 4. Fund miner with native CENT for gas
         (bool sent,) = miner.call{ value: MINER_GAS_FUND }("");
         require(sent, "Failed to fund miner with gas");
         console.log("Funded miner with native CENT for gas: ", MINER_GAS_FUND);
 
         // 5. Wrap native CENT to WCENT for miner's stake (deployer wraps and sends)
-        wcent.deposit{ value: STAKE_AMOUNT }();
-        bool transferOk = wcent.transfer(miner, STAKE_AMOUNT);
+        wcent.deposit{ value: stakeAmount }();
+        bool transferOk = wcent.transfer(miner, stakeAmount);
         require(transferOk, "WCENT transfer to miner failed");
-        console.log("Transferred WCENT stake to miner: ", STAKE_AMOUNT);
+        console.log("Transferred WCENT stake to miner: ", stakeAmount);
 
         vm.stopBroadcast();
 
