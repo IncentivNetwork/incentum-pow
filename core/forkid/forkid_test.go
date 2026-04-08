@@ -512,22 +512,22 @@ func TestIncentivDPoWForkIDs(t *testing.T) {
 			name:    "incentiv-devnet before dpow",
 			config:  params.IncentivDevnetChainConfig,
 			genesis: params.IncentivDevnetGenesisHash,
-			head:    99,
-			want:    ID{Hash: checksumToBytes(0xb89332ec), Next: 100},
+			head:    273999,
+			want:    ID{Hash: checksumToBytes(0xc79d7def), Next: 274000},
 		},
 		{
 			name:    "incentiv-devnet at dpow",
 			config:  params.IncentivDevnetChainConfig,
 			genesis: params.IncentivDevnetGenesisHash,
-			head:    100,
-			want:    ID{Hash: checksumToBytes(0x7f3bd945), Next: 21800},
+			head:    274000,
+			want:    ID{Hash: checksumToBytes(0x2fc5981d), Next: 1755203160},
 		},
 		{
 			name:    "incentiv-devnet after dpow",
 			config:  params.IncentivDevnetChainConfig,
 			genesis: params.IncentivDevnetGenesisHash,
-			head:    101,
-			want:    ID{Hash: checksumToBytes(0x7f3bd945), Next: 21800},
+			head:    274001,
+			want:    ID{Hash: checksumToBytes(0x2fc5981d), Next: 1755203160},
 		},
 	}
 
