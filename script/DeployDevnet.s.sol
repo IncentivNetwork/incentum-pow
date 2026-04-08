@@ -39,6 +39,9 @@ contract DeployDevnet is Script {
         address miner = vm.envAddress("MINER_ADDRESS");
         address governance = vm.envAddress("GOVERNANCE_ADDRESS");
 
+        require(miner != address(0), "DeployDevnet: MINER_ADDRESS cannot be zero");
+        require(governance != address(0), "DeployDevnet: GOVERNANCE_ADDRESS cannot be zero");
+
         console.log("=== DPoW Devnet Deployment ===");
         console.log("Deployer:   ", deployer);
         console.log("Miner:      ", miner);
