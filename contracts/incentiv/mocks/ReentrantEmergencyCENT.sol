@@ -11,7 +11,7 @@ contract ReentrantEmergencyCENT is ERC20 {
     address public registry;
     bool internal entered;
 
-    constructor() ERC20("Reentrant Emergency CENT", "reCENTE") {}
+    constructor() ERC20("Reentrant Emergency CENT", "reCENTE") { }
 
     function setRegistry(address registry_) external {
         registry = registry_;

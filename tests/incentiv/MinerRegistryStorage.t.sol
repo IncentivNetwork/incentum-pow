@@ -17,7 +17,7 @@ contract MinerRegistryStorageTest is Test {
 
     function setUp() public {
         cent = new MockCENT();
-        registry = new MinerRegistry(address(cent), timelock);
+        registry = new MinerRegistry(address(cent), timelock, 24 hours, 17_280, 7 days);
 
         stakeAmount = registry.STAKE_AMOUNT();
 

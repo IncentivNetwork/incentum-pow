@@ -338,7 +338,7 @@ var (
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
 		DPoWBlock:                     big.NewInt(100),
-		MinerRegistryAddress:          newAddress(common.HexToAddress("0x0000000000000000000000000000000000000100")),
+		MinerRegistryAddress:          newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
 		DPoWMaturityTime:              300,
 		DPoWMaturityBlocks:            60,
 		IrregularStateChangeHeight:    nil,

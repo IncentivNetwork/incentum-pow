@@ -26,7 +26,7 @@ contract MinerRegistryTest is Test {
 
     function setUp() public {
         cent = new MockCENT();
-        registry = new MinerRegistry(address(cent), timelock);
+        registry = new MinerRegistry(address(cent), timelock, 24 hours, 17_280, 7 days);
 
         stakeAmount = registry.STAKE_AMOUNT();
 
@@ -40,10 +40,23 @@ contract MinerRegistryTest is Test {
         cent = new MockCENT();
 
         vm.expectRevert(MinerRegistry.ZeroAddress.selector);
-        new MinerRegistry(address(0), timelock);
+        new MinerRegistry(address(0), timelock, 24 hours, 17_280, 7 days);
 
         vm.expectRevert(MinerRegistry.ZeroAddress.selector);
-        new MinerRegistry(address(cent), address(0));
+        new MinerRegistry(address(cent), address(0), 24 hours, 17_280, 7 days);
+    }
+
+    function testConstructor_RevertsOnZeroMaturityParams() public {
+        cent = new MockCENT();
+
+        vm.expectRevert(MinerRegistry.InvalidParam.selector);
+        new MinerRegistry(address(cent), timelock, 0, 17_280, 7 days);
+
+        vm.expectRevert(MinerRegistry.InvalidParam.selector);
+        new MinerRegistry(address(cent), timelock, 24 hours, 0, 7 days);
+
+        vm.expectRevert(MinerRegistry.InvalidParam.selector);
+        new MinerRegistry(address(cent), timelock, 24 hours, 17_280, 0);
     }
 
     function testStake_SetsState() public {
@@ -91,7 +104,8 @@ contract MinerRegistryTest is Test {
 
     function testStake_RevertsOnFeeOnTransferToken() public {
         FeeOnTransferCENT feeToken = new FeeOnTransferCENT();
-        MinerRegistry feeRegistry = new MinerRegistry(address(feeToken), timelock);
+        MinerRegistry feeRegistry =
+            new MinerRegistry(address(feeToken), timelock, 24 hours, 17_280, 7 days);
 
         feeToken.mint(miner, stakeAmount);
 
@@ -546,7 +560,8 @@ contract MinerRegistryTest is Test {
 
     function testStake_RevertsOnReentrancy() public {
         ReentrantCENT reentrantToken = new ReentrantCENT();
-        MinerRegistry reentrantRegistry = new MinerRegistry(address(reentrantToken), timelock);
+        MinerRegistry reentrantRegistry =
+            new MinerRegistry(address(reentrantToken), timelock, 24 hours, 17_280, 7 days);
 
         reentrantToken.setRegistry(address(reentrantRegistry));
         reentrantToken.mint(miner, stakeAmount);
@@ -562,7 +577,8 @@ contract MinerRegistryTest is Test {
 
     function testFinalizeUnstake_RevertsOnReentrantToken() public {
         ReentrantEmergencyCENT reentrantToken = new ReentrantEmergencyCENT();
-        MinerRegistry reentrantRegistry = new MinerRegistry(address(reentrantToken), timelock);
+        MinerRegistry reentrantRegistry =
+            new MinerRegistry(address(reentrantToken), timelock, 24 hours, 17_280, 7 days);
 
         reentrantToken.mint(miner, stakeAmount);
 
