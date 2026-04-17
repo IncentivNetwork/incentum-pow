@@ -43,6 +43,9 @@ jobs:
       (needs.linter.result == 'success' && needs.tests.result == 'success'))
 
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,23 +59,40 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Set Short SHA
-        id: vars
-        shell: bash
-        run: echo "sha_short=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
-
       - name: Build Geth
-        run: |
-          go run build/ci.go install --static ./cmd/geth
-          ls build/bin
+        run: go run build/ci.go install --static ./cmd/geth
 
-      - name: Create Compressed Archive
+      - name: Prepare Release Asset
+        if: github.event_name == 'push'
         run: |
+          REL_DATE=$(date +'%Y%m%d-%H%M')
+          SHORT_SHA=${GITHUB_SHA:0:7}
+
+          RELEASE_TAG="${REL_DATE}-${SHORT_SHA}"
+          FILE_NAME="geth-linux-amd64-${SHORT_SHA}.tar.gz"
+
           cd build/bin
-          tar -czvf geth-${{ steps.vars.outputs.sha_short }}.tar.gz geth
+          tar -czvf "../../${FILE_NAME}" geth
+
+          echo "RELEASE_ASSET=${FILE_NAME}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=build-${SHORT_SHA}" >> $GITHUB_ENV 
 
       - name: Upload Artifact
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
-          name: geth-release-${{ steps.vars.outputs.sha_short }}
-          path: build/bin/geth-${{ steps.vars.outputs.sha_short }}.tar.gz
+          name: ${{ env.RELEASE_ASSET }}
+          path: ${{ env.RELEASE_ASSET }}
+          retention-days: 7
+
+      - name: Create Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Release ${{ env.RELEASE_TAG }}
+          draft: false
+          prerelease: false
+          files: ${{ env.RELEASE_ASSET }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
