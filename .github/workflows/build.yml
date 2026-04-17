@@ -1,0 +1,43 @@
+name: Build Geth
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Lint check
+        run: go run build/ci.go lint
+
+      - name: Test
+        run: go run build/ci.go test
+
+      - name: Build Geth
+        run: go run build/ci.go install --static ./cmd/geth
+
+      - name: Create Compressed Archive
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cd build/bin
+          tar -czvf geth-${GITHUB_SHA::7}.tar.gz geth
+
+      - name: Upload Artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: geth-release-${GITHUB_SHA::7}
+          path: build/bin/geth-${GITHUB_SHA::7}.tar.gz
