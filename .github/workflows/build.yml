@@ -75,7 +75,7 @@ jobs:
           tar -czvf "../../${FILE_NAME}" geth
 
           echo "RELEASE_ASSET=${FILE_NAME}" >> $GITHUB_ENV
-          echo "RELEASE_TAG=build-${SHORT_SHA}" >> $GITHUB_ENV 
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV 
 
       - name: Upload Artifact
         if: github.event_name == 'push'
