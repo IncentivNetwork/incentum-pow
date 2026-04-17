@@ -35,7 +35,7 @@ jobs:
       - name: Run Tests
         run: go run build/ci.go test
 
-   build:
+  build:
     needs: [linter, tests]
     if: |
       always() && 
