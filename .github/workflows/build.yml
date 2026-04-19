@@ -92,18 +92,24 @@ jobs:
         run: |
           RELEASE_TAG="${GITHUB_REF_NAME}"
           FILE_NAME="geth-linux-amd64-${RELEASE_TAG}.tar.gz"
+          CHECKSUM_NAME="${FILE_NAME}.sha256"
 
           cd build/bin
           tar -czvf "../../${FILE_NAME}" geth
+          cd ../..
+          sha256sum "${FILE_NAME}" > "${CHECKSUM_NAME}"
 
           echo "RELEASE_ASSET=${FILE_NAME}" >> $GITHUB_ENV
+          echo "RELEASE_CHECKSUM=${CHECKSUM_NAME}" >> $GITHUB_ENV
           echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.RELEASE_ASSET }}
-          path: ${{ env.RELEASE_ASSET }}
+          path: |
+            ${{ env.RELEASE_ASSET }}
+            ${{ env.RELEASE_CHECKSUM }}
           retention-days: 7
 
       - name: Create Release
@@ -113,6 +119,8 @@ jobs:
           name: Release ${{ env.RELEASE_TAG }}
           draft: false
           prerelease: false
-          files: ${{ env.RELEASE_ASSET }}
+          files: |
+            ${{ env.RELEASE_ASSET }}
+            ${{ env.RELEASE_CHECKSUM }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
