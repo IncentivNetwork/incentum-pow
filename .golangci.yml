@@ -64,10 +64,14 @@ issues:
       text: 'SA1019: elliptic\.(Marshal|Unmarshal|GenerateKey)'
     - path: crypto/
       text: 'SA1019: elliptic\.(Marshal|Unmarshal|GenerateKey)'
-    # reflect.SliceHeader is used in consensus-critical ethash DAG code.
-    # Migrating to unsafe.Slice / unsafe.SliceData requires dedicated review
-    # of the consensus engine and is out of scope for CI tooling changes.
-    - path: consensus/ethash/algorithm.go
+    - path: p2p/rlpx/
+      text: 'SA1019: elliptic\.(Marshal|Unmarshal|GenerateKey)'
+    # reflect.SliceHeader is used in consensus-critical ethash DAG code and in
+    # the RLP zero-copy decoder. Migrating to unsafe.Slice / unsafe.SliceData
+    # requires dedicated review and is out of scope for CI tooling changes.
+    - path: consensus/ethash/
+      text: 'SA1019: reflect\.SliceHeader'
+    - path: rlp/
       text: 'SA1019: reflect\.SliceHeader'
   exclude:
     - 'SA1019: event.TypeMux is deprecated: use Feed'
