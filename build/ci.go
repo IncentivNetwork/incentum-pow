@@ -258,9 +258,11 @@ func buildFlags(env build.Environment, staticLinking bool, buildTags []string) (
 		ld = append(ld, "-s")
 	}
 	if runtime.GOOS == "linux" {
+		// Strip symbol table and DWARF debug info to shrink release binaries.
+		ld = append(ld, "-s", "-w")
 		// Enforce the stacksize to 8M, which is the case on most platforms apart from
 		// alpine Linux.
-		extld := []string{"-Wl,-s,-w,-z,stack-size=0x800000"}
+		extld := []string{"-Wl,-z,stack-size=0x800000"}
 		if staticLinking {
 			extld = append(extld, "-static")
 			// Under static linking, use of certain glibc features must be
