@@ -86,6 +86,9 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Build Geth
+        env:
+          GOOS: linux
+          GOARCH: amd64
         run: go run build/ci.go install --static ./cmd/geth
 
       - name: Prepare Release Asset
@@ -94,9 +97,7 @@ jobs:
           FILE_NAME="geth-linux-amd64-${RELEASE_TAG}.tar.gz"
           CHECKSUM_NAME="${FILE_NAME}.sha256"
 
-          cd build/bin
-          tar -czvf "../../${FILE_NAME}" geth
-          cd ../..
+          tar -czvf "${FILE_NAME}" -C build/bin geth -C "${GITHUB_WORKSPACE}" COPYING
           sha256sum "${FILE_NAME}" > "${CHECKSUM_NAME}"
 
           echo "RELEASE_ASSET=${FILE_NAME}" >> $GITHUB_ENV
