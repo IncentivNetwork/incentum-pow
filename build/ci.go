@@ -258,8 +258,6 @@ func buildFlags(env build.Environment, staticLinking bool, buildTags []string) (
 		ld = append(ld, "-s")
 	}
 	if runtime.GOOS == "linux" {
-		// Strip symbol table and DWARF debug info to shrink release binaries.
-		ld = append(ld, "-s", "-w")
 		// Enforce the stacksize to 8M, which is the case on most platforms apart from
 		// alpine Linux.
 		extld := []string{"-Wl,-z,stack-size=0x800000"}
@@ -268,6 +266,10 @@ func buildFlags(env build.Environment, staticLinking bool, buildTags []string) (
 			// Under static linking, use of certain glibc features must be
 			// disabled to avoid shared library dependencies.
 			buildTags = append(buildTags, "osusergo", "netgo")
+			// Strip symbol table and DWARF debug info to shrink release binaries.
+			// Only applied to static/release-style builds so local developer
+			// installs keep symbols for debugging/profiling by default.
+			ld = append(ld, "-s", "-w")
 		}
 		ld = append(ld, "-extldflags", "'"+strings.Join(extld, " ")+"'")
 	}
