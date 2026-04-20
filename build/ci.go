@@ -139,7 +139,7 @@ var (
 	// This is the version of Go that will be downloaded by
 	//
 	//     go run ci.go install -dlgo
-	dlgoVersion = "1.20.3"
+	dlgoVersion = "1.22.12"
 
 	// This is the version of Go that will be used to bootstrap the PPA builder.
 	//
@@ -266,6 +266,10 @@ func buildFlags(env build.Environment, staticLinking bool, buildTags []string) (
 			// Under static linking, use of certain glibc features must be
 			// disabled to avoid shared library dependencies.
 			buildTags = append(buildTags, "osusergo", "netgo")
+			// Strip symbol table and DWARF debug info to shrink release binaries.
+			// Only applied to static/release-style builds so local developer
+			// installs keep symbols for debugging/profiling by default.
+			ld = append(ld, "-s", "-w")
 		}
 		ld = append(ld, "-extldflags", "'"+strings.Join(extld, " ")+"'")
 	}
@@ -341,7 +345,7 @@ func doLint(cmdline []string) {
 
 // downloadLinter downloads and unpacks golangci-lint.
 func downloadLinter(cachedir string) string {
-	const version = "1.51.1"
+	const version = "1.54.2"
 
 	csdb := build.MustLoadChecksums("build/checksums.txt")
 	arch := runtime.GOARCH
