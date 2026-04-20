@@ -51,6 +51,7 @@ jobs:
         env:
           SHARD_INDEX: ${{ matrix.shard }}
         run: |
+          set -eo pipefail
           PKGS=$(go list ./... | awk "NR % ${TOTAL_SHARDS} == ${SHARD_INDEX}")
           if [ -z "$PKGS" ]; then
             echo "No packages assigned to this shard; skipping."
