@@ -131,8 +131,9 @@ data:  schedule(address,uint256,bytes,bytes32,bytes32,uint256)
 `cast` form of the payload:
 
 ```bash
+MIN_DELAY=$(cast call $TIMELOCK "getMinDelay()(uint256)" --rpc-url $RPC)
 cast calldata "schedule(address,uint256,bytes,bytes32,bytes32,uint256)" \
-  $REGISTRY 0 $DATA $ZERO $SALT 604800
+  $REGISTRY 0 $DATA $ZERO $SALT $MIN_DELAY
 ```
 
 Record the operation id (§3) and **announce the scheduled operation publicly** — the delay window is a security feature only if the community can see it.
