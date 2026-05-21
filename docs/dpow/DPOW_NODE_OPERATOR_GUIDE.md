@@ -137,7 +137,8 @@ At startup geth logs a one-line consensus banner:
 sudo journalctl -u incentum.service | grep -i "Consensus:"
 # DPoW-enabled binary with activation set:
 #   Consensus: Ethash + DPoW (authorized mining, activates at block #<DPoWBlock>)
-# DPoW code present but inactive (DPoWBlock = nil): no such line.
+# DPoW code present but inactive (DPoWBlock = nil):
+#   Consensus: Ethash (proof-of-work)
 ```
 
 For the full active chain config, attach over IPC:
