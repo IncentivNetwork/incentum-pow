@@ -388,7 +388,7 @@ DPoWMaturityTime:     300,
 DPoWMaturityBlocks:   60,
 ```
 
-> **Mainnet**: until an activation block is formally chosen and contracts are deployed, `IncentivMainnetChainConfig.DPoWBlock` must be `nil` and `MinerRegistryAddress` must be unset. A non-nil `DPoWBlock` pointing at a placeholder registry address is a latent chain-halt and must never ship in a release binary.
+> **Mainnet & Testnet**: in `develop`, `IncentivMainnetChainConfig` and `IncentivTestnetChainConfig` currently carry **placeholder** values — `DPoWBlock = big.NewInt(2000000)` / `big.NewInt(500000)` and `MinerRegistryAddress = 0x0000000000000000000000000000000000002001` / `0x0000000000000000000000000000000000005002` respectively. These are unresolved placeholders, **not** a finalized activation, and must not reach a release binary as-is: a non-`nil` `DPoWBlock` pointing at a placeholder registry address is a latent chain-halt once that block is reached. Before any production release, set `DPoWBlock` to either `nil` (DPoW disabled) or the real announced activation block, and `MinerRegistryAddress` to the deployed contract.
 
 ### 5.3 Devnet deployed addresses (chain ID 12730)
 
