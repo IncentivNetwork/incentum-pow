@@ -152,6 +152,8 @@ admin.nodeInfo.protocols.eth.config   // shows dpowBlock, minerRegistryAddress,
                                       // dpowMaturityTime, dpowMaturityBlocks
 ```
 
+> The `admin` namespace is served over the local IPC socket only — it is intentionally excluded from `--http.api`, so this command does not work against an HTTP/WS endpoint.
+
 - Before the activation release: `dpowBlock` is absent/`null` — DPoW code is present but inert.
 - For the activation release: `dpowBlock` is set and `minerRegistryAddress` is the real deployed contract.
 
@@ -189,8 +191,9 @@ At the first block with `number ≥ DPoWBlock`:
 
 ```bash
 # latest block + miner
-/mnt/data/node/client/build/bin/geth attach /mnt/data/node/data/geth.ipc --exec \
-  'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner})'
+/mnt/data/node/client/build/bin/geth attach --exec \
+  'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner})' \
+  /mnt/data/node/data/geth.ipc
 
 # consensus errors in the last 15 minutes
 sudo journalctl -u incentum.service --since "15 min ago" \
@@ -214,7 +217,7 @@ Symptoms: your `eth.blockNumber` diverges from public explorers; logs show repea
 
 - [ ] `geth version` shows the expected release commit.
 - [ ] Service file passes the §3.1 hardening checklist.
-- [ ] HTTP/WS RPC are not reachable from the public internet (`curl` from an external host fails / times out).
+- [ ] geth's HTTP/WS RPC listens on `127.0.0.1` only and is not bound directly to a public interface; any external access is terminated by the reverse proxy (§3.1), which handles authentication / method filtering.
 - [ ] Node is synced (`eth.syncing == false`, `net.peerCount > 0`).
 - [ ] After activation: latest block miner is an authorized address; zero consensus errors in logs.
 - [ ] (Miners only) `isAuthorizedMiner(<your coinbase>)` returns `true` — see `DPOW_MINER_ONBOARDING.md`.
