@@ -168,8 +168,8 @@ cast calldata "execute(address,uint256,bytes,bytes32,bytes32)" \
 cast call $REGISTRY "miners(address)(bool)"          $MINER  --rpc-url $RPC   # false
 cast call $REGISTRY "stakeTime(address)(uint256)"    $MINER  --rpc-url $RPC   # 0
 cast call $REGISTRY "stakeBlock(address)(uint256)"   $MINER  --rpc-url $RPC   # 0
-cast call $REGISTRY "activeMinerCount()(uint256)"            --rpc-url $RPC   # decremented
-cast call $WCENT    "balanceOf(address)(uint256)"    $REFUND --rpc-url $RPC   # = pre-state balance (§4.2) + STAKE_AMOUNT
+cast call $REGISTRY "activeMinerCount()(uint256)"            --rpc-url $RPC   # decremented if the miner was active; unchanged if it had already requested unstake or was inactive
+cast call $WCENT    "balanceOf(address)(uint256)"    $REFUND --rpc-url $RPC   # pre-state balance (§4.2) + STAKE_AMOUNT if the stake is still held by the registry; unchanged if already finalized (§4 note)
 ```
 
 Confirm the `EmergencyRemoval(miner, refundRecipient, reason)` event in the execution receipt.
