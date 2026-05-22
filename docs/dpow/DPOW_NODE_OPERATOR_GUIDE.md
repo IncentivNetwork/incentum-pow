@@ -21,10 +21,16 @@ DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to co
 
 ## 2. Before you start
 
-- Know your data directory (e.g. `/mnt/data/node/data`) and your geth binary path (e.g. `/mnt/data/node/client/build/bin/geth`).
 - Know your `systemd` unit name (e.g. `incentum.service`).
 - Have the published SHA-256 checksum of the new binary release.
 - Schedule the upgrade well before `DPoWBlock` — do not wait for activation day.
+
+Install paths differ between nodes. The shell commands in this guide reference the geth binary and data directory through two variables — set them to your node's actual paths before running any command:
+
+```bash
+export GETH=/mnt/data/node/client/build/bin/geth   # example — your geth binary
+export DATADIR=/mnt/data/node/data                 # example — your geth --datadir
+```
 
 ---
 
@@ -80,6 +86,8 @@ StandardError=append:/var/log/geth.log
 WantedBy=multi-user.target
 ```
 
+> The `/mnt/data/node/...` paths and the `User` / `Group` shown are an example layout — set `WorkingDirectory`, `ExecStart`, `--datadir`, and `User` / `Group` to your node's actual install. systemd does not expand shell variables, so these must be absolute paths.
+
 An RPC or archive node uses the same flags minus `--mine`, `--miner.threads`, `--miner.etherbase`.
 
 > If the network requires external HTTP access (block explorer, monitoring), do not reopen `0.0.0.0`. Use an SSH tunnel, a private network interface, or an authenticated reverse proxy with an IP allowlist.
@@ -97,7 +105,7 @@ sudo systemctl stop incentum.service
 ### 4.2 Back up the current binary
 
 ```bash
-sudo cp /mnt/data/node/client/build/bin/geth /mnt/data/node/client/build/bin/geth.pre-dpow
+sudo cp $GETH $GETH.pre-dpow
 ```
 
 ### 4.3 Install the new binary
@@ -112,7 +120,7 @@ sha256sum geth
 Build from source:
 
 ```bash
-cd /mnt/data/node/client
+cd /mnt/data/node/client   # your client source repo (example path)
 git fetch origin
 git checkout <release-tag>
 go run build/ci.go install ./cmd/geth
@@ -144,7 +152,7 @@ sudo journalctl -u incentum.service | grep -i "Consensus:"
 For the full active chain config, attach over IPC:
 
 ```bash
-/mnt/data/node/client/build/bin/geth attach /mnt/data/node/data/geth.ipc
+$GETH attach $DATADIR/geth.ipc
 ```
 
 ```javascript
@@ -169,7 +177,7 @@ sudo systemctl status incentum.service --no-pager
 Confirm the node is syncing:
 
 ```bash
-/mnt/data/node/client/build/bin/geth attach /mnt/data/node/data/geth.ipc
+$GETH attach $DATADIR/geth.ipc
 ```
 
 ```javascript
@@ -191,9 +199,9 @@ At the first block with `number ≥ DPoWBlock`:
 
 ```bash
 # latest block + miner
-/mnt/data/node/client/build/bin/geth attach --exec \
+$GETH attach --exec \
   'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner})' \
-  /mnt/data/node/data/geth.ipc
+  $DATADIR/geth.ipc
 
 # consensus errors in the last 15 minutes
 sudo journalctl -u incentum.service --since "15 min ago" \
