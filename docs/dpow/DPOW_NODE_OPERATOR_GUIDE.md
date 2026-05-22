@@ -160,7 +160,7 @@ admin.nodeInfo.protocols.eth.config   // shows dpowBlock, minerRegistryAddress,
                                       // dpowMaturityTime, dpowMaturityBlocks
 ```
 
-> The `admin` namespace is served over the local IPC socket only — it is intentionally excluded from `--http.api`, so this command does not work against an HTTP/WS endpoint.
+> The `admin` namespace is intentionally excluded from the hardened `--http.api` / `--ws.api` set (§3.1), so run this command over the local IPC socket. `admin` is not inherently IPC-only — it can be served over HTTP/WS if added to those flags, which the hardening checklist deliberately avoids.
 
 - Before the activation release: `dpowBlock` is absent/`null` — DPoW code is present but inert.
 - For the activation release: `dpowBlock` is set and `minerRegistryAddress` is the real deployed contract.
