@@ -136,11 +136,11 @@ latest acceptable stake time  = estimated_DPoWBlock_time - MATURITY_TIME   - 360
 latest acceptable stake block = DPoWBlock                - MATURITY_BLOCKS - 720    (~1 h safety buffer at 5 s/block)
 ```
 
-The **block** deadline is deterministic — `DPoWBlock` is a fixed block number known in advance. The **time** deadline is only an estimate: the wall-clock timestamp of a future block depends on the actual block-production rate and is not knowable ahead of time, so derive `estimated_DPoWBlock_time` from the current block height and time, and treat it as approximate.
+The **block** deadline is deterministic — `DPoWBlock` is an exact block number. The **time** deadline is only an estimate: the wall-clock timestamp of a future block depends on the actual block-production rate and is not knowable ahead of time, so derive `estimated_DPoWBlock_time` from the current block height and time, and treat it as approximate.
 
 Stake early enough to satisfy **both**. If blocks are produced faster than 5 s, the time condition binds; if slower, the block condition binds. Do not rely on a fixed "24 h" rule — compute against both and add the buffer.
 
-The team publishes `DPoWBlock` at least two weeks in advance. Treat the staking deadline as a hard cut-off: a miner not authorized at `DPoWBlock` cannot produce valid blocks until it stakes and matures afterwards.
+Obtain the activation `DPoWBlock` from the team and stake well ahead of it — do not assume any particular advance-notice window. Treat the staking deadline as a hard cut-off: a miner not authorized at `DPoWBlock` cannot produce valid blocks until it stakes and matures afterwards.
 
 ---
 
