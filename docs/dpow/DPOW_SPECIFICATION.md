@@ -344,7 +344,7 @@ ErrMinerRegistryNotConfigured = errors.New("miner registry not configured: dpow 
 6. **Block maturity** — reads slot 2 (`stakeBlock`); returns `ErrMinerNotMature` if
    `header.Number < stakeBlock + GetDPoWMaturityBlocks()`.
 
-A `hashFitsUint64` helper rejects storage values that do not fit in `uint64` (treated as not-mature rather than overflowing). Slot constants: `dpowMinersSlot = 0`, `dpowStakeTimeSlot = 1`, `dpowStakeBlockSlot = 2`. Slot 3 is intentionally **not** read — `requestUnstake()` already sets `miners[m] = false`, which the active-miner check catches.
+The `hashFitsUint64` helper guards only the slot 1 `stakeTime` read: a value that does not fit in `uint64` is treated as not-mature rather than overflowing the `uint64` conversion. The slot 2 `stakeBlock` value needs no such guard — the block-maturity check runs entirely in `big.Int` arithmetic, with no `uint64` conversion. Slot constants: `dpowMinersSlot = 0`, `dpowStakeTimeSlot = 1`, `dpowStakeBlockSlot = 2`. Slot 3 is intentionally **not** read — `requestUnstake()` already sets `miners[m] = false`, which the active-miner check catches.
 
 `calculateMappingSlot(addr, baseSlot)` computes `keccak256(abi.encode(addr, baseSlot))` — the address left-padded to 32 bytes, concatenated with the 32-byte base slot — matching Solidity's mapping layout (see §3.2 and §12.1).
 
