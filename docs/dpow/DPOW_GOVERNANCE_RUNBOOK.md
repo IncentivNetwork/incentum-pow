@@ -197,14 +197,22 @@ cast call $REGISTRY "stakingPaused()(bool)" --rpc-url $RPC
 
 ## 6. Procedure — cancelling a malicious operation
 
-If a malicious or erroneous operation is scheduled, **any** holder of `CANCELLER_ROLE` can cancel it instantly, at any time before execution.
+If a malicious or erroneous operation is scheduled, **any** holder of `CANCELLER_ROLE` can cancel it instantly, at any time before execution. Submit this through the **guardian** Safe (independent signer set) — not a single EOA key — so cancellation does not depend on the same multisig that may itself be compromised.
 
-```bash
-# ID = operation id of the malicious scheduled operation
-cast send $TIMELOCK "cancel(bytes32)" $ID --rpc-url $RPC <signing flags>
+Payload:
+
+```
+to:    $TIMELOCK
+value: 0
+data:  cancel(bytes32)
+       args: $ID
 ```
 
-In practice this is submitted through the **guardian** Safe (independent signer set), so cancellation does not depend on the same multisig that may itself be compromised.
+`cast` form of the payload (`$ID` = operation id of the malicious scheduled operation):
+
+```bash
+cast calldata "cancel(bytes32)" $ID
+```
 
 Verify:
 
