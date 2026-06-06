@@ -6,3 +6,11 @@
 	path = tests/evm-benchmarks
 	url = https://github.com/ipsilon/evm-benchmarks
 	shallow = true
+[submodule "lib/forge-std"]
+	path = lib/forge-std
+	url = https://github.com/foundry-rs/forge-std.git
+	shallow = true
+[submodule "lib/openzeppelin-contracts"]
+	path = lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts.git
+	shallow = true

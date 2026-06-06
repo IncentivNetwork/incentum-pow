@@ -52,5 +52,10 @@ geth
 
 **/allowlist.json
 
+cache_forge/
+out/
+lcov.info
+broadcast/
+
 # Go test coverage output (e.g. `go test -coverprofile=coverage.out`)
 coverage.out
