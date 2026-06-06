@@ -51,3 +51,6 @@ logs/
 geth
 
 **/allowlist.json
+
+# Go test coverage output (e.g. `go test -coverprofile=coverage.out`)
+coverage.out
