@@ -16,9 +16,9 @@
 | `PROPOSER_ROLE` | governance multisig (Gnosis Safe) | `schedule()` an operation |
 | `CANCELLER_ROLE` | governance multisig **and** the independent guardian | `cancel()` a scheduled operation |
 | `EXECUTOR_ROLE` | governance multisig | `execute()` an operation after the delay |
-| `DEFAULT_ADMIN_ROLE` | the Timelock contract itself (`admin = address(0)` at deploy) | `grantRole` / `revokeRole` — itself timelocked |
+| `DEFAULT_ADMIN_ROLE` | the Timelock contract itself; on Incentiv mainnet the deployer EOA holds it briefly at deploy time and renounces it once role hardening is finished — see §1.3 | `grantRole` / `revokeRole` — itself timelocked, except while the optional admin (deployer) still holds the role at deploy time |
 
-OpenZeppelin auto-grants `CANCELLER_ROLE` to every constructor `proposer`. The **independent guardian** (a separate multisig with a different signer set) is granted `CANCELLER_ROLE` post-deployment so cancellation does not depend on the primary governance multisig — see §7.
+OpenZeppelin auto-grants `CANCELLER_ROLE` to every constructor `proposer`. The **independent guardian** (a separate multisig with a different signer set) is granted `CANCELLER_ROLE`, and the auto-grant on Governance is revoked, so cancellation does not depend on the primary governance multisig. On Incentiv mainnet this happens at deploy time under the admin-renounce bootstrap pattern (§1.3); §7 documents the fallback path through a timelocked role-change for deployments that do not use the optional admin.
 
 > **Executor model.** This runbook assumes a *restricted* executor (the governance multisig). OpenZeppelin also supports an *open* executor — granting `EXECUTOR_ROLE` to `address(0)` lets anyone execute an operation once its delay has elapsed. An executor can never run an *unscheduled* operation, so an open executor does not weaken the timelock; it improves liveness (a ready operation cannot be stranded by an unavailable multisig) at the cost of less operational control. Choose deliberately at deployment.
 
@@ -34,6 +34,30 @@ OpenZeppelin auto-grants `CANCELLER_ROLE` to every constructor `proposer`. The *
 
 The first malicious operation is therefore always visible on-chain for the full delay window before it can take effect. `cancel()` is the only instant lever — keep it in independent hands.
 
+### 1.3 Deployment hardening (admin-renounce bootstrap)
+
+Incentiv mainnet uses the OpenZeppelin v5 `TimelockController` optional-`admin` constructor parameter to harden roles atomically at deploy time, instead of paying the 7-day timelock cost for the initial grant/revoke. The script `script/DeployMainnet.s.sol` performs steps 1–3 of the lifecycle below in a single broadcast; steps 4–6 require multisig signatures and are executed manually as part of DPOW-008-3.
+
+1. **Deploy** `TimelockController(minDelay = 60, proposers = [GovernanceSafe], executors = [address(0)], admin = deployerEOA)`. The 60-second delay is **temporary**; the executor is open (anyone may `execute()` after the delay); the deployer is the **temporary admin** and at this point holds `DEFAULT_ADMIN_ROLE`.
+2. **Harden roles in the same broadcast.** Still as admin, the deployer calls:
+   ```
+   timelock.grantRole(CANCELLER_ROLE, GuardianSafe)
+   timelock.revokeRole(CANCELLER_ROLE, GovernanceSafe)
+   ```
+   Both are instant — no timelock applies to admin-driven role changes. After this, only Guardian can `cancel()`.
+3. **Deploy** `MinerRegistry` against the same Timelock and finish the script.
+4. **Integration tests** on mainnet against the temporary 60-second delay — see §4 (schedule → cancel via Guardian) and a follow-up schedule → wait → execute (open). These prove the multisig + Ledger + `safe.incentiv.io` chain works end-to-end before the delay is raised.
+5. **Raise the delay to production.** Governance schedules `timelock.updateDelay(604800)`, waits 60 s, executes. `minDelay` is now 7 days; any future role change is timelocked.
+6. **Renounce admin.**
+   ```bash
+   DEFAULT_ADMIN_ROLE=$(cast call $TIMELOCK "DEFAULT_ADMIN_ROLE()(bytes32)" --rpc-url $RPC)
+   cast send $TIMELOCK "renounceRole(bytes32,address)" $DEFAULT_ADMIN_ROLE $DEPLOYER \
+     --ledger --from $DEPLOYER --rpc-url $RPC
+   ```
+   After this, the only `DEFAULT_ADMIN_ROLE` holder is the Timelock itself; future role changes must go through `schedule → wait minDelay → execute`. Verify by querying `hasRole(DEFAULT_ADMIN_ROLE, deployer) == false`.
+
+> **Why this is safe.** The deployer's window with `DEFAULT_ADMIN_ROLE` is short (the duration of the script + the integration-test cycle, on the order of minutes to a few hours), and during that window the deployer is a hardware-wallet-signed EOA under operator control. The alternative — `admin = address(0)` from genesis — pays a full 7-day delay for every initial role change (no `scheduleBatch` shortcut for the first grant + revoke without admin), and the auto-granted `CANCELLER_ROLE` on Governance remains for that 7-day window, defeating the point of having a Guardian. The OZ v5 `TimelockController` NatSpec explicitly recommends this pattern: *"The optional admin can aid with initial configuration of roles after deployment without being subject to delay, but this role should be subsequently renounced in favor of administration through timelocked proposals."*
+
 ---
 
 ## 2. Environment setup
@@ -43,6 +67,11 @@ export RPC=https://<mainnet-rpc>
 export TIMELOCK=0x<timelock-address>
 export REGISTRY=0x<miner-registry-address>
 export WCENT=0x<wcent-address>
+
+# Mainnet-specific addresses used by the deploy-time hardening procedure (§1.3)
+export DEPLOYER=0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b           # Ledger-backed EOA, temporary Timelock admin during bootstrap
+export GOVERNANCE_SAFE=0x10D9dEEb09bA23b2bD9739F698b3dFa9D8F95Ad4    # 2/3 Safe, holds PROPOSER_ROLE
+export GUARDIAN_SAFE=0x482Fd68377310ec984bcA521e2020D89e1A93CBc      # 2/3 Safe with non-overlapping signers, holds CANCELLER_ROLE after §1.3
 
 # zero predecessor — operations in this runbook have no dependency
 export ZERO=0x0000000000000000000000000000000000000000000000000000000000000000
