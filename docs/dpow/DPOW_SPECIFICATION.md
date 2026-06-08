@@ -537,7 +537,7 @@ The Timelock is constructed with `(minDelay, proposers[], executors[], admin)`:
 | `EXECUTOR_ROLE` | each address in `executors[]` | `execute()` an operation after the delay |
 | `DEFAULT_ADMIN_ROLE` | the Timelock contract itself (and `admin`, if non-zero) | `grantRole` / `revokeRole` |
 
-Mainnet deployment **must** pass `admin = address(0)` — no standing admin; role changes are themselves timelocked.
+On Incentiv mainnet the deployer EOA is passed as `admin` to enable the §3.1 admin-renounce bootstrap: the initial `CANCELLER_ROLE` grant/revoke runs during setup without a 7-day delay, then Governance raises `minDelay` to 7 days and the deployer renounces `DEFAULT_ADMIN_ROLE`. The end-state is no standing admin; all subsequent role changes are timelocked. Deployments that do not need the inline-hardening shortcut may pass `admin = address(0)` directly.
 
 ### 11.2 Every governance operation is delayed; only `cancel()` is instant
 

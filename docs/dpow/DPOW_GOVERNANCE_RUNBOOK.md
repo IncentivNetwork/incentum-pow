@@ -334,14 +334,16 @@ This is a last-resort procedure; the standing safeguards (multisig, 7-day delay,
 
 ## 9. Pre-mainnet governance checklist
 
-- [ ] `TimelockController` deployed with `minDelay = 604800` (7 days) and `admin = address(0)`.
-- [ ] `proposers` / `executors` set to the governance Gnosis Safe (multisig, hardware-wallet signers).
-- [ ] Independent guardian Safe (different signer set) granted `CANCELLER_ROLE` via the §7 procedure.
+These items must all hold by the time the §1.3 admin-renounce bootstrap is complete (i.e. after step 6 — deployer has renounced `DEFAULT_ADMIN_ROLE`). For ordering and command snippets see §1.3 and the DPOW-008-3 deployment plan.
+
+- [ ] Governance Safe (2/3, hardware-wallet signers) and Guardian Safe (2/3, **non-overlapping** signer set) deployed and smoke-tested on mainnet before the deploy script runs.
+- [ ] `TimelockController` deployed with `proposers = [GovernanceSafe]`, `executors = [address(0)]` (open executor), and — after the bootstrap — `minDelay = 604800` (raised from the temporary 60 s in step 5) and no standing admin (deployer renounced `DEFAULT_ADMIN_ROLE` in step 6).
+- [ ] Integration tests `schedule → cancel` (Guardian) and `schedule → wait → execute` (open) completed against the temporary 60 s delay during the §1.3 bootstrap window; results recorded.
+- [ ] `hasRole(CANCELLER_ROLE, GuardianSafe) == true` and `hasRole(CANCELLER_ROLE, GovernanceSafe) == false` (constructor auto-grant revoked inline by the deploy script per §1.3 step 2; the §7 timelocked procedure is **not** used on Incentiv mainnet).
 - [ ] Guardian Safe has `CANCELLER_ROLE` only — not `PROPOSER_ROLE`, not `EXECUTOR_ROLE`.
 - [ ] `MinerRegistry.timelock` points at the deployed `TimelockController`.
 - [ ] `ChainConfig.DPoWMaturityTime` / `DPoWMaturityBlocks` in the release binary match the deployed `MinerRegistry` immutables (cross-check below).
-- [ ] Timelock `CallScheduled` monitoring + guardian alerting is live.
-- [ ] A dry-run of schedule → cancel has been rehearsed on devnet/testnet.
+- [ ] Timelock `CallScheduled` monitoring + Guardian alerting is live.
 
 Maturity-parameter cross-check — the `ChainConfig` values Geth uses for consensus must equal the contract's `immutable` values:
 
