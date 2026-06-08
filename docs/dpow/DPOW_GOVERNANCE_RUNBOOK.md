@@ -13,14 +13,14 @@
 
 | Role | Held by | Capability |
 |---|---|---|
-| `PROPOSER_ROLE` | governance multisig (Gnosis Safe) | `schedule()` an operation |
-| `CANCELLER_ROLE` | governance multisig **and** the independent guardian | `cancel()` a scheduled operation |
-| `EXECUTOR_ROLE` | governance multisig | `execute()` an operation after the delay |
-| `DEFAULT_ADMIN_ROLE` | the Timelock contract itself; on Incentiv mainnet the deployer EOA holds it briefly at deploy time and renounces it once role hardening is finished — see §1.3 | `grantRole` / `revokeRole` — itself timelocked, except while the optional admin (deployer) still holds the role at deploy time |
+| `PROPOSER_ROLE` | Governance Safe (Gnosis Safe, 2/3) | `schedule()` an operation |
+| `CANCELLER_ROLE` | Guardian Safe only | `cancel()` a scheduled operation |
+| `EXECUTOR_ROLE` | `address(0)` (open executor) | `execute()` an operation after the delay |
+| `DEFAULT_ADMIN_ROLE` | the Timelock itself; the deployer EOA holds it briefly at deploy time under the admin-renounce bootstrap (§1.3) | `grantRole` / `revokeRole` — itself timelocked once the deployer has renounced |
 
-OpenZeppelin auto-grants `CANCELLER_ROLE` to every constructor `proposer`. The **independent guardian** (a separate multisig with a different signer set) is granted `CANCELLER_ROLE`, and the auto-grant on Governance is revoked, so cancellation does not depend on the primary governance multisig. On Incentiv mainnet this happens at deploy time under the admin-renounce bootstrap pattern (§1.3); §7 documents the fallback path through a timelocked role-change for deployments that do not use the optional admin.
+OpenZeppelin auto-grants `CANCELLER_ROLE` to every constructor `proposer`. On Incentiv mainnet the **independent Guardian Safe** (a separate 2/3 multisig with a non-overlapping signer set) is granted `CANCELLER_ROLE`, and the auto-grant on Governance is revoked during the deploy-time hardening flow (§1.3), so cancellation does not depend on the primary governance multisig. §7 documents the equivalent fallback path through a timelocked role-change, for deployments that do not use the optional admin.
 
-> **Executor model.** This runbook assumes a *restricted* executor (the governance multisig). OpenZeppelin also supports an *open* executor — granting `EXECUTOR_ROLE` to `address(0)` lets anyone execute an operation once its delay has elapsed. An executor can never run an *unscheduled* operation, so an open executor does not weaken the timelock; it improves liveness (a ready operation cannot be stranded by an unavailable multisig) at the cost of less operational control. Choose deliberately at deployment.
+> **Executor model — Incentiv mainnet.** `EXECUTOR_ROLE` is granted to `address(0)` (open executor): any address may `execute()` an operation once its delay has elapsed. An executor can never run an *unscheduled* operation, so an open executor does not weaken the timelock; it improves liveness (a ready operation cannot be stranded by an unavailable multisig) at the cost of less operational control. Other deployments may choose a restricted executor (e.g., the governance multisig) instead.
 
 ### 1.2 Timing — everything is delayed; only `cancel()` is instant
 
@@ -252,25 +252,36 @@ cast call $TIMELOCK "getTimestamp(bytes32)(uint256)"    $ID --rpc-url $RPC   # 0
 
 ---
 
-## 7. One-time post-deployment setup — independent guardian
+## 7. Fallback setup for deployments without the §1.3 bootstrap
 
-By default the governance multisig is the only `CANCELLER_ROLE` holder. Grant the role to an independent guardian so the cancellation lever is not controlled by the same keys that schedule operations.
+This section applies only to deployments that did **not** use the §1.3 admin-renounce bootstrap (i.e. `TimelockController` was deployed with `admin = address(0)`). The goal is the same final state as §1.3 — Guardian holds `CANCELLER_ROLE`, Governance's constructor auto-grant on `CANCELLER_ROLE` is revoked — but reached through a single timelocked operation instead of inline at deploy time. On Incentiv mainnet this procedure is **not used** because the deploy script already produces the final role state.
 
-`grantRole` is itself `DEFAULT_ADMIN_ROLE`-gated, and that role is held only by the Timelock — so granting is itself a timelocked operation:
+`grantRole` / `revokeRole` are `DEFAULT_ADMIN_ROLE`-gated; without an optional admin, that role is held only by the Timelock — so any role change is itself a timelocked operation. Both calls must be in the **same** `scheduleBatch`, otherwise a window opens where Governance can rescind its own removal.
 
 ```bash
 export TARGET=$TIMELOCK   # role grants target the Timelock itself, not the registry
 export CANCELLER_ROLE=$(cast call $TIMELOCK "CANCELLER_ROLE()(bytes32)" --rpc-url $RPC)
 export GUARDIAN=0x<guardian-safe-address>
+export GOVERNANCE=0x<governance-safe-address>
 
-export DATA=$(cast calldata "grantRole(bytes32,address)" $CANCELLER_ROLE $GUARDIAN)
-export SALT=$(cast keccak "grant-canceller-guardian")
+export GRANT_DATA=$(cast calldata "grantRole(bytes32,address)" $CANCELLER_ROLE $GUARDIAN)
+export REVOKE_DATA=$(cast calldata "revokeRole(bytes32,address)" $CANCELLER_ROLE $GOVERNANCE)
+export SALT=$(cast keccak "harden-canceller-role")
 ```
 
-Schedule → wait `minDelay` → execute against `target = $TIMELOCK` (note: the target is the Timelock itself, not the registry). Verify:
+Schedule the **batch** (atomic) → wait `minDelay` → execute. The batch payload:
 
 ```bash
-cast call $TIMELOCK "hasRole(bytes32,address)(bool)" $CANCELLER_ROLE $GUARDIAN --rpc-url $RPC   # true
+MIN_DELAY=$(cast call $TIMELOCK "getMinDelay()(uint256)" --rpc-url $RPC)
+cast calldata "scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)" \
+  "[$TIMELOCK,$TIMELOCK]" "[0,0]" "[$GRANT_DATA,$REVOKE_DATA]" $ZERO $SALT $MIN_DELAY
+```
+
+After `minDelay`, execute with the matching `executeBatch(...)` payload (same arrays, no delay arg). Verify the final state:
+
+```bash
+cast call $TIMELOCK "hasRole(bytes32,address)(bool)" $CANCELLER_ROLE $GUARDIAN    --rpc-url $RPC   # true
+cast call $TIMELOCK "hasRole(bytes32,address)(bool)" $CANCELLER_ROLE $GOVERNANCE  --rpc-url $RPC   # false
 ```
 
 Do **not** grant the guardian `PROPOSER_ROLE` or `EXECUTOR_ROLE` — it must be canceller-only.
