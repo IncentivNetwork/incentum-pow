@@ -36,10 +36,10 @@ The first malicious operation is therefore always visible on-chain for the full 
 
 ### 1.3 Deployment hardening (admin-renounce bootstrap)
 
-Incentiv mainnet uses the OpenZeppelin v5 `TimelockController` optional-`admin` constructor parameter to harden roles atomically at deploy time, instead of paying the 7-day timelock cost for the initial grant/revoke. The script `script/DeployMainnet.s.sol` performs steps 1–3 of the lifecycle below in a single broadcast; steps 4–6 require multisig signatures and are executed manually as part of DPOW-008-3.
+Incentiv mainnet uses the OpenZeppelin v5 `TimelockController` optional-`admin` constructor parameter to harden roles during initial setup, instead of paying the 7-day timelock cost for the initial grant/revoke. The script `script/DeployMainnet.s.sol` performs steps 1–3 of the lifecycle below in a single script run as sequential on-chain transactions, not one atomic transaction; a mid-run failure can leave partial state that must be recovered while the deployer still holds the temporary admin role. Steps 4–6 require multisig signatures and are executed manually as part of DPOW-008-3.
 
 1. **Deploy** `TimelockController(minDelay = 60, proposers = [GovernanceSafe], executors = [address(0)], admin = deployerEOA)`. The 60-second delay is **temporary**; the executor is open (anyone may `execute()` after the delay); the deployer is the **temporary admin** and at this point holds `DEFAULT_ADMIN_ROLE`.
-2. **Harden roles in the same broadcast.** Still as admin, the deployer calls:
+2. **Harden roles in the same script run.** Still as admin after the Timelock deployment, the deployer calls:
    ```
    timelock.grantRole(CANCELLER_ROLE, GuardianSafe)
    timelock.revokeRole(CANCELLER_ROLE, GovernanceSafe)

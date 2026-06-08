@@ -198,7 +198,7 @@ constructor(
 5. Governance schedules `timelock.updateDelay(604800)`, waits 60 s, executes — `minDelay` becomes the final 7 days.
 6. Deployer calls `renounceRole(DEFAULT_ADMIN_ROLE, deployerEOA)`. After this every role change is timelocked.
 
-This is documented at the OZ-level (`TimelockController` constructor NatSpec explicitly recommends renouncing the optional admin after setup) and operationalised in `DPOW_GOVERNANCE_RUNBOOK.md`. The Foundry script `script/DeployMainnet.s.sol` performs steps 1–3 atomically; steps 4–6 are manual because they require multisig signatures.
+This is documented at the OZ-level (`TimelockController` constructor NatSpec explicitly recommends renouncing the optional admin after setup) and operationalised in `DPOW_GOVERNANCE_RUNBOOK.md`. The Foundry script `script/DeployMainnet.s.sol` performs steps 1–3 in a single script run as multiple sequential on-chain transactions; it is not one atomic transaction, so a mid-run failure can leave partial state that must be recovered while the deployer still holds the temporary admin role. Steps 4–6 are manual because they require multisig signatures.
 
 **Core functions** (all `nonReentrant`):
 

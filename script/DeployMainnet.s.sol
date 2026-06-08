@@ -18,9 +18,11 @@ import "../contracts/incentiv/MinerRegistry.sol";
  *   - executors = [address(0)] (open executor — anyone may execute() after the delay)
  *   - admin     = deployer EOA (temporary; renounced after manual hardening in DPOW-008-3)
  *
- * The script ALSO hardens CANCELLER_ROLE in the same broadcast. The deployer holds
- * DEFAULT_ADMIN_ROLE for the duration of the script, so grant/revoke are instant
- * (no timelock):
+ * The script ALSO hardens CANCELLER_ROLE as part of the same script run. With
+ * normal `forge script --broadcast`, the deploy and role changes are submitted
+ * as sequential on-chain transactions, not one atomic operation; a mid-run revert
+ * leaves partial state. The deployer holds DEFAULT_ADMIN_ROLE from the Timelock
+ * deployment onward, so the grant/revoke transactions skip the timelock delay:
  *   - grantRole(CANCELLER_ROLE, Guardian Safe)
  *   - revokeRole(CANCELLER_ROLE, Governance Safe)
  *
