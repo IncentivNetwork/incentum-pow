@@ -61,14 +61,12 @@ contract DeployMainnet is Script {
 
     function run() external {
         require(block.chainid == 24_101, "DeployMainnet: wrong chain, expected Incentiv mainnet (24101)");
-        require(tx.origin == DEPLOYER, "DeployMainnet: --sender must equal the configured DEPLOYER constant");
+        require(msg.sender == DEPLOYER, "DeployMainnet: --sender must equal the configured DEPLOYER constant");
 
-        // Sanity-check WCENT is an actual contract (best-effort guard against typos in the constant).
-        uint256 wcentCode;
-        assembly {
-            wcentCode := extcodesize(WCENT)
-        }
-        require(wcentCode > 0, "DeployMainnet: WCENT address has no code on this chain");
+        // Sanity-check the hardcoded contract addresses are actual contracts (best-effort guard against typos).
+        require(WCENT.code.length > 0,           "DeployMainnet: WCENT address has no code on this chain");
+        require(GOVERNANCE_SAFE.code.length > 0, "DeployMainnet: GOVERNANCE_SAFE address has no code on this chain");
+        require(GUARDIAN_SAFE.code.length > 0,   "DeployMainnet: GUARDIAN_SAFE address has no code on this chain");
 
         console.log("=== DPoW Mainnet Deployment ===");
         console.log("Chain ID:        ", block.chainid);
