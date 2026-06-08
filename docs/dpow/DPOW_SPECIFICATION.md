@@ -192,7 +192,7 @@ constructor(
 `MinerRegistry` itself takes no admin parameter; the relevant deployment-time hardening lives on the `TimelockController`. The OpenZeppelin `TimelockController` constructor accepts an optional `admin` address that receives `DEFAULT_ADMIN_ROLE` and can grant/revoke roles **instantly** (no timelock). For mainnet we exploit this for first-time setup, then renounce:
 
 1. Deploy `TimelockController` with a **temporary 60-second** `minDelay`, `proposers = [GovernanceSafe]`, `executors = [address(0)]` (open executor), `admin = deployerEOA`.
-2. In the same broadcast (still under the deployer's `DEFAULT_ADMIN_ROLE`): `grantRole(CANCELLER_ROLE, GuardianSafe)` and `revokeRole(CANCELLER_ROLE, GovernanceSafe)` — the latter undoes the auto-grant OZ performs in the constructor.
+2. In the same script run (still under the deployer's `DEFAULT_ADMIN_ROLE` from step 1): `grantRole(CANCELLER_ROLE, GuardianSafe)` and `revokeRole(CANCELLER_ROLE, GovernanceSafe)` — these are sequential on-chain transactions, not atomic; the latter undoes the auto-grant OZ performs in the constructor.
 3. Deploy `MinerRegistry` against the same Timelock.
 4. Run integration tests on mainnet against the 60-second delay: `schedule → cancel` (Guardian), `schedule → wait → execute` (open).
 5. Governance schedules `timelock.updateDelay(604800)`, waits 60 s, executes — `minDelay` becomes the final 7 days.
@@ -560,7 +560,7 @@ By default, `proposers` are auto-granted `CANCELLER_ROLE`. If the governance mul
 There are two ways to perform the grant + revoke pair:
 
 - **Through the timelock (default for OZ v4 deployments without an optional admin).** Governance schedules a `Timelock.scheduleBatch` containing `grantRole(CANCELLER_ROLE, guardian)` and `revokeRole(CANCELLER_ROLE, governance)`, waits `minDelay`, and executes. Atomicity matters: doing them separately leaves a window where governance can rescind its own removal.
-- **Instantly via the optional admin (used on Incentiv mainnet).** The OZ v5 `TimelockController` constructor accepts an `admin` parameter that receives `DEFAULT_ADMIN_ROLE` and can call `grantRole`/`revokeRole` immediately, no timelock. The deployer EOA is the admin during the deploy script; it performs both calls atomically and later renounces the role. See §3.1 "Deployment hardening (admin-renounce bootstrap pattern)" for the full lifecycle.
+- **Instantly via the optional admin (used on Incentiv mainnet).** The OZ v5 `TimelockController` constructor accepts an `admin` parameter that receives `DEFAULT_ADMIN_ROLE` and can call `grantRole`/`revokeRole` immediately, no timelock. The deployer EOA is the admin during the deploy script; the grant + revoke are submitted as sequential on-chain transactions (not atomic), so they are executed back-to-back and the resulting role state is verified before the admin is renounced. See §3.1 "Deployment hardening (admin-renounce bootstrap pattern)" for the full lifecycle.
 
 Adding the guardian to the constructor `proposers[]` array is **not** equivalent to either of the above — that would also grant it `PROPOSER_ROLE` (propose power), whereas the guardian must be canceller-only.
 
