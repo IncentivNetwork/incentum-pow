@@ -22,7 +22,7 @@ If your coinbase is not authorized at `DPoWBlock`, your blocks are rejected by t
 
 | Parameter | Mainnet value |
 |---|---|
-| `STAKE_AMOUNT` | 100,000,000 WCENT (`100_000_000 * 10^18` base units) |
+| `STAKE_AMOUNT` | 26,000,000 WCENT (`26_000_000 * 10^18` base units) |
 | `MATURITY_TIME` | 86,400 s (24 h) |
 | `MATURITY_BLOCKS` | 17,280 blocks |
 | `UNSTAKE_DELAY` | 604,800 s (7 days) |
@@ -52,7 +52,7 @@ The two run **in parallel**, not in sequence. At ~5 s/block, 17,280 blocks ≈ 8
 export RPC=http://localhost:8545         # your node's RPC (local)
 export WCENT=0x<wcent-address>
 export REGISTRY=0x<miner-registry-address>
-export STAKE=100000000000000000000000000  # 100,000,000 * 1e18
+export STAKE=26000000000000000000000000  # 26,000,000 * 1e18
 export MINER_KEYSTORE=/path/to/keystore/UTC--...--<coinbase-no-0x>
 export MINER_PWD_FILE=/path/to/password.txt
 export MINER=0x<your-coinbase-address>
@@ -70,13 +70,13 @@ cast wallet address --keystore $MINER_KEYSTORE --password-file $MINER_PWD_FILE
 ### 4.1 Wrap native CENT into WCENT
 
 ```bash
-cast send $WCENT "deposit()" --value 100000000ether \
+cast send $WCENT "deposit()" --value 26000000ether \
   --keystore $MINER_KEYSTORE --password-file $MINER_PWD_FILE \
   --rpc-url $RPC --gas-limit 100000
 
 # verify
 cast call $WCENT "balanceOf(address)(uint256)" $MINER --rpc-url $RPC
-# expect: 100000000000000000000000000
+# expect: 26000000000000000000000000
 ```
 
 ### 4.2 Approve the registry
@@ -88,7 +88,7 @@ cast send $WCENT "approve(address,uint256)" $REGISTRY $STAKE \
 
 # verify
 cast call $WCENT "allowance(address,address)(uint256)" $MINER $REGISTRY --rpc-url $RPC
-# expect: 100000000000000000000000000
+# expect: 26000000000000000000000000
 ```
 
 ### 4.3 Stake

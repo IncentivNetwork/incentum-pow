@@ -13,14 +13,14 @@
 
 | Role | Held by | Capability |
 |---|---|---|
-| `PROPOSER_ROLE` | governance multisig (Gnosis Safe) | `schedule()` an operation |
-| `CANCELLER_ROLE` | governance multisig **and** the independent guardian | `cancel()` a scheduled operation |
-| `EXECUTOR_ROLE` | governance multisig | `execute()` an operation after the delay |
-| `DEFAULT_ADMIN_ROLE` | the Timelock contract itself (`admin = address(0)` at deploy) | `grantRole` / `revokeRole` — itself timelocked |
+| `PROPOSER_ROLE` | Governance Safe (Gnosis Safe, 2/3) | `schedule()` an operation |
+| `CANCELLER_ROLE` | Guardian Safe only | `cancel()` a scheduled operation |
+| `EXECUTOR_ROLE` | `address(0)` (open executor) | `execute()` an operation after the delay |
+| `DEFAULT_ADMIN_ROLE` | the Timelock itself; the deployer EOA holds it briefly at deploy time under the admin-renounce bootstrap (§1.3) | `grantRole` / `revokeRole` — itself timelocked once the deployer has renounced |
 
-OpenZeppelin auto-grants `CANCELLER_ROLE` to every constructor `proposer`. The **independent guardian** (a separate multisig with a different signer set) is granted `CANCELLER_ROLE` post-deployment so cancellation does not depend on the primary governance multisig — see §7.
+OpenZeppelin auto-grants `CANCELLER_ROLE` to every constructor `proposer`. On Incentiv mainnet the **independent Guardian Safe** (a separate 2/3 multisig with a non-overlapping signer set) is granted `CANCELLER_ROLE`, and the auto-grant on Governance is revoked during the deploy-time hardening flow (§1.3), so cancellation does not depend on the primary governance multisig. §7 documents the equivalent fallback path through a timelocked role-change, for deployments that do not use the optional admin.
 
-> **Executor model.** This runbook assumes a *restricted* executor (the governance multisig). OpenZeppelin also supports an *open* executor — granting `EXECUTOR_ROLE` to `address(0)` lets anyone execute an operation once its delay has elapsed. An executor can never run an *unscheduled* operation, so an open executor does not weaken the timelock; it improves liveness (a ready operation cannot be stranded by an unavailable multisig) at the cost of less operational control. Choose deliberately at deployment.
+> **Executor model — Incentiv mainnet.** `EXECUTOR_ROLE` is granted to `address(0)` (open executor): any address may `execute()` an operation once its delay has elapsed. An executor can never run an *unscheduled* operation, so an open executor does not weaken the timelock; it improves liveness (a ready operation cannot be stranded by an unavailable multisig) at the cost of less operational control. Other deployments may choose a restricted executor (e.g., the governance multisig) instead.
 
 ### 1.2 Timing — everything is delayed; only `cancel()` is instant
 
@@ -34,6 +34,30 @@ OpenZeppelin auto-grants `CANCELLER_ROLE` to every constructor `proposer`. The *
 
 The first malicious operation is therefore always visible on-chain for the full delay window before it can take effect. `cancel()` is the only instant lever — keep it in independent hands.
 
+### 1.3 Deployment hardening (admin-renounce bootstrap)
+
+Incentiv mainnet uses the OpenZeppelin v5 `TimelockController` optional-`admin` constructor parameter to harden roles during initial setup, instead of paying the 7-day timelock cost for the initial grant/revoke. The script `script/DeployMainnet.s.sol` performs steps 1–3 of the lifecycle below in a single script run as sequential on-chain transactions, not one atomic transaction; a mid-run failure can leave partial state that must be recovered while the deployer still holds the temporary admin role. Steps 4–6 require multisig signatures and are executed manually as part of DPOW-008-3.
+
+1. **Deploy** `TimelockController(minDelay = 60, proposers = [GovernanceSafe], executors = [address(0)], admin = deployerEOA)`. The 60-second delay is **temporary**; the executor is open (anyone may `execute()` after the delay); the deployer is the **temporary admin** and at this point holds `DEFAULT_ADMIN_ROLE`.
+2. **Harden roles in the same script run.** Still as admin after the Timelock deployment, the deployer calls:
+   ```
+   timelock.grantRole(CANCELLER_ROLE, GuardianSafe)
+   timelock.revokeRole(CANCELLER_ROLE, GovernanceSafe)
+   ```
+   Both are instant — no timelock applies to admin-driven role changes. After this, only Guardian can `cancel()`.
+3. **Deploy** `MinerRegistry` against the same Timelock and finish the script.
+4. **Integration tests** on mainnet against the temporary 60-second delay — see §4 (schedule → cancel via Guardian) and a follow-up schedule → wait → execute (open). These prove the multisig + Ledger + `safe.incentiv.io` chain works end-to-end before the delay is raised.
+5. **Raise the delay to production.** Governance schedules `timelock.updateDelay(604800)`, waits 60 s, executes. `minDelay` is now 7 days; any future role change is timelocked.
+6. **Renounce admin.**
+   ```bash
+   DEFAULT_ADMIN_ROLE=$(cast call $TIMELOCK "DEFAULT_ADMIN_ROLE()(bytes32)" --rpc-url $RPC)
+   cast send $TIMELOCK "renounceRole(bytes32,address)" $DEFAULT_ADMIN_ROLE $DEPLOYER \
+     --ledger --from $DEPLOYER --rpc-url $RPC
+   ```
+   After this, the only `DEFAULT_ADMIN_ROLE` holder is the Timelock itself; future role changes must go through `schedule → wait minDelay → execute`. Verify by querying `hasRole(DEFAULT_ADMIN_ROLE, deployer) == false`.
+
+> **Why this is safe.** The deployer's window with `DEFAULT_ADMIN_ROLE` is short (the duration of the script + the integration-test cycle, on the order of minutes to a few hours), and during that window the deployer is a hardware-wallet-signed EOA under operator control. The alternative — `admin = address(0)` from genesis — pays a full 7-day delay for every initial role change (no `scheduleBatch` shortcut for the first grant + revoke without admin), and the auto-granted `CANCELLER_ROLE` on Governance remains for that 7-day window, defeating the point of having a Guardian. The OZ v5 `TimelockController` NatSpec explicitly recommends this pattern: *"The optional admin can aid with initial configuration of roles after deployment without being subject to delay, but this role should be subsequently renounced in favor of administration through timelocked proposals."*
+
 ---
 
 ## 2. Environment setup
@@ -43,6 +67,11 @@ export RPC=https://<mainnet-rpc>
 export TIMELOCK=0x<timelock-address>
 export REGISTRY=0x<miner-registry-address>
 export WCENT=0x<wcent-address>
+
+# Mainnet-specific addresses used by the deploy-time hardening procedure (§1.3)
+export DEPLOYER=0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b           # Ledger-backed EOA, temporary Timelock admin during bootstrap
+export GOVERNANCE_SAFE=0x10D9dEEb09bA23b2bD9739F698b3dFa9D8F95Ad4    # 2/3 Safe, holds PROPOSER_ROLE
+export GUARDIAN_SAFE=0x482Fd68377310ec984bcA521e2020D89e1A93CBc      # 2/3 Safe with non-overlapping signers, holds CANCELLER_ROLE after §1.3
 
 # zero predecessor — operations in this runbook have no dependency
 export ZERO=0x0000000000000000000000000000000000000000000000000000000000000000
@@ -223,25 +252,36 @@ cast call $TIMELOCK "getTimestamp(bytes32)(uint256)"    $ID --rpc-url $RPC   # 0
 
 ---
 
-## 7. One-time post-deployment setup — independent guardian
+## 7. Fallback setup for deployments without the §1.3 bootstrap
 
-By default the governance multisig is the only `CANCELLER_ROLE` holder. Grant the role to an independent guardian so the cancellation lever is not controlled by the same keys that schedule operations.
+This section applies only to deployments that did **not** use the §1.3 admin-renounce bootstrap (i.e. `TimelockController` was deployed with `admin = address(0)`). The goal is the same final state as §1.3 — Guardian holds `CANCELLER_ROLE`, Governance's constructor auto-grant on `CANCELLER_ROLE` is revoked — but reached through a single timelocked operation instead of inline at deploy time. On Incentiv mainnet this procedure is **not used** because the deploy script already produces the final role state.
 
-`grantRole` is itself `DEFAULT_ADMIN_ROLE`-gated, and that role is held only by the Timelock — so granting is itself a timelocked operation:
+`grantRole` / `revokeRole` are `DEFAULT_ADMIN_ROLE`-gated; without an optional admin, that role is held only by the Timelock — so any role change is itself a timelocked operation. Both calls must be in the **same** `scheduleBatch`, otherwise a window opens where Governance can rescind its own removal.
 
 ```bash
 export TARGET=$TIMELOCK   # role grants target the Timelock itself, not the registry
 export CANCELLER_ROLE=$(cast call $TIMELOCK "CANCELLER_ROLE()(bytes32)" --rpc-url $RPC)
 export GUARDIAN=0x<guardian-safe-address>
+export GOVERNANCE=0x<governance-safe-address>
 
-export DATA=$(cast calldata "grantRole(bytes32,address)" $CANCELLER_ROLE $GUARDIAN)
-export SALT=$(cast keccak "grant-canceller-guardian")
+export GRANT_DATA=$(cast calldata "grantRole(bytes32,address)" $CANCELLER_ROLE $GUARDIAN)
+export REVOKE_DATA=$(cast calldata "revokeRole(bytes32,address)" $CANCELLER_ROLE $GOVERNANCE)
+export SALT=$(cast keccak "harden-canceller-role")
 ```
 
-Schedule → wait `minDelay` → execute against `target = $TIMELOCK` (note: the target is the Timelock itself, not the registry). Verify:
+Schedule the **batch** (atomic) → wait `minDelay` → execute. The batch payload:
 
 ```bash
-cast call $TIMELOCK "hasRole(bytes32,address)(bool)" $CANCELLER_ROLE $GUARDIAN --rpc-url $RPC   # true
+MIN_DELAY=$(cast call $TIMELOCK "getMinDelay()(uint256)" --rpc-url $RPC)
+cast calldata "scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)" \
+  "[$TIMELOCK,$TIMELOCK]" "[0,0]" "[$GRANT_DATA,$REVOKE_DATA]" $ZERO $SALT $MIN_DELAY
+```
+
+After `minDelay`, execute with the matching `executeBatch(...)` payload (same arrays, no delay arg). Verify the final state:
+
+```bash
+cast call $TIMELOCK "hasRole(bytes32,address)(bool)" $CANCELLER_ROLE $GUARDIAN    --rpc-url $RPC   # true
+cast call $TIMELOCK "hasRole(bytes32,address)(bool)" $CANCELLER_ROLE $GOVERNANCE  --rpc-url $RPC   # false
 ```
 
 Do **not** grant the guardian `PROPOSER_ROLE` or `EXECUTOR_ROLE` — it must be canceller-only.
@@ -294,14 +334,16 @@ This is a last-resort procedure; the standing safeguards (multisig, 7-day delay,
 
 ## 9. Pre-mainnet governance checklist
 
-- [ ] `TimelockController` deployed with `minDelay = 604800` (7 days) and `admin = address(0)`.
-- [ ] `proposers` / `executors` set to the governance Gnosis Safe (multisig, hardware-wallet signers).
-- [ ] Independent guardian Safe (different signer set) granted `CANCELLER_ROLE` via the §7 procedure.
+These items must all hold by the time the §1.3 admin-renounce bootstrap is complete (i.e. after step 6 — deployer has renounced `DEFAULT_ADMIN_ROLE`). For ordering and command snippets see §1.3 and the DPOW-008-3 deployment plan.
+
+- [ ] Governance Safe (2/3, hardware-wallet signers) and Guardian Safe (2/3, **non-overlapping** signer set) deployed and smoke-tested on mainnet before the deploy script runs.
+- [ ] `TimelockController` deployed with `proposers = [GovernanceSafe]`, `executors = [address(0)]` (open executor), and — after the bootstrap — `minDelay = 604800` (raised from the temporary 60 s in step 5) and no standing admin (deployer renounced `DEFAULT_ADMIN_ROLE` in step 6).
+- [ ] Integration tests `schedule → cancel` (Guardian) and `schedule → wait → execute` (open) completed against the temporary 60 s delay during the §1.3 bootstrap window; results recorded.
+- [ ] `hasRole(CANCELLER_ROLE, GuardianSafe) == true` and `hasRole(CANCELLER_ROLE, GovernanceSafe) == false` (constructor auto-grant revoked inline by the deploy script per §1.3 step 2; the §7 timelocked procedure is **not** used on Incentiv mainnet).
 - [ ] Guardian Safe has `CANCELLER_ROLE` only — not `PROPOSER_ROLE`, not `EXECUTOR_ROLE`.
 - [ ] `MinerRegistry.timelock` points at the deployed `TimelockController`.
 - [ ] `ChainConfig.DPoWMaturityTime` / `DPoWMaturityBlocks` in the release binary match the deployed `MinerRegistry` immutables (cross-check below).
-- [ ] Timelock `CallScheduled` monitoring + guardian alerting is live.
-- [ ] A dry-run of schedule → cancel has been rehearsed on devnet/testnet.
+- [ ] Timelock `CallScheduled` monitoring + Guardian alerting is live.
 
 Maturity-parameter cross-check — the `ChainConfig` values Geth uses for consensus must equal the contract's `immutable` values:
 

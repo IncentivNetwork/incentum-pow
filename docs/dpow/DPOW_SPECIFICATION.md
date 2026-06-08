@@ -66,7 +66,7 @@ L1 Security = Economic Security (staked $CENT)
 
 | Parameter | Mainnet value | Rationale |
 |---|---|---|
-| `STAKE_AMOUNT` | 100,000,000 WCENT | High capital commitment per miner identity — Sybil resistance |
+| `STAKE_AMOUNT` | 26,000,000 WCENT | High capital commitment per miner identity — Sybil resistance |
 | `MATURITY_TIME` | 86,400 s (24 h) | Time-based delay before a staked miner may produce blocks — prevents flash attacks |
 | `MATURITY_BLOCKS` | 17,280 (~24 h at 5 s/block) | Block-based maturity — deterministic, resistant to timestamp manipulation |
 | `UNSTAKE_DELAY` | 604,800 s (7 days) | Stake stays locked after `requestUnstake()` — prevents instant hit-and-run withdrawal (see §8.1 for the interaction with `TIMELOCK_DELAY`) |
@@ -162,7 +162,7 @@ Full source: `contracts/incentiv/MinerRegistry.sol`. This section documents the 
 **Constants and immutables:**
 
 ```solidity
-uint256 public constant STAKE_AMOUNT = 100_000_000 * 10 ** 18;   // identical everywhere
+uint256 public constant STAKE_AMOUNT = 26_000_000 * 10 ** 18;
 
 IERC20             public immutable centToken;        // WCENT staking token
 TimelockController public immutable timelock;         // governance gate
@@ -186,6 +186,19 @@ constructor(
 - Reverts `ZeroAddress` if `centToken_` or `timelock_` is `address(0)`.
 - Reverts `InvalidParam` if any of `maturityTime_`, `maturityBlocks_`, `unstakeDelay_` is zero.
 - Initializes `_reentrancyStatus = _NOT_ENTERED` (avoids the cold-storage-write penalty on the first guarded call).
+
+**Deployment hardening (admin-renounce bootstrap pattern):**
+
+`MinerRegistry` itself takes no admin parameter; the relevant deployment-time hardening lives on the `TimelockController`. The OpenZeppelin `TimelockController` constructor accepts an optional `admin` address that receives `DEFAULT_ADMIN_ROLE` and can grant/revoke roles **instantly** (no timelock). For mainnet we exploit this for first-time setup, then renounce:
+
+1. Deploy `TimelockController` with a **temporary 60-second** `minDelay`, `proposers = [GovernanceSafe]`, `executors = [address(0)]` (open executor), `admin = deployerEOA`.
+2. In the same script run (still under the deployer's `DEFAULT_ADMIN_ROLE` from step 1): `grantRole(CANCELLER_ROLE, GuardianSafe)` and `revokeRole(CANCELLER_ROLE, GovernanceSafe)` — these are sequential on-chain transactions, not atomic; the latter undoes the auto-grant OZ performs in the constructor.
+3. Deploy `MinerRegistry` against the same Timelock.
+4. Run integration tests on mainnet against the 60-second delay: `schedule → cancel` (Guardian), `schedule → wait → execute` (open).
+5. Governance schedules `timelock.updateDelay(604800)`, waits 60 s, executes — `minDelay` becomes the final 7 days.
+6. Deployer calls `renounceRole(DEFAULT_ADMIN_ROLE, deployerEOA)`. After this every role change is timelocked.
+
+This is documented at the OZ-level (`TimelockController` constructor NatSpec explicitly recommends renouncing the optional admin after setup) and operationalised in `DPOW_GOVERNANCE_RUNBOOK.md`. The Foundry script `script/DeployMainnet.s.sol` performs steps 1–3 in a single script run as multiple sequential on-chain transactions; it is not one atomic transaction, so a mid-run failure can leave partial state that must be recovered while the deployer still holds the temporary admin role. Steps 4–6 are manual because they require multisig signatures.
 
 **Core functions** (all `nonReentrant`):
 
@@ -379,6 +392,8 @@ The Foundry script `script/DeployDevnet.s.sol` performs steps 1–3 for devnet (
 | Devnet | 300 s | 60 | 600 s | 60 s |
 | Mainnet | 86,400 s | 17,280 | 604,800 s | 604,800 s |
 
+> **`STAKE_AMOUNT` per environment.** `STAKE_AMOUNT` is a `constant` in `MinerRegistry.sol` — it is baked into the bytecode at compile time and cannot differ between two deployments of the same source. The currently deployed devnet contract carries `STAKE_AMOUNT = 100,000,000 WCENT` baked in (that was the source-code value when devnet was deployed in PR #73). The source-code constant was lowered to `26,000,000 WCENT` for mainnet in DPOW-008-1; the live devnet contract is unaffected by that source change (its bytecode is frozen). A future devnet reset would deploy with the new 26M value.
+
 `ChainConfig` example (devnet, currently deployed):
 
 ```go
@@ -441,7 +456,7 @@ DPoW activation is a **consensus-breaking hard fork**. The full operational plan
 
 **Flash attack** — mitigated by the dual maturity period: a newly staked miner cannot produce blocks for `MATURITY_TIME` *and* `MATURITY_BLOCKS`. Capital is locked the entire time.
 
-**Sybil / 51% attack** — each miner identity costs `STAKE_AMOUNT` (100M WCENT) of locked capital; an N-identity attack costs `N × STAKE_AMOUNT`.
+**Sybil / 51% attack** — each miner identity costs `STAKE_AMOUNT` (26M WCENT) of locked capital; an N-identity attack costs `N × STAKE_AMOUNT`.
 
 **Hit-and-run** — `UNSTAKE_DELAY` keeps capital locked for 7 days after `requestUnstake()`, during which `miners[m]` is already `false` (mining authorization is revoked immediately, not after the delay).
 
@@ -522,7 +537,7 @@ The Timelock is constructed with `(minDelay, proposers[], executors[], admin)`:
 | `EXECUTOR_ROLE` | each address in `executors[]` | `execute()` an operation after the delay |
 | `DEFAULT_ADMIN_ROLE` | the Timelock contract itself (and `admin`, if non-zero) | `grantRole` / `revokeRole` |
 
-Mainnet deployment **must** pass `admin = address(0)` — no standing admin; role changes are themselves timelocked.
+On Incentiv mainnet the deployer EOA is passed as `admin` to enable the §3.1 admin-renounce bootstrap: the initial `CANCELLER_ROLE` grant/revoke runs during setup without a 7-day delay, then Governance raises `minDelay` to 7 days and the deployer renounces `DEFAULT_ADMIN_ROLE`. The end-state is no standing admin; all subsequent role changes are timelocked. Deployments that do not need the inline-hardening shortcut may pass `admin = address(0)` directly.
 
 ### 11.2 Every governance operation is delayed; only `cancel()` is instant
 
@@ -540,9 +555,14 @@ There is no instant governance mutation. Even reducing the delay (`updateDelay(0
 
 By default, `proposers` are auto-granted `CANCELLER_ROLE`. If the governance multisig is both the sole proposer and the sole canceller, a *compromised* multisig is also the only party able to cancel its own malicious operation — the 7-day window then has no independent backstop.
 
-**Mitigation**: after deployment, grant `CANCELLER_ROLE` to an independent **guardian** address (a separate multisig with a different signer set, e.g. a security/operations team). The guardian can `cancel()` a malicious scheduled operation without depending on the primary governance multisig.
+**Mitigation**: after deployment, grant `CANCELLER_ROLE` to an independent **guardian** address (a separate multisig with a different signer set, e.g. a security/operations team) **and revoke `CANCELLER_ROLE` from the governance multisig**. Granting alone is necessary but not sufficient: if Governance retains `CANCELLER_ROLE` and is compromised, the attacker can cancel any operation aimed at removing them (e.g. `revokeRole(PROPOSER_ROLE, compromisedGovernance)`), creating a deadlock with no on-chain recovery. After revocation, the only canceller is the independent Guardian — a compromised Governance can still schedule malicious operations, but cannot prevent Guardian from cancelling them.
 
-Granting is itself timelocked: governance schedules `timelock.grantRole(CANCELLER_ROLE, guardian)`, waits `minDelay`, and executes. This is a one-time post-deployment step. Adding the guardian to the constructor `proposers[]` array is **not** equivalent — that would also grant it `PROPOSER_ROLE` (propose power), whereas the guardian must be canceller-only.
+There are two ways to perform the grant + revoke pair:
+
+- **Through the timelock (default for OZ v4 deployments without an optional admin).** Governance schedules a `Timelock.scheduleBatch` containing `grantRole(CANCELLER_ROLE, guardian)` and `revokeRole(CANCELLER_ROLE, governance)`, waits `minDelay`, and executes. Atomicity matters: doing them separately leaves a window where governance can rescind its own removal.
+- **Instantly via the optional admin (used on Incentiv mainnet).** The OZ v5 `TimelockController` constructor accepts an `admin` parameter that receives `DEFAULT_ADMIN_ROLE` and can call `grantRole`/`revokeRole` immediately, no timelock. The deployer EOA is the admin during the deploy script; the grant + revoke are submitted as sequential on-chain transactions (not atomic), so they are executed back-to-back and the resulting role state is verified before the admin is renounced. See §3.1 "Deployment hardening (admin-renounce bootstrap pattern)" for the full lifecycle.
+
+Adding the guardian to the constructor `proposers[]` array is **not** equivalent to either of the above — that would also grant it `PROPOSER_ROLE` (propose power), whereas the guardian must be canceller-only.
 
 ### 11.4 Compromise blast radius
 

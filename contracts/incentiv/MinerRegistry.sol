@@ -17,7 +17,7 @@ contract MinerRegistry {
     // Constants
     // ============================================================
 
-    uint256 public constant STAKE_AMOUNT = 100_000_000 * 10 ** 18;
+    uint256 public constant STAKE_AMOUNT = 26_000_000 * 10 ** 18;
 
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
