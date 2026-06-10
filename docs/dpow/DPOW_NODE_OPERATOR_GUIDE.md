@@ -105,7 +105,7 @@ sudo systemctl stop incentum.service
 ### 4.2 Back up the current binary
 
 ```bash
-sudo cp $GETH $GETH.pre-dpow
+sudo cp "$GETH" "$GETH.pre-dpow"
 ```
 
 ### 4.3 Install the new binary
