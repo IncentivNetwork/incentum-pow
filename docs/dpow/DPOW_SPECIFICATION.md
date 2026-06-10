@@ -403,7 +403,7 @@ DPoWMaturityTime:     300,
 DPoWMaturityBlocks:   60,
 ```
 
-> **Mainnet & Testnet**: in `develop`, `IncentivMainnetChainConfig` and `IncentivTestnetChainConfig` currently carry **placeholder** values — `DPoWBlock = big.NewInt(2000000)` / `big.NewInt(500000)` and `MinerRegistryAddress = 0x0000000000000000000000000000000000002001` / `0x0000000000000000000000000000000000005002` respectively. These are unresolved placeholders, **not** a finalized activation, and must not reach a release binary as-is: a non-`nil` `DPoWBlock` pointing at a placeholder registry address is a latent chain-halt once that block is reached. Before any production release, set `DPoWBlock` to either `nil` (DPoW disabled) or the real announced activation block, and `MinerRegistryAddress` to the deployed contract.
+> **Testnet**: in `develop`, `IncentivTestnetChainConfig` currently carries **placeholder** values — `DPoWBlock = big.NewInt(500000)` and `MinerRegistryAddress = 0x0000000000000000000000000000000000005002`. These are unresolved placeholders, **not** a finalized activation, and must not reach a release binary as-is: a non-`nil` `DPoWBlock` pointing at a placeholder registry address is a latent chain-halt once that block is reached. Before any production release, set `DPoWBlock` to either `nil` (DPoW disabled) or the real announced activation block, and `MinerRegistryAddress` to the deployed contract.
 
 ### 5.3 Devnet deployed addresses (chain ID 12730)
 
@@ -414,6 +414,16 @@ DPoWMaturityBlocks:   60,
 | MinerRegistry | `0xdb6EEC53d173554730e342d6703c4AD3fD78604b` |
 
 > These addresses and the devnet `DPoWBlock` are accurate as of writing and may change on redeployment. Treat the live `ChainConfig` and on-chain contract state as authoritative.
+
+### 5.4 Mainnet deployed addresses (chain ID 24101)
+
+| Contract | Address |
+|---|---|
+| WCENT | `0xB0f0A14A50F14dc9e6476d61C00cF0375Dd4EB04` |
+| TimelockController | `0xd3bB2D9D781179A5d71C1cA557024BfC687a0CD1` |
+| MinerRegistry | `0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E` |
+
+> These are the live mainnet contracts deployed in DPOW-008-3. WCENT is the pre-existing wrapped-CENT contract, reused (not redeployed). The `TimelockController` is in production state (7-day `minDelay`, Governance Safe as sole `PROPOSER_ROLE`, Guardian Safe as sole `CANCELLER_ROLE`, `address(0)` as open executor, `DEFAULT_ADMIN_ROLE` held only by the Timelock itself). Treat the live `ChainConfig` and on-chain contract state as authoritative.
 
 ---
 
