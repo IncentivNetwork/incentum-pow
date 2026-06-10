@@ -198,6 +198,16 @@ func TestCheckDPoWConfig(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name:    "incentiv mainnet config is valid",
+			cfg:     IncentivMainnetChainConfig,
+			wantErr: false,
+		},
+		{
+			name:    "incentiv devnet config is valid",
+			cfg:     IncentivDevnetChainConfig,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
