@@ -155,7 +155,7 @@ func TestCheckDPoWConfig(t *testing.T) {
 		{
 			name: "dpow enabled with registry",
 			cfg: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: &addr,
 			},
 			wantErr: false,
@@ -163,40 +163,24 @@ func TestCheckDPoWConfig(t *testing.T) {
 		{
 			name: "dpow enabled without registry",
 			cfg: &ChainConfig{
-				DPoWBlock: big.NewInt(100),
+				DPoWTime: newUint64(100),
 			},
 			wantErr: true,
 		},
 		{
 			name: "dpow enabled with zero registry address",
 			cfg: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: new(common.Address),
 			},
 			wantErr: true,
 		},
 		{
-			name: "registry without dpow block is ignored",
+			name: "registry without dpow time is ignored",
 			cfg: &ChainConfig{
 				MinerRegistryAddress: &addr,
 			},
 			wantErr: false,
-		},
-		{
-			name: "negative dpow block is rejected",
-			cfg: &ChainConfig{
-				DPoWBlock:            big.NewInt(-1),
-				MinerRegistryAddress: &addr,
-			},
-			wantErr: true,
-		},
-		{
-			name: "dpow block exceeding uint64 is rejected",
-			cfg: &ChainConfig{
-				DPoWBlock:            new(big.Int).Lsh(big.NewInt(1), 64),
-				MinerRegistryAddress: &addr,
-			},
-			wantErr: true,
 		},
 		{
 			name:    "incentiv mainnet config is valid",
@@ -233,7 +217,7 @@ func TestDPoWConfigJSONRoundTrip(t *testing.T) {
 	}
 
 	for _, field := range []string{
-		"dpowBlock",
+		"dpowTime",
 		"minerRegistryAddress",
 		"dpowMaturityTime",
 		"dpowMaturityBlocks",
@@ -244,7 +228,7 @@ func TestDPoWConfigJSONRoundTrip(t *testing.T) {
 	}
 
 	cfg := &ChainConfig{
-		DPoWBlock:            big.NewInt(100),
+		DPoWTime:             newUint64(100),
 		MinerRegistryAddress: &addr,
 		DPoWMaturityTime:     300,
 		DPoWMaturityBlocks:   60,
@@ -260,8 +244,8 @@ func TestDPoWConfigJSONRoundTrip(t *testing.T) {
 		t.Fatalf("unmarshal full config json: %v", err)
 	}
 
-	if got.DPoWBlock == nil || got.DPoWBlock.Cmp(cfg.DPoWBlock) != 0 {
-		t.Fatalf("unexpected DPoWBlock after round-trip: have=%v want=%v", got.DPoWBlock, cfg.DPoWBlock)
+	if got.DPoWTime == nil || *got.DPoWTime != *cfg.DPoWTime {
+		t.Fatalf("unexpected DPoWTime after round-trip: have=%v want=%v", got.DPoWTime, cfg.DPoWTime)
 	}
 	if got.MinerRegistryAddress == nil || *got.MinerRegistryAddress != addr {
 		t.Fatalf("unexpected MinerRegistryAddress after round-trip: have=%v want=%v", got.MinerRegistryAddress, addr)
@@ -278,11 +262,8 @@ func TestDPoWHelpers(t *testing.T) {
 	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
 
 	cfg := &ChainConfig{}
-	if cfg.IsDPoW(nil) {
-		t.Fatalf("expected IsDPoW(nil) to return false")
-	}
-	if cfg.IsDPoW(big.NewInt(0)) {
-		t.Fatalf("expected DPoW to be disabled when DPoWBlock is nil")
+	if cfg.IsDPoW(0) {
+		t.Fatalf("expected DPoW to be disabled when DPoWTime is nil")
 	}
 	if got := cfg.GetMinerRegistryAddress(); got != (common.Address{}) {
 		t.Fatalf("unexpected zero registry address default: %v", got.Hex())
@@ -295,16 +276,16 @@ func TestDPoWHelpers(t *testing.T) {
 	}
 
 	cfg = &ChainConfig{
-		DPoWBlock:            big.NewInt(1000),
+		DPoWTime:             newUint64(1000),
 		MinerRegistryAddress: &addr,
 		DPoWMaturityTime:     300,
 		DPoWMaturityBlocks:   60,
 	}
-	if cfg.IsDPoW(big.NewInt(999)) {
-		t.Fatalf("expected DPoW to be inactive before block 1000")
+	if cfg.IsDPoW(999) {
+		t.Fatalf("expected DPoW to be inactive before timestamp 1000")
 	}
-	if !cfg.IsDPoW(big.NewInt(1000)) {
-		t.Fatalf("expected DPoW to be active at block 1000")
+	if !cfg.IsDPoW(1000) {
+		t.Fatalf("expected DPoW to be active at timestamp 1000")
 	}
 	if got := cfg.GetMinerRegistryAddress(); got != addr {
 		t.Fatalf("unexpected registry address: %v", got.Hex())
@@ -317,16 +298,58 @@ func TestDPoWHelpers(t *testing.T) {
 	}
 }
 
+// TestFormatTimestampFork pins both branches of the consensus-banner helper:
+// timestamp 0 must render as "genesis" (the EIP-2124 "active from chain start"
+// semantic) instead of the misleading 1970-01-01 wall time, and any non-zero
+// timestamp must render as RFC3339 UTC.
+func TestFormatTimestampFork(t *testing.T) {
+	if got := formatTimestampFork(0); got != "genesis" {
+		t.Fatalf("formatTimestampFork(0) = %q, want %q", got, "genesis")
+	}
+	const ts uint64 = 1781182800
+	want := "2026-06-11T13:00:00Z"
+	if got := formatTimestampFork(ts); got != want {
+		t.Fatalf("formatTimestampFork(%d) = %q, want %q", ts, got, want)
+	}
+}
+
+// TestIncentivNetworkDPoWTimeValues pins the DPoW activation moment embedded
+// in the three Incentiv chain configs. This is the acceptance criterion for
+// DPOW-008-7: mainnet activates at 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv);
+// devnet and testnet ship without DPoW enabled (see the inline rationale on
+// each config).
+//
+// The expectation is derived through time.Date so a numeric typo in
+// IncentivMainnetChainConfig.DPoWTime fails with the human-readable wall time
+// the issue / PR / banner refers to, not with two opaque integers.
+func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
+	if IncentivMainnetChainConfig.DPoWTime == nil {
+		t.Fatalf("IncentivMainnetChainConfig.DPoWTime must not be nil for the DPOW-008-7 activation")
+	}
+	wantMainnet := uint64(time.Date(2026, 6, 11, 13, 0, 0, 0, time.UTC).Unix())
+	if got := *IncentivMainnetChainConfig.DPoWTime; got != wantMainnet {
+		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
+		wantWall := time.Unix(int64(wantMainnet), 0).UTC().Format(time.RFC3339)
+		t.Fatalf("IncentivMainnetChainConfig.DPoWTime = %d (%s), want %d (%s) — 2026-06-11 16:00 EEST Kyiv", got, gotWall, wantMainnet, wantWall)
+	}
+	if IncentivDevnetChainConfig.DPoWTime != nil {
+		t.Fatalf("IncentivDevnetChainConfig.DPoWTime = %d, want nil (DPoW intentionally disabled on devnet, see config comment)", *IncentivDevnetChainConfig.DPoWTime)
+	}
+	if IncentivTestnetChainConfig.DPoWTime != nil {
+		t.Fatalf("IncentivTestnetChainConfig.DPoWTime = %d, want nil (testnet ships with DPoW dormant)", *IncentivTestnetChainConfig.DPoWTime)
+	}
+}
+
 func TestIsDPoWImmediateActivation(t *testing.T) {
 	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
 
 	cfg := &ChainConfig{
-		DPoWBlock:            big.NewInt(0),
+		DPoWTime:             newUint64(0),
 		MinerRegistryAddress: &addr,
 	}
 
-	if !cfg.IsDPoW(big.NewInt(0)) {
-		t.Fatalf("expected DPoW to be active at block 0 when DPoWBlock is 0")
+	if !cfg.IsDPoW(0) {
+		t.Fatalf("expected DPoW to be active at timestamp 0 when DPoWTime is 0")
 	}
 }
 
@@ -335,120 +358,135 @@ func TestCheckCompatibleDPoW(t *testing.T) {
 	addr2 := common.HexToAddress("0x0000000000000000000000000000000000002222")
 
 	tests := []struct {
-		name      string
-		stored    *ChainConfig
-		new       *ChainConfig
-		headBlock uint64
-		wantErr   *ConfigCompatError
+		name     string
+		stored   *ChainConfig
+		new      *ChainConfig
+		headTime uint64
+		wantErr  *ConfigCompatError
 	}{
 		{
-			name: "dpow block mismatch before activation is allowed",
-			stored: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
-				MinerRegistryAddress: &addr1,
-			},
-			new: &ChainConfig{
-				DPoWBlock:            big.NewInt(200),
-				MinerRegistryAddress: &addr1,
-			},
-			headBlock: 50,
-			wantErr:   nil,
-		},
-		{
-			name:   "dpow block introduced after head is already past activation",
+			name:   "dpow time zero on new config does not underflow RewindToTime",
 			stored: &ChainConfig{},
 			new: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(0),
 				MinerRegistryAddress: &addr1,
 			},
-			headBlock: 150,
+			headTime: 1,
 			wantErr: &ConfigCompatError{
-				What:          "DPoW fork block",
-				StoredBlock:   nil,
-				NewBlock:      big.NewInt(100),
-				RewindToBlock: 99,
+				What:         "DPoW fork timestamp",
+				StoredTime:   nil,
+				NewTime:      newUint64(0),
+				RewindToTime: 0,
 			},
 		},
 		{
-			name: "dpow block mismatch after activation rewinds",
+			name: "dpow time mismatch before activation is allowed",
 			stored: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: &addr1,
 			},
 			new: &ChainConfig{
-				DPoWBlock:            big.NewInt(200),
+				DPoWTime:             newUint64(200),
 				MinerRegistryAddress: &addr1,
 			},
-			headBlock: 150,
+			headTime: 50,
+			wantErr:  nil,
+		},
+		{
+			name:   "dpow time introduced after head is already past activation",
+			stored: &ChainConfig{},
+			new: &ChainConfig{
+				DPoWTime:             newUint64(100),
+				MinerRegistryAddress: &addr1,
+			},
+			headTime: 150,
 			wantErr: &ConfigCompatError{
-				What:          "DPoW fork block",
-				StoredBlock:   big.NewInt(100),
-				NewBlock:      big.NewInt(200),
-				RewindToBlock: 99,
+				What:         "DPoW fork timestamp",
+				StoredTime:   nil,
+				NewTime:      newUint64(100),
+				RewindToTime: 99,
+			},
+		},
+		{
+			name: "dpow time mismatch after activation rewinds",
+			stored: &ChainConfig{
+				DPoWTime:             newUint64(100),
+				MinerRegistryAddress: &addr1,
+			},
+			new: &ChainConfig{
+				DPoWTime:             newUint64(200),
+				MinerRegistryAddress: &addr1,
+			},
+			headTime: 150,
+			wantErr: &ConfigCompatError{
+				What:         "DPoW fork timestamp",
+				StoredTime:   newUint64(100),
+				NewTime:      newUint64(200),
+				RewindToTime: 99,
 			},
 		},
 		{
 			name: "registry mismatch after activation rewinds",
 			stored: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: &addr1,
 			},
 			new: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: &addr2,
 			},
-			headBlock: 150,
+			headTime: 150,
 			wantErr: &ConfigCompatError{
-				What:          "DPoW miner registry address",
-				StoredBlock:   big.NewInt(100),
-				NewBlock:      big.NewInt(100),
-				RewindToBlock: 99,
+				What:         "DPoW miner registry address",
+				StoredTime:   newUint64(100),
+				NewTime:      newUint64(100),
+				RewindToTime: 99,
 			},
 		},
 		{
 			name: "maturity time mismatch after activation rewinds",
 			stored: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: &addr1,
 				DPoWMaturityTime:     300,
 			},
 			new: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: &addr1,
 				DPoWMaturityTime:     600,
 			},
-			headBlock: 150,
+			headTime: 150,
 			wantErr: &ConfigCompatError{
-				What:          "DPoW maturity time",
-				StoredBlock:   big.NewInt(100),
-				NewBlock:      big.NewInt(100),
-				RewindToBlock: 99,
+				What:         "DPoW maturity time",
+				StoredTime:   newUint64(100),
+				NewTime:      newUint64(100),
+				RewindToTime: 99,
 			},
 		},
 		{
 			name: "maturity blocks mismatch after activation rewinds",
 			stored: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: &addr1,
 				DPoWMaturityBlocks:   60,
 			},
 			new: &ChainConfig{
-				DPoWBlock:            big.NewInt(100),
+				DPoWTime:             newUint64(100),
 				MinerRegistryAddress: &addr1,
 				DPoWMaturityBlocks:   120,
 			},
-			headBlock: 150,
+			headTime: 150,
 			wantErr: &ConfigCompatError{
-				What:          "DPoW maturity blocks",
-				StoredBlock:   big.NewInt(100),
-				NewBlock:      big.NewInt(100),
-				RewindToBlock: 99,
+				What:         "DPoW maturity blocks",
+				StoredTime:   newUint64(100),
+				NewTime:      newUint64(100),
+				RewindToTime: 99,
 			},
 		},
 	}
 
 	for _, tt := range tests {
-		err := tt.stored.CheckCompatible(tt.new, tt.headBlock, 0)
+		err := tt.stored.CheckCompatible(tt.new, 0, tt.headTime)
 		if !reflect.DeepEqual(err, tt.wantErr) {
 			t.Fatalf("%s: unexpected compatibility error: got=%v want=%v", tt.name, err, tt.wantErr)
 		}

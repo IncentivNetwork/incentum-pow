@@ -64,8 +64,8 @@ func (ethash *Ethash) VerifyMinerAuthorization(
 		return nil
 	}
 
-	// DPoW is not active yet for this block.
-	if !config.IsDPoW(header.Number) {
+	// DPoW activation timestamp has not been reached for this block.
+	if !config.IsDPoW(header.Time) {
 		return nil
 	}
 
