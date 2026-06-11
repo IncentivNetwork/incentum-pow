@@ -175,7 +175,7 @@ sudo journalctl -u incentum.service | grep -i "Consensus:"
 For the full active chain config, attach over IPC:
 
 ```bash
-$GETH attach $DATADIR/geth.ipc
+"$GETH" attach "$DATADIR/geth.ipc"
 ```
 
 ```javascript
@@ -200,7 +200,7 @@ sudo systemctl status incentum.service --no-pager
 Confirm the node is syncing:
 
 ```bash
-$GETH attach $DATADIR/geth.ipc
+"$GETH" attach "$DATADIR/geth.ipc"
 ```
 
 ```javascript
@@ -222,9 +222,9 @@ At the first block with `number ≥ DPoWBlock`:
 
 ```bash
 # latest block + miner
-$GETH attach --exec \
+"$GETH" attach --exec \
   'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner})' \
-  $DATADIR/geth.ipc
+  "$DATADIR/geth.ipc"
 
 # consensus errors in the last 15 minutes
 sudo journalctl -u incentum.service --since "15 min ago" \
