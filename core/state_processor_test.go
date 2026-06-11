@@ -18,6 +18,7 @@ package core
 
 import (
 	"crypto/ecdsa"
+	"errors"
 	"math/big"
 	"testing"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -428,4 +430,240 @@ func GenerateBadBlock(parent *types.Block, engine consensus.Engine, txs types.Tr
 		return types.NewBlockWithWithdrawals(header, txs, nil, receipts, []*types.Withdrawal{}, trie.NewStackTrie(nil))
 	}
 	return types.NewBlock(header, txs, nil, receipts, trie.NewStackTrie(nil))
+}
+
+func buildStateProcessorDPoWState(t *testing.T, bc *BlockChain, registryAddr, minerAddr common.Address, active bool, stakeTime, stakeBlock uint64) *state.StateDB {
+	t.Helper()
+
+	statedb, err := state.New(bc.CurrentBlock().Root, bc.stateCache, nil)
+	if err != nil {
+		t.Fatalf("state.New() error: %v", err)
+	}
+
+	var slotData [64]byte
+	calcSlot := func(baseSlot uint64) common.Hash {
+		for i := range slotData {
+			slotData[i] = 0
+		}
+		copy(slotData[12:32], minerAddr[:])
+		slotData[56] = byte(baseSlot >> 56)
+		slotData[57] = byte(baseSlot >> 48)
+		slotData[58] = byte(baseSlot >> 40)
+		slotData[59] = byte(baseSlot >> 32)
+		slotData[60] = byte(baseSlot >> 24)
+		slotData[61] = byte(baseSlot >> 16)
+		slotData[62] = byte(baseSlot >> 8)
+		slotData[63] = byte(baseSlot)
+		return crypto.Keccak256Hash(slotData[:])
+	}
+
+	if active {
+		statedb.SetState(registryAddr, calcSlot(0), common.BigToHash(big.NewInt(1)))
+	}
+	if stakeTime > 0 {
+		statedb.SetState(registryAddr, calcSlot(1), common.BigToHash(new(big.Int).SetUint64(stakeTime)))
+	}
+	if stakeBlock > 0 {
+		statedb.SetState(registryAddr, calcSlot(2), common.BigToHash(new(big.Int).SetUint64(stakeBlock)))
+	}
+
+	return statedb
+}
+
+func TestStateProcessorDPoWGuard(t *testing.T) {
+	t.Run("UnauthorizedCoinbase", func(t *testing.T) {
+		registryAddr := common.HexToAddress("0x1111111111111111111111111111111111111111")
+		minerAddr := common.HexToAddress("0x2222222222222222222222222222222222222222")
+
+		config := &params.ChainConfig{
+			ChainID:              big.NewInt(1),
+			HomesteadBlock:       big.NewInt(0),
+			EIP150Block:          big.NewInt(0),
+			EIP155Block:          big.NewInt(0),
+			EIP158Block:          big.NewInt(0),
+			ByzantiumBlock:       big.NewInt(0),
+			ConstantinopleBlock:  big.NewInt(0),
+			PetersburgBlock:      big.NewInt(0),
+			IstanbulBlock:        big.NewInt(0),
+			MuirGlacierBlock:     big.NewInt(0),
+			BerlinBlock:          big.NewInt(0),
+			LondonBlock:          big.NewInt(0),
+			FeePoolBlock:         big.NewInt(0),
+			DPoWBlock:            big.NewInt(0),
+			MinerRegistryAddress: &registryAddr,
+			Ethash:               new(params.EthashConfig),
+		}
+
+		engine := ethash.New(ethash.Config{PowMode: ethash.ModeNormal}, nil, false)
+		db := rawdb.NewMemoryDatabase()
+		gspec := &Genesis{
+			Config:   config,
+			Coinbase: minerAddr,
+		}
+		genesis := gspec.MustCommit(db)
+
+		blockchain, err := NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+		if err != nil {
+			t.Fatalf("NewBlockChain() error: %v", err)
+		}
+		defer blockchain.Stop()
+
+		block := GenerateBadBlock(genesis, engine, nil, config)
+		statedb := buildStateProcessorDPoWState(t, blockchain, registryAddr, minerAddr, false, 0, 0)
+
+		var (
+			gotErr   error
+			panicked any
+		)
+		func() {
+			defer func() {
+				panicked = recover()
+			}()
+			_, _, _, gotErr = blockchain.processor.Process(block, statedb, vm.Config{})
+		}()
+
+		if panicked != nil {
+			t.Fatalf("expected no panic, got %v", panicked)
+		}
+		if gotErr == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(gotErr, consensus.ErrUnauthorizedMiner) {
+			t.Fatalf("expected wrapped %v, got %v", consensus.ErrUnauthorizedMiner, gotErr)
+		}
+	})
+
+	t.Run("NotYetMatureCoinbase", func(t *testing.T) {
+		registryAddr := common.HexToAddress("0x3333333333333333333333333333333333333333")
+		minerAddr := common.HexToAddress("0x4444444444444444444444444444444444444444")
+
+		config := &params.ChainConfig{
+			ChainID:              big.NewInt(1),
+			HomesteadBlock:       big.NewInt(0),
+			EIP150Block:          big.NewInt(0),
+			EIP155Block:          big.NewInt(0),
+			EIP158Block:          big.NewInt(0),
+			ByzantiumBlock:       big.NewInt(0),
+			ConstantinopleBlock:  big.NewInt(0),
+			PetersburgBlock:      big.NewInt(0),
+			IstanbulBlock:        big.NewInt(0),
+			MuirGlacierBlock:     big.NewInt(0),
+			BerlinBlock:          big.NewInt(0),
+			LondonBlock:          big.NewInt(0),
+			FeePoolBlock:         big.NewInt(0),
+			DPoWBlock:            big.NewInt(0),
+			MinerRegistryAddress: &registryAddr,
+			Ethash:               new(params.EthashConfig),
+		}
+
+		engine := ethash.New(ethash.Config{PowMode: ethash.ModeNormal}, nil, false)
+		db := rawdb.NewMemoryDatabase()
+		gspec := &Genesis{
+			Config:   config,
+			Coinbase: minerAddr,
+		}
+		genesis := gspec.MustCommit(db)
+
+		blockchain, err := NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+		if err != nil {
+			t.Fatalf("NewBlockChain() error: %v", err)
+		}
+		defer blockchain.Stop()
+
+		block := GenerateBadBlock(genesis, engine, nil, config)
+		statedb := buildStateProcessorDPoWState(t, blockchain, registryAddr, minerAddr, true, 1, 0)
+
+		var (
+			gotErr   error
+			panicked any
+		)
+		func() {
+			defer func() {
+				panicked = recover()
+			}()
+			_, _, _, gotErr = blockchain.processor.Process(block, statedb, vm.Config{})
+		}()
+
+		if panicked != nil {
+			t.Fatalf("expected no panic, got %v", panicked)
+		}
+		if gotErr == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(gotErr, consensus.ErrMinerNotMature) {
+			t.Fatalf("expected wrapped %v, got %v", consensus.ErrMinerNotMature, gotErr)
+		}
+	})
+
+	t.Run("AuthorizedCoinbase", func(t *testing.T) {
+		registryAddr := common.HexToAddress("0x5555555555555555555555555555555555555555")
+		minerAddr := common.HexToAddress("0x6666666666666666666666666666666666666666")
+
+		config := &params.ChainConfig{
+			ChainID:              big.NewInt(1),
+			HomesteadBlock:       big.NewInt(0),
+			EIP150Block:          big.NewInt(0),
+			EIP155Block:          big.NewInt(0),
+			EIP158Block:          big.NewInt(0),
+			ByzantiumBlock:       big.NewInt(0),
+			ConstantinopleBlock:  big.NewInt(0),
+			PetersburgBlock:      big.NewInt(0),
+			IstanbulBlock:        big.NewInt(0),
+			MuirGlacierBlock:     big.NewInt(0),
+			BerlinBlock:          big.NewInt(0),
+			LondonBlock:          big.NewInt(0),
+			FeePoolBlock:         big.NewInt(0),
+			DPoWBlock:            big.NewInt(0),
+			MinerRegistryAddress: &registryAddr,
+			Ethash:               new(params.EthashConfig),
+		}
+
+		engine := ethash.New(ethash.Config{PowMode: ethash.ModeNormal}, nil, false)
+		db := rawdb.NewMemoryDatabase()
+		gspec := &Genesis{
+			Config:   config,
+			Coinbase: minerAddr,
+		}
+		genesis := gspec.MustCommit(db)
+
+		blockchain, err := NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+		if err != nil {
+			t.Fatalf("NewBlockChain() error: %v", err)
+		}
+		defer blockchain.Stop()
+
+		parentHeader := types.CopyHeader(genesis.Header())
+		parentHeader.Number = big.NewInt(18000)
+		parentHeader.Time = 100000
+		parent := types.NewBlock(parentHeader, nil, nil, nil, trie.NewStackTrie(nil))
+
+		block := GenerateBadBlock(parent, engine, nil, config)
+		statedb := buildStateProcessorDPoWState(
+			t,
+			blockchain,
+			registryAddr,
+			minerAddr,
+			true,
+			block.Time()-90000,
+			block.NumberU64()-18000,
+		)
+
+		var (
+			gotErr   error
+			panicked any
+		)
+		func() {
+			defer func() {
+				panicked = recover()
+			}()
+			_, _, _, gotErr = blockchain.processor.Process(block, statedb, vm.Config{})
+		}()
+
+		if panicked != nil {
+			t.Fatalf("expected no panic, got %v", panicked)
+		}
+		if gotErr != nil {
+			t.Fatalf("expected nil error, got %v", gotErr)
+		}
+	})
 }

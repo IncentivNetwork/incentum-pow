@@ -38,4 +38,16 @@ var (
 	// ErrInvalidTerminalBlock is returned if a block is invalid wrt. the terminal
 	// total difficulty.
 	ErrInvalidTerminalBlock = errors.New("invalid terminal block")
+
+	// ErrUnauthorizedMiner is returned when a block's coinbase address is not
+	// registered as an active miner in the MinerRegistry contract.
+	ErrUnauthorizedMiner = errors.New("unauthorized miner: address not in DPoW registry")
+
+	// ErrMinerNotMature is returned when a block's coinbase address has staked
+	// but the required maturity period (time or block count) has not elapsed.
+	ErrMinerNotMature = errors.New("miner stake not yet mature: maturity period not elapsed")
+
+	// ErrMinerRegistryNotConfigured is returned when DPoW is active for the
+	// current block number but no MinerRegistryAddress is set in ChainConfig.
+	ErrMinerRegistryNotConfigured = errors.New("miner registry not configured: dpow block is set but registry address is zero")
 )

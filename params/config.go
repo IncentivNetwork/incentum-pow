@@ -63,6 +63,10 @@ var CheckpointOracles = map[common.Hash]*CheckpointOracleConfig{
 
 func newUint64(val uint64) *uint64 { return &val }
 
+func newAddress(val common.Address) *common.Address {
+	return &val
+}
+
 var (
 	MainnetTerminalTotalDifficulty, _ = new(big.Int).SetString("58_750_000_000_000_000_000_000", 0)
 
@@ -262,6 +266,8 @@ var (
 		FastBlock:                     big.NewInt(319000),
 		ZeroRewardBlock:               big.NewInt(471000),
 		MergeNetsplitBlock:            nil,
+		DPoWBlock:                     nil,
+		MinerRegistryAddress:          nil,
 		IrregularStateChangeHeight:    nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -296,6 +302,10 @@ var (
 		FastBlock:                     big.NewInt(0),
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
+		DPoWBlock:                     big.NewInt(4275000),
+		MinerRegistryAddress:          newAddress(common.HexToAddress("0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E")),
+		DPoWMaturityTime:              86400,
+		DPoWMaturityBlocks:            17280,
 		IrregularStateChangeHeight:    big.NewInt(2429000),
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -329,6 +339,10 @@ var (
 		FastBlock:                     big.NewInt(0),
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
+		DPoWBlock:                     big.NewInt(274000),
+		MinerRegistryAddress:          newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
+		DPoWMaturityTime:              300,
+		DPoWMaturityBlocks:            60,
 		IrregularStateChangeHeight:    nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -562,6 +576,22 @@ type ChainConfig struct {
 	FastBlock              *big.Int `json:"fastBlock,omitempty"`              // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
 	MergeNetsplitBlock     *big.Int `json:"mergeNetsplitBlock,omitempty"`     // Virtual fork after The Merge to use as a network splitter
 
+	// DPoWBlock is the block number at which Delegated Proof-of-Work activates.
+	// nil = never activates, 0 = already activated.
+	DPoWBlock *big.Int `json:"dpowBlock,omitempty"`
+
+	// MinerRegistryAddress is the address of the on-chain MinerRegistry contract.
+	// Must be set when DPoWBlock is non-nil.
+	MinerRegistryAddress *common.Address `json:"minerRegistryAddress,omitempty"`
+
+	// DPoWMaturityTime is the minimum number of seconds a miner must be staked
+	// before their blocks are accepted. Defaults to 86400 (24 hours) if zero.
+	DPoWMaturityTime uint64 `json:"dpowMaturityTime,omitempty"`
+
+	// DPoWMaturityBlocks is the minimum number of blocks a miner must be staked
+	// before their blocks are accepted. Defaults to 17280 if zero.
+	DPoWMaturityBlocks uint64 `json:"dpowMaturityBlocks,omitempty"`
+
 	IrregularStateChangeHeight *big.Int `json:"irregularStateChangeHeight,omitempty"` // Irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
 
 	// Fork scheduling was switched from blocks to timestamps here
@@ -616,7 +646,11 @@ func (c *ChainConfig) Description() string {
 	switch {
 	case c.Ethash != nil:
 		if c.TerminalTotalDifficulty == nil {
-			banner += "Consensus: Ethash (proof-of-work)\n"
+			if c.DPoWBlock != nil {
+				banner += fmt.Sprintf("Consensus: Ethash + DPoW (authorized mining, activates at block #%-8v)\n", c.DPoWBlock)
+			} else {
+				banner += "Consensus: Ethash (proof-of-work)\n"
+			}
 		} else if !c.TerminalTotalDifficultyPassed {
 			banner += "Consensus: Beacon (proof-of-stake), merging from Ethash (proof-of-work)\n"
 		} else {
@@ -787,6 +821,53 @@ func (c *ChainConfig) IsGrayGlacier(num *big.Int) bool {
 // IsFast returns whether num is either equal to the Fast consensus algorithm fork block or greater.
 func (c *ChainConfig) IsFast(num *big.Int) bool {
 	return isBlockForked(c.FastBlock, num)
+}
+
+// IsDPoW returns whether num is either equal to the DPoW fork block or greater.
+func (c *ChainConfig) IsDPoW(num *big.Int) bool {
+	return isBlockForked(c.DPoWBlock, num)
+}
+
+// GetMinerRegistryAddress returns the configured miner registry address or zero address if unset.
+func (c *ChainConfig) GetMinerRegistryAddress() common.Address {
+	if c.MinerRegistryAddress == nil {
+		return common.Address{}
+	}
+	return *c.MinerRegistryAddress
+}
+
+// GetDPoWMaturityTime returns the configured maturity time in seconds,
+// or the default 24h (86400s) if unset.
+func (c *ChainConfig) GetDPoWMaturityTime() uint64 {
+	if c.DPoWMaturityTime == 0 {
+		return 86400
+	}
+	return c.DPoWMaturityTime
+}
+
+// GetDPoWMaturityBlocks returns the required staking block count as *big.Int.
+// Returns the mainnet default (17280) if not explicitly set.
+func (c *ChainConfig) GetDPoWMaturityBlocks() *big.Int {
+	if c.DPoWMaturityBlocks == 0 {
+		return big.NewInt(17_280)
+	}
+	return new(big.Int).SetUint64(c.DPoWMaturityBlocks)
+}
+
+// CheckDPoWConfig validates DPoW-specific chain config invariants.
+func (c *ChainConfig) CheckDPoWConfig() error {
+	switch {
+	case c.DPoWBlock == nil:
+		return nil
+	case c.DPoWBlock.Sign() < 0:
+		return fmt.Errorf("dpowBlock must be non-negative, got %s", c.DPoWBlock.String())
+	case c.DPoWBlock.BitLen() > 64:
+		return fmt.Errorf("dpowBlock exceeds uint64 range, got %s", c.DPoWBlock.String())
+	case c.MinerRegistryAddress == nil || *c.MinerRegistryAddress == (common.Address{}):
+		return fmt.Errorf("dpowBlock is set to %s but minerRegistryAddress is missing or zero address", c.DPoWBlock.String())
+	default:
+		return nil
+	}
 }
 
 // IsIrregularStateChange returns whether num is equal to the irregular state change height.
@@ -968,6 +1049,21 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	if isForkBlockIncompatible(c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock, headNumber) {
 		return newBlockCompatError("Merge netsplit fork block", c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock)
 	}
+	if isForkBlockIncompatible(c.DPoWBlock, newcfg.DPoWBlock, headNumber) {
+		return newBlockCompatError("DPoW fork block", c.DPoWBlock, newcfg.DPoWBlock)
+	}
+
+	// For any DPoW parameter change after activation, the rewind target is always
+	// the pre-DPoW boundary, so DPoWBlock is intentionally used for both sides.
+	if c.IsDPoW(headNumber) && c.GetMinerRegistryAddress() != newcfg.GetMinerRegistryAddress() {
+		return newBlockCompatError("DPoW miner registry address", c.DPoWBlock, newcfg.DPoWBlock)
+	}
+	if c.IsDPoW(headNumber) && c.GetDPoWMaturityTime() != newcfg.GetDPoWMaturityTime() {
+		return newBlockCompatError("DPoW maturity time", c.DPoWBlock, newcfg.DPoWBlock)
+	}
+	if c.IsDPoW(headNumber) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
+		return newBlockCompatError("DPoW maturity blocks", c.DPoWBlock, newcfg.DPoWBlock)
+	}
 	if isForkTimestampIncompatible(c.ShanghaiTime, newcfg.ShanghaiTime, headTimestamp) {
 		return newTimestampCompatError("Shanghai fork timestamp", c.ShanghaiTime, newcfg.ShanghaiTime)
 	}
@@ -1105,10 +1201,29 @@ func newTimestampCompatError(what string, storedtime, newtime *uint64) *ConfigCo
 }
 
 func (err *ConfigCompatError) Error() string {
-	if err.StoredBlock != nil {
-		return fmt.Sprintf("mismatching %s in database (have block %d, want block %d, rewindto block %d)", err.What, err.StoredBlock, err.NewBlock, err.RewindToBlock)
+	if err.StoredBlock != nil || err.NewBlock != nil {
+		return fmt.Sprintf(
+			"mismatching %s in database (have block %v, want block %v, rewindto block %d)",
+			err.What,
+			err.StoredBlock,
+			err.NewBlock,
+			err.RewindToBlock,
+		)
 	}
-	return fmt.Sprintf("mismatching %s in database (have timestamp %d, want timestamp %d, rewindto timestamp %d)", err.What, err.StoredTime, err.NewTime, err.RewindToTime)
+	return fmt.Sprintf(
+		"mismatching %s in database (have timestamp %v, want timestamp %v, rewindto timestamp %d)",
+		err.What,
+		uint64PtrValue(err.StoredTime),
+		uint64PtrValue(err.NewTime),
+		err.RewindToTime,
+	)
+}
+
+func uint64PtrValue(v *uint64) interface{} {
+	if v == nil {
+		return nil
+	}
+	return *v
 }
 
 // GetFeePoolContractAddress returns the appropriate FeePool contract address based on the chain ID
