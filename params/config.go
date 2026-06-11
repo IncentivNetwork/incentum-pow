@@ -654,6 +654,12 @@ func (c *CliqueConfig) String() string {
 }
 
 // Description returns a human-readable description of ChainConfig.
+// formatTimestampFork renders a Unix timestamp used by a time-based fork as an
+// RFC3339 UTC string for operator-readable logging in the consensus banner.
+func formatTimestampFork(ts uint64) string {
+	return time.Unix(int64(ts), 0).UTC().Format(time.RFC3339)
+}
+
 func (c *ChainConfig) Description() string {
 	var banner string
 
@@ -667,7 +673,7 @@ func (c *ChainConfig) Description() string {
 	case c.Ethash != nil:
 		if c.TerminalTotalDifficulty == nil {
 			if c.DPoWTime != nil {
-				banner += fmt.Sprintf("Consensus: Ethash + DPoW (authorized mining, activates at timestamp %d / %s)\n", *c.DPoWTime, time.Unix(int64(*c.DPoWTime), 0).UTC().Format(time.RFC3339))
+				banner += fmt.Sprintf("Consensus: Ethash + DPoW (authorized mining, activates at timestamp %d / %s)\n", *c.DPoWTime, formatTimestampFork(*c.DPoWTime))
 			} else {
 				banner += "Consensus: Ethash (proof-of-work)\n"
 			}
@@ -735,16 +741,16 @@ func (c *ChainConfig) Description() string {
 	// Create a list of forks post-merge
 	banner += "Post-Merge hard forks (timestamp based):\n"
 	if c.ShanghaiTime != nil {
-		banner += fmt.Sprintf(" - Shanghai:                    @%-10v (%s) (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/shanghai.md)\n", *c.ShanghaiTime, time.Unix(int64(*c.ShanghaiTime), 0).UTC().Format(time.RFC3339))
+		banner += fmt.Sprintf(" - Shanghai:                    @%-10v (%s) (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/shanghai.md)\n", *c.ShanghaiTime, formatTimestampFork(*c.ShanghaiTime))
 	}
 	if c.DPoWTime != nil {
-		banner += fmt.Sprintf(" - DPoW:                        @%-10v (%s)\n", *c.DPoWTime, time.Unix(int64(*c.DPoWTime), 0).UTC().Format(time.RFC3339))
+		banner += fmt.Sprintf(" - DPoW:                        @%-10v (%s)\n", *c.DPoWTime, formatTimestampFork(*c.DPoWTime))
 	}
 	if c.CancunTime != nil {
-		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, time.Unix(int64(*c.CancunTime), 0).UTC().Format(time.RFC3339))
+		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, formatTimestampFork(*c.CancunTime))
 	}
 	if c.PragueTime != nil {
-		banner += fmt.Sprintf(" - Prague:                      @%-10v (%s)\n", *c.PragueTime, time.Unix(int64(*c.PragueTime), 0).UTC().Format(time.RFC3339))
+		banner += fmt.Sprintf(" - Prague:                      @%-10v (%s)\n", *c.PragueTime, formatTimestampFork(*c.PragueTime))
 	}
 	return banner
 }
