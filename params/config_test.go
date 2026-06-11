@@ -298,6 +298,21 @@ func TestDPoWHelpers(t *testing.T) {
 	}
 }
 
+// TestFormatTimestampFork pins both branches of the consensus-banner helper:
+// timestamp 0 must render as "genesis" (the EIP-2124 "active from chain start"
+// semantic) instead of the misleading 1970-01-01 wall time, and any non-zero
+// timestamp must render as RFC3339 UTC.
+func TestFormatTimestampFork(t *testing.T) {
+	if got := formatTimestampFork(0); got != "genesis" {
+		t.Fatalf("formatTimestampFork(0) = %q, want %q", got, "genesis")
+	}
+	const ts uint64 = 1781182800
+	want := "2026-06-11T13:00:00Z"
+	if got := formatTimestampFork(ts); got != want {
+		t.Fatalf("formatTimestampFork(%d) = %q, want %q", ts, got, want)
+	}
+}
+
 // TestIncentivNetworkDPoWTimeValues pins the DPoW activation moment embedded
 // in the three Incentiv chain configs. This is the acceptance criterion for
 // DPOW-008-7: mainnet activates at 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv);

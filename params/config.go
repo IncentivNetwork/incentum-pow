@@ -653,9 +653,15 @@ func (c *CliqueConfig) String() string {
 	return "clique"
 }
 
-// formatTimestampFork renders a Unix timestamp used by a time-based fork as an
-// RFC3339 UTC string for operator-readable logging in the consensus banner.
+// formatTimestampFork renders a time-based fork's activation timestamp for the
+// consensus banner. ts == 0 is rendered as "genesis" (the EIP-2124 semantic for
+// "active from chain start"), so private/dev configs with ShanghaiTime: 0 do
+// not print a misleading 1970-01-01 wall time; non-zero values are rendered
+// as RFC3339 UTC for operator readability.
 func formatTimestampFork(ts uint64) string {
+	if ts == 0 {
+		return "genesis"
+	}
 	return time.Unix(int64(ts), 0).UTC().Format(time.RFC3339)
 }
 
