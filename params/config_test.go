@@ -298,6 +298,27 @@ func TestDPoWHelpers(t *testing.T) {
 	}
 }
 
+// TestIncentivNetworkDPoWTimeValues pins the DPoW activation values embedded
+// in the three Incentiv chain configs. This is the acceptance criterion for
+// DPOW-008-7: mainnet activates at 2026-06-11 11:00:00 UTC (14:00 EEST Kyiv);
+// devnet and testnet ship without DPoW enabled (see the inline rationale on
+// each config).
+func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
+	if IncentivMainnetChainConfig.DPoWTime == nil {
+		t.Fatalf("IncentivMainnetChainConfig.DPoWTime must not be nil for the DPOW-008-7 activation")
+	}
+	const wantMainnet uint64 = 1781176800
+	if got := *IncentivMainnetChainConfig.DPoWTime; got != wantMainnet {
+		t.Fatalf("IncentivMainnetChainConfig.DPoWTime = %d, want %d (2026-06-11 11:00:00 UTC = 14:00 EEST Kyiv)", got, wantMainnet)
+	}
+	if IncentivDevnetChainConfig.DPoWTime != nil {
+		t.Fatalf("IncentivDevnetChainConfig.DPoWTime = %d, want nil (DPoW intentionally disabled on devnet, see config comment)", *IncentivDevnetChainConfig.DPoWTime)
+	}
+	if IncentivTestnetChainConfig.DPoWTime != nil {
+		t.Fatalf("IncentivTestnetChainConfig.DPoWTime = %d, want nil (testnet ships with DPoW dormant)", *IncentivTestnetChainConfig.DPoWTime)
+	}
+}
+
 func TestIsDPoWImmediateActivation(t *testing.T) {
 	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
 
