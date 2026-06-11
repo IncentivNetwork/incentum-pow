@@ -583,18 +583,6 @@ type ChainConfig struct {
 	FastBlock              *big.Int `json:"fastBlock,omitempty"`              // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
 	MergeNetsplitBlock     *big.Int `json:"mergeNetsplitBlock,omitempty"`     // Virtual fork after The Merge to use as a network splitter
 
-	// DPoWTime is the Unix timestamp at which Delegated Proof-of-Work activates.
-	// nil = never activates, 0 = already activated.
-	//
-	// DPoW activates AFTER ShanghaiTime (which is in our past), so the activation
-	// must be expressed as a timestamp — not a block number — to keep forkid
-	// chronologically ordered (block forks first, then time forks). A block-based
-	// DPoW fork after a time-based Shanghai fork breaks the EIP-2124 forkid
-	// algorithm's implicit block-before-time invariant and produces forkid hash
-	// mismatches between pre- and post-DPoW binaries during the rollout window.
-	// See post-Merge upstream pattern: ShanghaiTime, CancunTime, PragueTime.
-	DPoWTime *uint64 `json:"dpowTime,omitempty"`
-
 	// MinerRegistryAddress is the address of the on-chain MinerRegistry contract.
 	// Must be set when DPoWTime is non-nil.
 	MinerRegistryAddress *common.Address `json:"minerRegistryAddress,omitempty"`
@@ -612,8 +600,21 @@ type ChainConfig struct {
 	// Fork scheduling was switched from blocks to timestamps here
 
 	ShanghaiTime *uint64 `json:"shanghaiTime,omitempty"` // Shanghai switch time (nil = no fork, 0 = already on shanghai)
-	CancunTime   *uint64 `json:"cancunTime,omitempty"`   // Cancun switch time (nil = no fork, 0 = already on cancun)
-	PragueTime   *uint64 `json:"pragueTime,omitempty"`   // Prague switch time (nil = no fork, 0 = already on prague)
+
+	// DPoWTime is the Unix timestamp at which Delegated Proof-of-Work activates.
+	// nil = never activates, 0 = already activated.
+	//
+	// DPoW activates AFTER ShanghaiTime, so the activation must be expressed as a
+	// timestamp — not a block number — to keep forkid chronologically ordered
+	// (block forks first, then time forks). A block-based DPoW fork after a
+	// time-based Shanghai fork breaks the EIP-2124 forkid algorithm's implicit
+	// block-before-time invariant and produces forkid hash mismatches between
+	// pre- and post-DPoW binaries during the rollout window. See post-Merge
+	// upstream pattern: ShanghaiTime, CancunTime, PragueTime.
+	DPoWTime *uint64 `json:"dpowTime,omitempty"`
+
+	CancunTime *uint64 `json:"cancunTime,omitempty"` // Cancun switch time (nil = no fork, 0 = already on cancun)
+	PragueTime *uint64 `json:"pragueTime,omitempty"` // Prague switch time (nil = no fork, 0 = already on prague)
 
 	// TerminalTotalDifficulty is the amount of total difficulty reached by
 	// the network that triggers the consensus upgrade.
@@ -1062,6 +1063,9 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	if isForkBlockIncompatible(c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock, headNumber) {
 		return newBlockCompatError("Merge netsplit fork block", c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock)
 	}
+	if isForkTimestampIncompatible(c.ShanghaiTime, newcfg.ShanghaiTime, headTimestamp) {
+		return newTimestampCompatError("Shanghai fork timestamp", c.ShanghaiTime, newcfg.ShanghaiTime)
+	}
 	if isForkTimestampIncompatible(c.DPoWTime, newcfg.DPoWTime, headTimestamp) {
 		return newTimestampCompatError("DPoW fork timestamp", c.DPoWTime, newcfg.DPoWTime)
 	}
@@ -1076,9 +1080,6 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if c.IsDPoW(headTimestamp) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
 		return newTimestampCompatError("DPoW maturity blocks", c.DPoWTime, newcfg.DPoWTime)
-	}
-	if isForkTimestampIncompatible(c.ShanghaiTime, newcfg.ShanghaiTime, headTimestamp) {
-		return newTimestampCompatError("Shanghai fork timestamp", c.ShanghaiTime, newcfg.ShanghaiTime)
 	}
 	if isForkTimestampIncompatible(c.CancunTime, newcfg.CancunTime, headTimestamp) {
 		return newTimestampCompatError("Cancun fork timestamp", c.CancunTime, newcfg.CancunTime)
