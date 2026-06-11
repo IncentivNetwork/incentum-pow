@@ -339,13 +339,16 @@ var (
 		FastBlock:           big.NewInt(0),
 		ZeroRewardBlock:     big.NewInt(0),
 		MergeNetsplitBlock:  nil,
-		// DPoWTime intentionally nil for devnet: existing devnet datadirs were
-		// initialised under the old DPoWBlock=274000 binary, and switching to a
-		// timestamp here would trip CheckCompatible on every node restart (stored
-		// dpowBlock cannot be translated to dpowTime). Devnet retains the embedded
-		// MinerRegistry address for any fresh deployment that explicitly sets
-		// DPoWTime via genesis override; for the live devnet the DPoW enforcement
-		// is effectively retired by this version.
+		// DPoWTime intentionally nil for devnet. Existing devnet datadirs were
+		// initialised under the old DPoWBlock=274000 binary, so the stored
+		// ChainConfig has storedcfg.DPoWTime == nil (the old field name is just
+		// silently dropped on JSON unmarshal — no block→timestamp migration is
+		// performed). Setting any past timestamp here would make
+		// isForkTimestampIncompatible(nil, &past, headTime) return true and
+		// fail CheckCompatible on every devnet node restart. DPoW is disabled
+		// on this network until a fresh genesis with an explicit DPoWTime is
+		// deployed; the embedded MinerRegistry address is retained for that
+		// future redeploy.
 		DPoWTime:                      nil,
 		MinerRegistryAddress:          newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
 		DPoWMaturityTime:              300,
