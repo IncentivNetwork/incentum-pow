@@ -653,13 +653,13 @@ func (c *CliqueConfig) String() string {
 	return "clique"
 }
 
-// Description returns a human-readable description of ChainConfig.
 // formatTimestampFork renders a Unix timestamp used by a time-based fork as an
 // RFC3339 UTC string for operator-readable logging in the consensus banner.
 func formatTimestampFork(ts uint64) string {
 	return time.Unix(int64(ts), 0).UTC().Format(time.RFC3339)
 }
 
+// Description returns a human-readable description of ChainConfig.
 func (c *ChainConfig) Description() string {
 	var banner string
 
