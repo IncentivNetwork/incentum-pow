@@ -459,3 +459,67 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 		t.Fatalf("unexpected next fork before DPoW activation: have=%d want=%d", preFork.Next, 100)
 	}
 }
+
+// TestIncentivMainnetDPoWForkIDs is the regression test for the DPOW-008-7
+// hotfix. It verifies that on the live Incentiv mainnet configuration the
+// forkid hash before DPoW activation is identical to what a pre-DPoW binary
+// (no DPoWTime in config) would compute at the same head, so the two binaries
+// peer freely throughout the rollout window. After activation the hash
+// diverges (folds DPoWTime in) — the standard post-Shanghai hard fork
+// separation point.
+func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
+	cfg := params.IncentivMainnetChainConfig
+	genesis := params.IncentivMainnetGenesisHash
+	dpowTime := *cfg.DPoWTime
+	shanghai := *cfg.ShanghaiTime
+
+	// Build a "pre-DPoW" config that mirrors the v1.11.6-stable binary running
+	// on operator nodes today (DPoW code absent, no DPoWTime in config).
+	preDPoW := *cfg
+	preDPoW.DPoWTime = nil
+	preDPoW.MinerRegistryAddress = nil
+
+	// Pre-activation head: well after Shanghai, well before DPoW.
+	preHead := uint64(4_272_003)
+	preTime := dpowTime - 60
+
+	preDPoWID := NewID(&preDPoW, genesis, preHead, preTime)
+	newBinaryID := NewID(cfg, genesis, preHead, preTime)
+
+	// Hash MUST be identical — this is the cross-version peering invariant.
+	if preDPoWID.Hash != newBinaryID.Hash {
+		t.Fatalf("pre-activation forkid Hash differs between pre-DPoW and new binary:\n  pre-DPoW    = %#v\n  new binary  = %#v\n(this breaks operator rollout peering)", preDPoWID, newBinaryID)
+	}
+	// Pre-DPoW binary has no future fork to advertise.
+	if preDPoWID.Next != 0 {
+		t.Fatalf("pre-DPoW binary unexpected Next: have=%d want=0", preDPoWID.Next)
+	}
+	// New binary advertises DPoWTime as the next fork.
+	if newBinaryID.Next != dpowTime {
+		t.Fatalf("new binary Next mismatch: have=%d want=%d", newBinaryID.Next, dpowTime)
+	}
+
+	// ShanghaiTime must be folded into the hash even though DPoWTime is the
+	// nearest unreached fork — this is exactly what was broken with the
+	// previous block-based DPoWBlock layout, where the algorithm stopped at
+	// DPoWBlock and never reached ShanghaiTime in the time-fork loop.
+	if preTime < shanghai {
+		t.Fatalf("test precondition broken: preTime=%d must be >= shanghaiTime=%d", preTime, shanghai)
+	}
+
+	// New binary at DPoW activation: Next jumps to the next time fork (cancunTime, which is nil, so 0).
+	atDPoW := NewID(cfg, genesis, preHead, dpowTime)
+	if atDPoW.Hash == newBinaryID.Hash {
+		t.Fatalf("forkid Hash did not change at DPoW activation: pre=%#v at=%#v", newBinaryID, atDPoW)
+	}
+	if atDPoW.Next != 0 {
+		t.Fatalf("forkid Next after DPoW activation: have=%d want=0", atDPoW.Next)
+	}
+
+	// NewFilter on the new binary MUST accept the pre-DPoW binary's forkid
+	// (rule #1b: hashes match, remote Next == 0 disables the early-pass check).
+	filter := newFilter(cfg, genesis, func() (uint64, uint64) { return preHead, preTime })
+	if err := filter(preDPoWID); err != nil {
+		t.Fatalf("new binary rejected pre-DPoW peer's forkid: %v", err)
+	}
+}
