@@ -415,6 +415,10 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 	genesis := common.HexToHash("0x1234")
 	// ShanghaiTime must precede DPoWTime per the chronological invariant enforced
 	// by CheckConfigForkOrder (DPoW is a post-Shanghai time fork on Incentiv).
+	// Using 0 here also keeps Shanghai out of the forkid hash itself — gatherForks
+	// explicitly skips forks at block / timestamp 0 ("that's the genesis ruleset"),
+	// so the test still exercises a single non-trivial time fork (DPoWTime) and
+	// stays comparable to the pre-Shanghai-precondition revision of this test.
 	shanghai := uint64(0)
 	t100 := uint64(100)
 	t200 := uint64(200)
