@@ -413,11 +413,15 @@ func TestEncoding(t *testing.T) {
 func TestDPoWForkIDBehavior(t *testing.T) {
 	addr := common.HexToAddress("0x0000000000000000000000000000000000000100")
 	genesis := common.HexToHash("0x1234")
+	// ShanghaiTime must precede DPoWTime per the chronological invariant enforced
+	// by CheckConfigForkOrder (DPoW is a post-Shanghai time fork on Incentiv).
+	shanghai := uint64(0)
 	t100 := uint64(100)
 	t200 := uint64(200)
 
 	base := &params.ChainConfig{
 		ChainID:              big.NewInt(1),
+		ShanghaiTime:         &shanghai,
 		DPoWTime:             &t100,
 		MinerRegistryAddress: &addr,
 		DPoWMaturityTime:     300,
@@ -426,6 +430,7 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 
 	sameForkDifferentMaturity := &params.ChainConfig{
 		ChainID:              big.NewInt(1),
+		ShanghaiTime:         &shanghai,
 		DPoWTime:             &t100,
 		MinerRegistryAddress: &addr,
 		DPoWMaturityTime:     999,
@@ -434,6 +439,7 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 
 	differentDPoWTime := &params.ChainConfig{
 		ChainID:              big.NewInt(1),
+		ShanghaiTime:         &shanghai,
 		DPoWTime:             &t200,
 		MinerRegistryAddress: &addr,
 		DPoWMaturityTime:     300,
@@ -473,15 +479,28 @@ func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
 	dpowTime := *cfg.DPoWTime
 	shanghai := *cfg.ShanghaiTime
 
-	// Build a "pre-DPoW" config that mirrors the v1.11.6-stable binary running
-	// on operator nodes today (DPoW code absent, no DPoWTime in config).
-	preDPoW := *cfg
-	preDPoW.DPoWTime = nil
-	preDPoW.MinerRegistryAddress = nil
-
 	// Pre-activation head: well after Shanghai, well before DPoW.
 	preHead := uint64(4_272_003)
 	preTime := dpowTime - 60
+
+	// Precondition: this test only makes sense if the head sits between Shanghai
+	// and DPoW. If a future config change ever brings DPoWTime within 60 seconds
+	// of ShanghaiTime this fails loudly here rather than producing a confusing
+	// downstream assertion failure. ShanghaiTime must already be folded into the
+	// hash, which was the bug class the hotfix exists to fix.
+	if preTime < shanghai {
+		t.Fatalf("test precondition broken: preTime=%d must be >= shanghaiTime=%d (DPoWTime=%d is too close to ShanghaiTime)", preTime, shanghai, dpowTime)
+	}
+
+	// Build a "pre-DPoW" config that mirrors the v1.11.6-stable binary running
+	// on operator nodes today: no DPoW code at all, so none of the DPoW-related
+	// fields are present in the embedded ChainConfig. The maturity values are
+	// also zeroed (despite not affecting forkid) to keep the simulation honest.
+	preDPoW := *cfg
+	preDPoW.DPoWTime = nil
+	preDPoW.MinerRegistryAddress = nil
+	preDPoW.DPoWMaturityTime = 0
+	preDPoW.DPoWMaturityBlocks = 0
 
 	preDPoWID := NewID(&preDPoW, genesis, preHead, preTime)
 	newBinaryID := NewID(cfg, genesis, preHead, preTime)
@@ -497,14 +516,6 @@ func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
 	// New binary advertises DPoWTime as the next fork.
 	if newBinaryID.Next != dpowTime {
 		t.Fatalf("new binary Next mismatch: have=%d want=%d", newBinaryID.Next, dpowTime)
-	}
-
-	// ShanghaiTime must be folded into the hash even though DPoWTime is the
-	// nearest unreached fork — this is exactly what was broken with the
-	// previous block-based DPoWBlock layout, where the algorithm stopped at
-	// DPoWBlock and never reached ShanghaiTime in the time-fork loop.
-	if preTime < shanghai {
-		t.Fatalf("test precondition broken: preTime=%d must be >= shanghaiTime=%d", preTime, shanghai)
 	}
 
 	// New binary at DPoW activation: Next jumps to the next time fork (cancunTime, which is nil, so 0).
