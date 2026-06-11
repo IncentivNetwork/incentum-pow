@@ -18,6 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+func newUint64Test(v uint64) *uint64 { return &v }
+
 func buildTestState(t *testing.T, registryAddr, minerAddr common.Address, active bool, stakeTime, stakeBlock uint64) *state.StateDB {
 	t.Helper()
 
@@ -48,7 +50,7 @@ func TestDPoWVerifyMinerAuthorization_DPoWNotActive(t *testing.T) {
 	registryAddr := common.HexToAddress("0x2000000000000000000000000000000000000002")
 
 	config := &params.ChainConfig{
-		DPoWBlock: big.NewInt(1000),
+		DPoWTime: newUint64Test(200000),
 	}
 
 	header := &types.Header{
@@ -69,7 +71,7 @@ func TestDPoWVerifyMinerAuthorization_NoRegistryAddress(t *testing.T) {
 	minerAddr := common.HexToAddress("0x3000000000000000000000000000000000000003")
 
 	config := &params.ChainConfig{
-		DPoWBlock: big.NewInt(0),
+		DPoWTime: newUint64Test(0),
 	}
 
 	header := &types.Header{
@@ -147,7 +149,7 @@ func TestDPoWVerifyMinerAuthorization_MinerNotStaked(t *testing.T) {
 	registryAddr := common.HexToAddress("0x5000000000000000000000000000000000000005")
 
 	config := &params.ChainConfig{
-		DPoWBlock:            big.NewInt(0),
+		DPoWTime:             newUint64Test(0),
 		MinerRegistryAddress: &registryAddr,
 	}
 
@@ -171,7 +173,7 @@ func TestDPoWVerifyMinerAuthorization_TimeMatureNotMet(t *testing.T) {
 	registryAddr := common.HexToAddress("0x7000000000000000000000000000000000000007")
 
 	config := &params.ChainConfig{
-		DPoWBlock:            big.NewInt(0),
+		DPoWTime:             newUint64Test(0),
 		MinerRegistryAddress: &registryAddr,
 	}
 
@@ -196,7 +198,7 @@ func TestDPoWVerifyMinerAuthorization_TimeMatureInFuture(t *testing.T) {
 	registryAddr := common.HexToAddress("0x7100000000000000000000000000000000000007")
 
 	config := &params.ChainConfig{
-		DPoWBlock:            big.NewInt(0),
+		DPoWTime:             newUint64Test(0),
 		MinerRegistryAddress: &registryAddr,
 	}
 
@@ -221,7 +223,7 @@ func TestDPoWVerifyMinerAuthorization_BlockMatureNotMet(t *testing.T) {
 	registryAddr := common.HexToAddress("0x9000000000000000000000000000000000000009")
 
 	config := &params.ChainConfig{
-		DPoWBlock:            big.NewInt(0),
+		DPoWTime:             newUint64Test(0),
 		MinerRegistryAddress: &registryAddr,
 	}
 
@@ -246,7 +248,7 @@ func TestDPoWVerifyMinerAuthorization_FullyAuthorized(t *testing.T) {
 	registryAddr := common.HexToAddress("0xb00000000000000000000000000000000000000b")
 
 	config := &params.ChainConfig{
-		DPoWBlock:            big.NewInt(0),
+		DPoWTime:             newUint64Test(0),
 		MinerRegistryAddress: &registryAddr,
 	}
 
@@ -269,7 +271,7 @@ func TestDPoWVerifyMinerAuthorization_UnstakedMiner(t *testing.T) {
 	registryAddr := common.HexToAddress("0xd00000000000000000000000000000000000000d")
 
 	config := &params.ChainConfig{
-		DPoWBlock:            big.NewInt(0),
+		DPoWTime:             newUint64Test(0),
 		MinerRegistryAddress: &registryAddr,
 	}
 
@@ -294,7 +296,7 @@ func TestDPoWVerifyMinerAuthorization_StakeTimeOverflow(t *testing.T) {
 	registryAddr := common.HexToAddress("0xf00000000000000000000000000000000000000f")
 
 	config := &params.ChainConfig{
-		DPoWBlock:            big.NewInt(0),
+		DPoWTime:             newUint64Test(0),
 		MinerRegistryAddress: &registryAddr,
 	}
 
@@ -322,7 +324,7 @@ func TestDPoWVerifyMinerAuthorization_FakeModeBypass(t *testing.T) {
 	minerAddr := common.HexToAddress("0x1200000000000000000000000000000000000012")
 
 	config := &params.ChainConfig{
-		DPoWBlock: big.NewInt(0),
+		DPoWTime: newUint64Test(0),
 	}
 
 	header := &types.Header{

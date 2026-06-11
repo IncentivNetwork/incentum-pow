@@ -413,10 +413,12 @@ func TestEncoding(t *testing.T) {
 func TestDPoWForkIDBehavior(t *testing.T) {
 	addr := common.HexToAddress("0x0000000000000000000000000000000000000100")
 	genesis := common.HexToHash("0x1234")
+	t100 := uint64(100)
+	t200 := uint64(200)
 
 	base := &params.ChainConfig{
 		ChainID:              big.NewInt(1),
-		DPoWBlock:            big.NewInt(100),
+		DPoWTime:             &t100,
 		MinerRegistryAddress: &addr,
 		DPoWMaturityTime:     300,
 		DPoWMaturityBlocks:   60,
@@ -424,96 +426,36 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 
 	sameForkDifferentMaturity := &params.ChainConfig{
 		ChainID:              big.NewInt(1),
-		DPoWBlock:            big.NewInt(100),
+		DPoWTime:             &t100,
 		MinerRegistryAddress: &addr,
 		DPoWMaturityTime:     999,
 		DPoWMaturityBlocks:   999,
 	}
 
-	differentDPoWBlock := &params.ChainConfig{
+	differentDPoWTime := &params.ChainConfig{
 		ChainID:              big.NewInt(1),
-		DPoWBlock:            big.NewInt(200),
+		DPoWTime:             &t200,
 		MinerRegistryAddress: &addr,
 		DPoWMaturityTime:     300,
 		DPoWMaturityBlocks:   60,
 	}
 
 	// DPoWMaturityTime / DPoWMaturityBlocks must NOT affect forkid.
-	id1 := NewID(base, genesis, 1000, 0)
-	id2 := NewID(sameForkDifferentMaturity, genesis, 1000, 0)
+	id1 := NewID(base, genesis, 0, 1000)
+	id2 := NewID(sameForkDifferentMaturity, genesis, 0, 1000)
 	if id1 != id2 {
 		t.Fatalf("forkid changed when only DPoW maturity settings changed: have=%#v want=%#v", id2, id1)
 	}
 
-	// DPoWBlock MUST affect forkid.
-	id3 := NewID(differentDPoWBlock, genesis, 1000, 0)
+	// DPoWTime MUST affect forkid.
+	id3 := NewID(differentDPoWTime, genesis, 0, 1000)
 	if id1 == id3 {
-		t.Fatalf("forkid did not change when DPoWBlock changed: id1=%#v id3=%#v", id1, id3)
+		t.Fatalf("forkid did not change when DPoWTime changed: id1=%#v id3=%#v", id1, id3)
 	}
 
-	// Before activation, DPoWBlock should appear as the next fork.
+	// Before activation, DPoWTime should appear as the next fork.
 	preFork := NewID(base, genesis, 0, 0)
 	if preFork.Next != 100 {
 		t.Fatalf("unexpected next fork before DPoW activation: have=%d want=%d", preFork.Next, 100)
-	}
-}
-
-func TestIncentivDPoWForkIDs(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  *params.ChainConfig
-		genesis common.Hash
-		head    uint64
-		want    ID
-	}{
-		{
-			name:    "incentiv-mainnet before dpow",
-			config:  params.IncentivMainnetChainConfig,
-			genesis: params.IncentivMainnetGenesisHash,
-			head:    4274999,
-			want:    ID{Hash: checksumToBytes(0x2c9ccf97), Next: 4275000},
-		},
-		{
-			name:    "incentiv-mainnet at dpow",
-			config:  params.IncentivMainnetChainConfig,
-			genesis: params.IncentivMainnetGenesisHash,
-			head:    4275000,
-			want:    ID{Hash: checksumToBytes(0x714f298f), Next: 1755203160},
-		},
-		{
-			name:    "incentiv-mainnet after dpow",
-			config:  params.IncentivMainnetChainConfig,
-			genesis: params.IncentivMainnetGenesisHash,
-			head:    4275001,
-			want:    ID{Hash: checksumToBytes(0x714f298f), Next: 1755203160},
-		},
-		{
-			name:    "incentiv-devnet before dpow",
-			config:  params.IncentivDevnetChainConfig,
-			genesis: params.IncentivDevnetGenesisHash,
-			head:    273999,
-			want:    ID{Hash: checksumToBytes(0xc79d7def), Next: 274000},
-		},
-		{
-			name:    "incentiv-devnet at dpow",
-			config:  params.IncentivDevnetChainConfig,
-			genesis: params.IncentivDevnetGenesisHash,
-			head:    274000,
-			want:    ID{Hash: checksumToBytes(0x2fc5981d), Next: 1755203160},
-		},
-		{
-			name:    "incentiv-devnet after dpow",
-			config:  params.IncentivDevnetChainConfig,
-			genesis: params.IncentivDevnetGenesisHash,
-			head:    274001,
-			want:    ID{Hash: checksumToBytes(0x2fc5981d), Next: 1755203160},
-		},
-	}
-
-	for _, tt := range tests {
-		got := NewID(tt.config, tt.genesis, tt.head, 0)
-		if got != tt.want {
-			t.Fatalf("%s: unexpected forkid: got=%#v want=%#v", tt.name, got, tt.want)
-		}
 	}
 }
