@@ -323,6 +323,21 @@ func TestCheckCompatibleDPoW(t *testing.T) {
 		wantErr  *ConfigCompatError
 	}{
 		{
+			name:   "dpow time zero on new config does not underflow RewindToTime",
+			stored: &ChainConfig{},
+			new: &ChainConfig{
+				DPoWTime:             newUint64(0),
+				MinerRegistryAddress: &addr1,
+			},
+			headTime: 1,
+			wantErr: &ConfigCompatError{
+				What:         "DPoW fork timestamp",
+				StoredTime:   nil,
+				NewTime:      newUint64(0),
+				RewindToTime: 0,
+			},
+		},
+		{
 			name: "dpow time mismatch before activation is allowed",
 			stored: &ChainConfig{
 				DPoWTime:             newUint64(100),
