@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/crypto/sha3"
@@ -666,7 +667,7 @@ func (c *ChainConfig) Description() string {
 	case c.Ethash != nil:
 		if c.TerminalTotalDifficulty == nil {
 			if c.DPoWTime != nil {
-				banner += fmt.Sprintf("Consensus: Ethash + DPoW (authorized mining, activates at timestamp %d)\n", *c.DPoWTime)
+				banner += fmt.Sprintf("Consensus: Ethash + DPoW (authorized mining, activates at timestamp %d / %s)\n", *c.DPoWTime, time.Unix(int64(*c.DPoWTime), 0).UTC().Format(time.RFC3339))
 			} else {
 				banner += "Consensus: Ethash (proof-of-work)\n"
 			}
@@ -734,13 +735,16 @@ func (c *ChainConfig) Description() string {
 	// Create a list of forks post-merge
 	banner += "Post-Merge hard forks (timestamp based):\n"
 	if c.ShanghaiTime != nil {
-		banner += fmt.Sprintf(" - Shanghai:                    @%-10v (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/shanghai.md)\n", *c.ShanghaiTime)
+		banner += fmt.Sprintf(" - Shanghai:                    @%-10v (%s) (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/shanghai.md)\n", *c.ShanghaiTime, time.Unix(int64(*c.ShanghaiTime), 0).UTC().Format(time.RFC3339))
+	}
+	if c.DPoWTime != nil {
+		banner += fmt.Sprintf(" - DPoW:                        @%-10v (%s)\n", *c.DPoWTime, time.Unix(int64(*c.DPoWTime), 0).UTC().Format(time.RFC3339))
 	}
 	if c.CancunTime != nil {
-		banner += fmt.Sprintf(" - Cancun:                      @%-10v\n", *c.CancunTime)
+		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, time.Unix(int64(*c.CancunTime), 0).UTC().Format(time.RFC3339))
 	}
 	if c.PragueTime != nil {
-		banner += fmt.Sprintf(" - Prague:                      @%-10v\n", *c.PragueTime)
+		banner += fmt.Sprintf(" - Prague:                      @%-10v (%s)\n", *c.PragueTime, time.Unix(int64(*c.PragueTime), 0).UTC().Format(time.RFC3339))
 	}
 	return banner
 }
