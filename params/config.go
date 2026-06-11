@@ -1207,7 +1207,7 @@ func newTimestampCompatError(what string, storedtime, newtime *uint64) *ConfigCo
 		NewTime:      newtime,
 		RewindToTime: 0,
 	}
-	if rew != nil {
+	if rew != nil && *rew > 0 {
 		err.RewindToTime = *rew - 1
 	}
 	return err
