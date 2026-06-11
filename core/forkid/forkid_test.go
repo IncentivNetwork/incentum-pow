@@ -480,21 +480,26 @@ func TestDPoWForkIDBehavior(t *testing.T) {
 func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
 	cfg := params.IncentivMainnetChainConfig
 	genesis := params.IncentivMainnetGenesisHash
+
+	if cfg.DPoWTime == nil || cfg.ShanghaiTime == nil {
+		t.Fatalf("test requires IncentivMainnetChainConfig to have both ShanghaiTime and DPoWTime set")
+	}
 	dpowTime := *cfg.DPoWTime
 	shanghai := *cfg.ShanghaiTime
+
+	// Precondition: this test only makes sense if the head sits between Shanghai
+	// and DPoW. Requiring dpowTime >= shanghai+60 keeps preTime both >= ShanghaiTime
+	// (so ShanghaiTime is already folded into the hash — the bug class the hotfix
+	// exists to fix) and free of uint64 underflow on the subtraction below. If a
+	// future config change ever brings DPoWTime within 60 seconds of ShanghaiTime
+	// this fails loudly here rather than producing a confusing downstream failure.
+	if dpowTime < shanghai+60 {
+		t.Fatalf("test precondition broken: DPoWTime=%d must be >= ShanghaiTime=%d + 60s", dpowTime, shanghai)
+	}
 
 	// Pre-activation head: well after Shanghai, well before DPoW.
 	preHead := uint64(4_272_003)
 	preTime := dpowTime - 60
-
-	// Precondition: this test only makes sense if the head sits between Shanghai
-	// and DPoW. If a future config change ever brings DPoWTime within 60 seconds
-	// of ShanghaiTime this fails loudly here rather than producing a confusing
-	// downstream assertion failure. ShanghaiTime must already be folded into the
-	// hash, which was the bug class the hotfix exists to fix.
-	if preTime < shanghai {
-		t.Fatalf("test precondition broken: preTime=%d must be >= shanghaiTime=%d (DPoWTime=%d is too close to ShanghaiTime)", preTime, shanghai, dpowTime)
-	}
 
 	// Build a "pre-DPoW" config that mirrors the v1.11.6-stable binary running
 	// on operator nodes today: no DPoW code at all, so none of the DPoW-related
