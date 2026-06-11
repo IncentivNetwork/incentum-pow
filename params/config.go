@@ -303,7 +303,7 @@ var (
 		FastBlock:                     big.NewInt(0),
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
-		DPoWTime:                      newUint64(1781176800), // 2026-06-11 11:00:00 UTC (14:00 EEST Kyiv)
+		DPoWTime:                      newUint64(1781182800), // 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv)
 		MinerRegistryAddress:          newAddress(common.HexToAddress("0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E")),
 		DPoWMaturityTime:              86400,
 		DPoWMaturityBlocks:            17280,
