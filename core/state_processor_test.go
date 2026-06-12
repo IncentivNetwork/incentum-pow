@@ -489,7 +489,8 @@ func TestStateProcessorDPoWGuard(t *testing.T) {
 			BerlinBlock:          big.NewInt(0),
 			LondonBlock:          big.NewInt(0),
 			FeePoolBlock:         big.NewInt(0),
-			DPoWBlock:            big.NewInt(0),
+			ShanghaiTime:         u64(0),
+			DPoWTime:             u64(0),
 			MinerRegistryAddress: &registryAddr,
 			Ethash:               new(params.EthashConfig),
 		}
@@ -551,7 +552,8 @@ func TestStateProcessorDPoWGuard(t *testing.T) {
 			BerlinBlock:          big.NewInt(0),
 			LondonBlock:          big.NewInt(0),
 			FeePoolBlock:         big.NewInt(0),
-			DPoWBlock:            big.NewInt(0),
+			ShanghaiTime:         u64(0),
+			DPoWTime:             u64(0),
 			MinerRegistryAddress: &registryAddr,
 			Ethash:               new(params.EthashConfig),
 		}
@@ -613,7 +615,8 @@ func TestStateProcessorDPoWGuard(t *testing.T) {
 			BerlinBlock:          big.NewInt(0),
 			LondonBlock:          big.NewInt(0),
 			FeePoolBlock:         big.NewInt(0),
-			DPoWBlock:            big.NewInt(0),
+			ShanghaiTime:         u64(0),
+			DPoWTime:             u64(0),
 			MinerRegistryAddress: &registryAddr,
 			Ethash:               new(params.EthashConfig),
 		}

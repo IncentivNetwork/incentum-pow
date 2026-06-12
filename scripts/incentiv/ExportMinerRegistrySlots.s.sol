@@ -7,7 +7,7 @@ import "forge-std/console2.sol";
 contract ExportMinerRegistrySlots is Script {
     address internal constant MINER = address(0xBEEF);
 
-    function run() external pure {
+    function run() external view {
         console2.logBytes32(_mappingSlot(MINER, 0));
         console2.logBytes32(_mappingSlot(MINER, 1));
         console2.logBytes32(_mappingSlot(MINER, 2));
