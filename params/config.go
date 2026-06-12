@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/crypto/sha3"
@@ -266,8 +267,8 @@ var (
 		FastBlock:                     big.NewInt(319000),
 		ZeroRewardBlock:               big.NewInt(471000),
 		MergeNetsplitBlock:            nil,
-		DPoWBlock:                     big.NewInt(500000),
-		MinerRegistryAddress:          newAddress(common.HexToAddress("0x0000000000000000000000000000000000005002")),
+		DPoWTime:                      nil,
+		MinerRegistryAddress:          nil,
 		IrregularStateChangeHeight:    nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		CancunTime:                    nil,
@@ -302,7 +303,7 @@ var (
 		FastBlock:                     big.NewInt(0),
 		ZeroRewardBlock:               big.NewInt(0),
 		MergeNetsplitBlock:            nil,
-		DPoWBlock:                     big.NewInt(4275000),
+		DPoWTime:                      newUint64(1781182800), // 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv)
 		MinerRegistryAddress:          newAddress(common.HexToAddress("0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E")),
 		DPoWMaturityTime:              86400,
 		DPoWMaturityBlocks:            17280,
@@ -318,28 +319,38 @@ var (
 
 	// IncentivDevnetChainConfig contains the chain parameters to run a node on the Incentiv dev network.
 	IncentivDevnetChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(12730),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              nil,
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0),
-		MinBaseFeeBlock:               big.NewInt(21800),
-		ArrowGlacierBlock:             nil,
-		GrayGlacierBlock:              nil,
-		FastBlock:                     big.NewInt(0),
-		ZeroRewardBlock:               big.NewInt(0),
-		MergeNetsplitBlock:            nil,
-		DPoWBlock:                     big.NewInt(274000),
+		ChainID:             big.NewInt(12730),
+		HomesteadBlock:      big.NewInt(0),
+		DAOForkBlock:        nil,
+		DAOForkSupport:      false,
+		EIP150Block:         big.NewInt(0),
+		EIP155Block:         big.NewInt(0),
+		EIP158Block:         big.NewInt(0),
+		ByzantiumBlock:      big.NewInt(0),
+		ConstantinopleBlock: big.NewInt(0),
+		PetersburgBlock:     big.NewInt(0),
+		IstanbulBlock:       big.NewInt(0),
+		MuirGlacierBlock:    nil,
+		BerlinBlock:         big.NewInt(0),
+		LondonBlock:         big.NewInt(0),
+		FeePoolBlock:        big.NewInt(0),
+		MinBaseFeeBlock:     big.NewInt(21800),
+		ArrowGlacierBlock:   nil,
+		GrayGlacierBlock:    nil,
+		FastBlock:           big.NewInt(0),
+		ZeroRewardBlock:     big.NewInt(0),
+		MergeNetsplitBlock:  nil,
+		// DPoWTime intentionally nil for devnet. Existing devnet datadirs were
+		// initialised under the old DPoWBlock=274000 binary, so the stored
+		// ChainConfig has storedcfg.DPoWTime == nil (the old field name is just
+		// silently dropped on JSON unmarshal — no block→timestamp migration is
+		// performed). Setting any past timestamp here would make
+		// isForkTimestampIncompatible(nil, &past, headTime) return true and
+		// fail CheckCompatible on every devnet node restart. DPoW is disabled
+		// on this network until a fresh genesis with an explicit DPoWTime is
+		// deployed; the embedded MinerRegistry address is retained for that
+		// future redeploy.
+		DPoWTime:                      nil,
 		MinerRegistryAddress:          newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
 		DPoWMaturityTime:              300,
 		DPoWMaturityBlocks:            60,
@@ -576,12 +587,8 @@ type ChainConfig struct {
 	FastBlock              *big.Int `json:"fastBlock,omitempty"`              // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
 	MergeNetsplitBlock     *big.Int `json:"mergeNetsplitBlock,omitempty"`     // Virtual fork after The Merge to use as a network splitter
 
-	// DPoWBlock is the block number at which Delegated Proof-of-Work activates.
-	// nil = never activates, 0 = already activated.
-	DPoWBlock *big.Int `json:"dpowBlock,omitempty"`
-
 	// MinerRegistryAddress is the address of the on-chain MinerRegistry contract.
-	// Must be set when DPoWBlock is non-nil.
+	// Must be set when DPoWTime is non-nil.
 	MinerRegistryAddress *common.Address `json:"minerRegistryAddress,omitempty"`
 
 	// DPoWMaturityTime is the minimum number of seconds a miner must be staked
@@ -597,8 +604,21 @@ type ChainConfig struct {
 	// Fork scheduling was switched from blocks to timestamps here
 
 	ShanghaiTime *uint64 `json:"shanghaiTime,omitempty"` // Shanghai switch time (nil = no fork, 0 = already on shanghai)
-	CancunTime   *uint64 `json:"cancunTime,omitempty"`   // Cancun switch time (nil = no fork, 0 = already on cancun)
-	PragueTime   *uint64 `json:"pragueTime,omitempty"`   // Prague switch time (nil = no fork, 0 = already on prague)
+
+	// DPoWTime is the Unix timestamp at which Delegated Proof-of-Work activates.
+	// nil = never activates, 0 = already activated.
+	//
+	// DPoW activates AFTER ShanghaiTime, so the activation must be expressed as a
+	// timestamp — not a block number — to keep forkid chronologically ordered
+	// (block forks first, then time forks). A block-based DPoW fork after a
+	// time-based Shanghai fork breaks the EIP-2124 forkid algorithm's implicit
+	// block-before-time invariant and produces forkid hash mismatches between
+	// pre- and post-DPoW binaries during the rollout window. See post-Merge
+	// upstream pattern: ShanghaiTime, CancunTime, PragueTime.
+	DPoWTime *uint64 `json:"dpowTime,omitempty"`
+
+	CancunTime *uint64 `json:"cancunTime,omitempty"` // Cancun switch time (nil = no fork, 0 = already on cancun)
+	PragueTime *uint64 `json:"pragueTime,omitempty"` // Prague switch time (nil = no fork, 0 = already on prague)
 
 	// TerminalTotalDifficulty is the amount of total difficulty reached by
 	// the network that triggers the consensus upgrade.
@@ -633,6 +653,18 @@ func (c *CliqueConfig) String() string {
 	return "clique"
 }
 
+// formatTimestampFork renders a time-based fork's activation timestamp for the
+// consensus banner. ts == 0 is rendered as "genesis" (the EIP-2124 semantic for
+// "active from chain start"), so private/dev configs with ShanghaiTime: 0 do
+// not print a misleading 1970-01-01 wall time; non-zero values are rendered
+// as RFC3339 UTC for operator readability.
+func formatTimestampFork(ts uint64) string {
+	if ts == 0 {
+		return "genesis"
+	}
+	return time.Unix(int64(ts), 0).UTC().Format(time.RFC3339)
+}
+
 // Description returns a human-readable description of ChainConfig.
 func (c *ChainConfig) Description() string {
 	var banner string
@@ -646,8 +678,8 @@ func (c *ChainConfig) Description() string {
 	switch {
 	case c.Ethash != nil:
 		if c.TerminalTotalDifficulty == nil {
-			if c.DPoWBlock != nil {
-				banner += fmt.Sprintf("Consensus: Ethash + DPoW (authorized mining, activates at block #%-8v)\n", c.DPoWBlock)
+			if c.DPoWTime != nil {
+				banner += fmt.Sprintf("Consensus: Ethash + DPoW (authorized mining, activates at timestamp %d / %s)\n", *c.DPoWTime, formatTimestampFork(*c.DPoWTime))
 			} else {
 				banner += "Consensus: Ethash (proof-of-work)\n"
 			}
@@ -715,13 +747,16 @@ func (c *ChainConfig) Description() string {
 	// Create a list of forks post-merge
 	banner += "Post-Merge hard forks (timestamp based):\n"
 	if c.ShanghaiTime != nil {
-		banner += fmt.Sprintf(" - Shanghai:                    @%-10v (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/shanghai.md)\n", *c.ShanghaiTime)
+		banner += fmt.Sprintf(" - Shanghai:                    @%-10v (%s) (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/shanghai.md)\n", *c.ShanghaiTime, formatTimestampFork(*c.ShanghaiTime))
+	}
+	if c.DPoWTime != nil {
+		banner += fmt.Sprintf(" - DPoW:                        @%-10v (%s)\n", *c.DPoWTime, formatTimestampFork(*c.DPoWTime))
 	}
 	if c.CancunTime != nil {
-		banner += fmt.Sprintf(" - Cancun:                      @%-10v\n", *c.CancunTime)
+		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, formatTimestampFork(*c.CancunTime))
 	}
 	if c.PragueTime != nil {
-		banner += fmt.Sprintf(" - Prague:                      @%-10v\n", *c.PragueTime)
+		banner += fmt.Sprintf(" - Prague:                      @%-10v (%s)\n", *c.PragueTime, formatTimestampFork(*c.PragueTime))
 	}
 	return banner
 }
@@ -823,9 +858,10 @@ func (c *ChainConfig) IsFast(num *big.Int) bool {
 	return isBlockForked(c.FastBlock, num)
 }
 
-// IsDPoW returns whether num is either equal to the DPoW fork block or greater.
-func (c *ChainConfig) IsDPoW(num *big.Int) bool {
-	return isBlockForked(c.DPoWBlock, num)
+// IsDPoW returns whether the given block timestamp is at or after the DPoW
+// activation timestamp.
+func (c *ChainConfig) IsDPoW(time uint64) bool {
+	return isTimestampForked(c.DPoWTime, time)
 }
 
 // GetMinerRegistryAddress returns the configured miner registry address or zero address if unset.
@@ -857,14 +893,10 @@ func (c *ChainConfig) GetDPoWMaturityBlocks() *big.Int {
 // CheckDPoWConfig validates DPoW-specific chain config invariants.
 func (c *ChainConfig) CheckDPoWConfig() error {
 	switch {
-	case c.DPoWBlock == nil:
+	case c.DPoWTime == nil:
 		return nil
-	case c.DPoWBlock.Sign() < 0:
-		return fmt.Errorf("dpowBlock must be non-negative, got %s", c.DPoWBlock.String())
-	case c.DPoWBlock.BitLen() > 64:
-		return fmt.Errorf("dpowBlock exceeds uint64 range, got %s", c.DPoWBlock.String())
 	case c.MinerRegistryAddress == nil || *c.MinerRegistryAddress == (common.Address{}):
-		return fmt.Errorf("dpowBlock is set to %s but minerRegistryAddress is missing or zero address", c.DPoWBlock.String())
+		return fmt.Errorf("dpowTime is set to %d but minerRegistryAddress is missing or zero address", *c.DPoWTime)
 	default:
 		return nil
 	}
@@ -953,6 +985,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "grayGlacierBlock", block: c.GrayGlacierBlock, optional: true},
 		{name: "mergeNetsplitBlock", block: c.MergeNetsplitBlock, optional: true},
 		{name: "shanghaiTime", timestamp: c.ShanghaiTime},
+		{name: "dpowTime", timestamp: c.DPoWTime, optional: true},
 		{name: "cancunTime", timestamp: c.CancunTime, optional: true},
 		{name: "pragueTime", timestamp: c.PragueTime, optional: true},
 	} {
@@ -1049,23 +1082,23 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	if isForkBlockIncompatible(c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock, headNumber) {
 		return newBlockCompatError("Merge netsplit fork block", c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock)
 	}
-	if isForkBlockIncompatible(c.DPoWBlock, newcfg.DPoWBlock, headNumber) {
-		return newBlockCompatError("DPoW fork block", c.DPoWBlock, newcfg.DPoWBlock)
+	if isForkTimestampIncompatible(c.ShanghaiTime, newcfg.ShanghaiTime, headTimestamp) {
+		return newTimestampCompatError("Shanghai fork timestamp", c.ShanghaiTime, newcfg.ShanghaiTime)
+	}
+	if isForkTimestampIncompatible(c.DPoWTime, newcfg.DPoWTime, headTimestamp) {
+		return newTimestampCompatError("DPoW fork timestamp", c.DPoWTime, newcfg.DPoWTime)
 	}
 
 	// For any DPoW parameter change after activation, the rewind target is always
-	// the pre-DPoW boundary, so DPoWBlock is intentionally used for both sides.
-	if c.IsDPoW(headNumber) && c.GetMinerRegistryAddress() != newcfg.GetMinerRegistryAddress() {
-		return newBlockCompatError("DPoW miner registry address", c.DPoWBlock, newcfg.DPoWBlock)
+	// the pre-DPoW boundary, so DPoWTime is intentionally used for both sides.
+	if c.IsDPoW(headTimestamp) && c.GetMinerRegistryAddress() != newcfg.GetMinerRegistryAddress() {
+		return newTimestampCompatError("DPoW miner registry address", c.DPoWTime, newcfg.DPoWTime)
 	}
-	if c.IsDPoW(headNumber) && c.GetDPoWMaturityTime() != newcfg.GetDPoWMaturityTime() {
-		return newBlockCompatError("DPoW maturity time", c.DPoWBlock, newcfg.DPoWBlock)
+	if c.IsDPoW(headTimestamp) && c.GetDPoWMaturityTime() != newcfg.GetDPoWMaturityTime() {
+		return newTimestampCompatError("DPoW maturity time", c.DPoWTime, newcfg.DPoWTime)
 	}
-	if c.IsDPoW(headNumber) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
-		return newBlockCompatError("DPoW maturity blocks", c.DPoWBlock, newcfg.DPoWBlock)
-	}
-	if isForkTimestampIncompatible(c.ShanghaiTime, newcfg.ShanghaiTime, headTimestamp) {
-		return newTimestampCompatError("Shanghai fork timestamp", c.ShanghaiTime, newcfg.ShanghaiTime)
+	if c.IsDPoW(headTimestamp) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
+		return newTimestampCompatError("DPoW maturity blocks", c.DPoWTime, newcfg.DPoWTime)
 	}
 	if isForkTimestampIncompatible(c.CancunTime, newcfg.CancunTime, headTimestamp) {
 		return newTimestampCompatError("Cancun fork timestamp", c.CancunTime, newcfg.CancunTime)
@@ -1194,7 +1227,7 @@ func newTimestampCompatError(what string, storedtime, newtime *uint64) *ConfigCo
 		NewTime:      newtime,
 		RewindToTime: 0,
 	}
-	if rew != nil {
+	if rew != nil && *rew > 0 {
 		err.RewindToTime = *rew - 1
 	}
 	return err

@@ -105,23 +105,46 @@ sudo systemctl stop incentum.service
 ### 4.2 Back up the current binary
 
 ```bash
-sudo cp $GETH $GETH.pre-dpow
+sudo cp "$GETH" "$GETH.pre-dpow"
 ```
 
 ### 4.3 Install the new binary
 
-Either build from the released tag, or install the published binary and verify its checksum:
+Two paths: installing the pre-built release artifact (recommended) or building from source as a verification fallback.
+
+**Install pre-built binary (recommended)**
+
+CI publishes a GitHub Release for each `v*-dpow-mainnet` tag containing a static `linux/amd64` tarball and its SHA-256 checksum file. Download both, verify, extract, and install:
 
 ```bash
-sha256sum geth
-# compare against the published checksum — they MUST match
+RELEASE_TAG=<the-actual-release-tag>   # e.g. v1.11.7-dpow-mainnet
+RELEASE_URL=https://github.com/IncentivNetwork/incentum-pow/releases/download/${RELEASE_TAG}
+
+curl -L -O ${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz
+curl -L -O ${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256
+
+# Verify the tarball BEFORE extracting — must succeed:
+sha256sum -c geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256
+
+# Extract (the tarball contains `geth` and `COPYING`):
+tar -xzf geth-linux-amd64-${RELEASE_TAG}.tar.gz
+
+# Confirm the embedded version and Git commit match the released tag:
+./geth version
+
+# Install over the existing binary (uses $GETH from §2, same path that was backed up in §4.2):
+sudo install -m 0755 geth "$GETH"
 ```
 
-Build from source:
+The `sha256sum -c` step verifies the **tarball**, not the extracted binary — the CI-generated `.sha256` file references the tarball filename. Running the check before extraction also prevents accidentally installing an unverified binary.
+
+**Build from source (verification fallback)**
+
+Use this to cross-check that the pre-built artifact matches a local build of the same tag, or when a suitable release artifact is not available for the operator's platform.
 
 ```bash
 cd /mnt/data/node/client   # your client source repo (example path)
-git fetch origin
+git fetch origin --tags
 git checkout <release-tag>
 go run build/ci.go install ./cmd/geth
 ./build/bin/geth version   # confirm Git Commit matches the release
@@ -152,7 +175,7 @@ sudo journalctl -u incentum.service | grep -i "Consensus:"
 For the full active chain config, attach over IPC:
 
 ```bash
-$GETH attach $DATADIR/geth.ipc
+"$GETH" attach "$DATADIR/geth.ipc"
 ```
 
 ```javascript
@@ -177,7 +200,7 @@ sudo systemctl status incentum.service --no-pager
 Confirm the node is syncing:
 
 ```bash
-$GETH attach $DATADIR/geth.ipc
+"$GETH" attach "$DATADIR/geth.ipc"
 ```
 
 ```javascript
@@ -199,9 +222,9 @@ At the first block with `number ≥ DPoWBlock`:
 
 ```bash
 # latest block + miner
-$GETH attach --exec \
+"$GETH" attach --exec \
   'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner})' \
-  $DATADIR/geth.ipc
+  "$DATADIR/geth.ipc"
 
 # consensus errors in the last 15 minutes
 sudo journalctl -u incentum.service --since "15 min ago" \
