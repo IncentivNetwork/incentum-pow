@@ -46,6 +46,8 @@ func TestMinBaseFeeGovernorDeployment(t *testing.T) {
 		auth.From, // governance address
 		initialMinBaseFee,
 		activationBlock,
+		big.NewInt(172800), // _minTimelockDelay (2 days)
+		big.NewInt(13000),  // _minActivationDelayBlocks
 	)
 	if err != nil {
 		t.Fatalf("Failed to deploy contract: %v", err)
@@ -96,6 +98,8 @@ func TestMinBaseFeeGovernorTimelock(t *testing.T) {
 		auth.From,
 		initialMinBaseFee,
 		activationBlock,
+		big.NewInt(172800), // _minTimelockDelay (2 days)
+		big.NewInt(13000),  // _minActivationDelayBlocks
 	)
 	if err != nil {
 		t.Fatalf("Failed to deploy contract: %v", err)
@@ -181,6 +185,8 @@ func TestMinBaseFeeGovernorAccessControl(t *testing.T) {
 		auth.From,
 		initialMinBaseFee,
 		activationBlock,
+		big.NewInt(172800), // _minTimelockDelay (2 days)
+		big.NewInt(13000),  // _minActivationDelayBlocks
 	)
 	if err != nil {
 		t.Fatalf("Failed to deploy contract: %v", err)
@@ -218,6 +224,8 @@ func TestMinBaseFeeGovernorSafetyBounds(t *testing.T) {
 		auth.From,
 		initialMinBaseFee,
 		activationBlock,
+		big.NewInt(172800), // _minTimelockDelay (2 days)
+		big.NewInt(13000),  // _minActivationDelayBlocks
 	)
 	if err != nil {
 		t.Fatalf("Failed to deploy contract: %v", err)
@@ -269,6 +277,8 @@ func TestMinBaseFeeGovernorPause(t *testing.T) {
 		auth.From,
 		initialMinBaseFee,
 		activationBlock,
+		big.NewInt(172800), // _minTimelockDelay (2 days)
+		big.NewInt(13000),  // _minActivationDelayBlocks
 	)
 	if err != nil {
 		t.Fatalf("Failed to deploy contract: %v", err)
@@ -357,6 +367,8 @@ func TestMinBaseFeeGovernorCancelProposal(t *testing.T) {
 		auth.From,
 		initialMinBaseFee,
 		activationBlock,
+		big.NewInt(172800), // _minTimelockDelay (2 days)
+		big.NewInt(13000),  // _minActivationDelayBlocks
 	)
 	if err != nil {
 		t.Fatalf("Failed to deploy contract: %v", err)

@@ -39,14 +39,20 @@ contract MinBaseFeeGovernor {
     /// @notice Pending proposals mapped by proposal ID
     mapping(bytes32 => Proposal) public proposals;
 
-    /// @notice Minimum timelock delay in seconds (2 days)
-    uint256 public constant MIN_TIMELOCK_DELAY = 2 days;
+    /// @notice Minimum timelock delay in seconds. Set at deployment.
+    /// @dev Production deployments use 2 days; devnet deployments use a shorter value
+    ///      (typically 10 minutes) so a full governance cycle can be exercised within
+    ///      a single test window. Immutable so the deployed value cannot be lowered later.
+    uint256 public immutable MIN_TIMELOCK_DELAY;
 
-    /// @notice Current timelock delay (can be updated by governance, but not below minimum)
-    uint256 public timelockDelay = 2 days;
+    /// @notice Current timelock delay (can be updated by governance, but not below MIN_TIMELOCK_DELAY)
+    uint256 public timelockDelay;
 
-    /// @notice Minimum delay in blocks before activation (~18 hours with 5s blocks)
-    uint256 public constant MIN_ACTIVATION_DELAY_BLOCKS = 13000;
+    /// @notice Minimum delay in blocks before activation. Set at deployment.
+    /// @dev Production deployments use 13000 (~18 hours at 5-second blocks); devnet
+    ///      deployments use a shorter value (typically 100 blocks). Immutable so the
+    ///      deployed value cannot be lowered later.
+    uint256 public immutable MIN_ACTIVATION_DELAY_BLOCKS;
 
     /// @notice Maximum allowed minimum base fee (100 ETH)
     uint256 public constant MAX_MIN_BASE_FEE = 100 ether;
@@ -155,20 +161,27 @@ contract MinBaseFeeGovernor {
     }
 
     /**
-     * @notice Initialize the contract with genesis minimum base fee
+     * @notice Initialize the contract with genesis minimum base fee and per-deployment delays
      * @param _governance Address of governance/timelock contract
      * @param _initialMinBaseFee Initial minimum base fee in wei
      * @param _activationBlock Block number when initial config becomes active (typically 0 for genesis)
+     * @param _minTimelockDelay Minimum timelock delay in seconds (production: 2 days; devnet: shorter)
+     * @param _minActivationDelayBlocks Minimum activation delay in blocks (production: 13000; devnet: shorter)
      */
     constructor(
         address _governance,
         uint256 _initialMinBaseFee,
-        uint256 _activationBlock
+        uint256 _activationBlock,
+        uint256 _minTimelockDelay,
+        uint256 _minActivationDelayBlocks
     ) {
         if (_governance == address(0)) revert GovernanceZero();
         if (_initialMinBaseFee == 0) revert MinBaseFeeZero();
 
         governance = _governance;
+        MIN_TIMELOCK_DELAY = _minTimelockDelay;
+        timelockDelay = _minTimelockDelay;
+        MIN_ACTIVATION_DELAY_BLOCKS = _minActivationDelayBlocks;
 
         configHistory.push(MinBaseFeeConfig({
             minBaseFee: _initialMinBaseFee,

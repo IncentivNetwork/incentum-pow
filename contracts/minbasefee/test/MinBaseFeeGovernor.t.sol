@@ -43,7 +43,7 @@ contract MinBaseFeeGovernorTest is Test {
 
     function setUp() public {
         vm.prank(governance);
-        governor = new MinBaseFeeGovernor(governance, initialMinBaseFee, activationBlock);
+        governor = new MinBaseFeeGovernor(governance, initialMinBaseFee, activationBlock, 2 days, 13000);
     }
 
     // ========== Basic State Tests ==========
@@ -66,7 +66,7 @@ contract MinBaseFeeGovernorTest is Test {
         emit MinBaseFeeScheduled(0, initialMinBaseFee, activationBlock, block.timestamp);
 
         vm.prank(governance);
-        new MinBaseFeeGovernor(governance, initialMinBaseFee, activationBlock);
+        new MinBaseFeeGovernor(governance, initialMinBaseFee, activationBlock, 2 days, 13000);
     }
 
     // ========== Timelock Tests ==========
