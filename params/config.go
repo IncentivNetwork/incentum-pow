@@ -349,7 +349,8 @@ var (
 		// performed — and isForkTimestampIncompatible(nil, &past, headTime)
 		// would force a RewindToTime to before any deployed-contract block.
 		// Picking a *future* timestamp instead makes both sides of the compat
-		// check return false (not forked yet), the existing devnet chain DB is
+		// check return false (not forked yet) as long as each node restarts
+		// before head.Time reaches DPoWTime; the existing devnet chain DB is
 		// accepted as-is, and DPoW enforcement re-engages at block.Time >=
 		// DPoWTime. The brief "DPoW off" window between binary upgrade and
 		// activation is acceptable because the devnet fleet is small, fully
