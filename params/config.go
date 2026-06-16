@@ -577,23 +577,21 @@ type ChainConfig struct {
 	EIP155Block *big.Int `json:"eip155Block,omitempty"` // EIP155 HF block
 	EIP158Block *big.Int `json:"eip158Block,omitempty"` // EIP158 HF block
 
-	ByzantiumBlock         *big.Int       `json:"byzantiumBlock,omitempty"`         // Byzantium switch block (nil = no fork, 0 = already on byzantium)
-	ConstantinopleBlock    *big.Int       `json:"constantinopleBlock,omitempty"`    // Constantinople switch block (nil = no fork, 0 = already activated)
-	PetersburgBlock        *big.Int       `json:"petersburgBlock,omitempty"`        // Petersburg switch block (nil = same as Constantinople)
-	IstanbulBlock          *big.Int       `json:"istanbulBlock,omitempty"`          // Istanbul switch block (nil = no fork, 0 = already on istanbul)
-	MuirGlacierBlock       *big.Int       `json:"muirGlacierBlock,omitempty"`       // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	BerlinBlock            *big.Int       `json:"berlinBlock,omitempty"`            // Berlin switch block (nil = no fork, 0 = already on berlin)
-	LondonBlock            *big.Int       `json:"londonBlock,omitempty"`            // London switch block (nil = no fork, 0 = already on london)
-	FeePoolBlock           *big.Int       `json:"feePoolBlock,omitempty"`           // Fee pool switch block (nil = no fork, 0 = already on fee pool)
-	MinBaseFeeBlock        *big.Int       `json:"minBaseFeeBlock,omitempty"`        // Min base fee switch block (nil = no fork, 0 = already activated)
-	MinBaseFeeChangeHeight *big.Int       `json:"minBaseFeeChangeHeight,omitempty"` // Min base fee change height (not a fork parameter, doesn't affect fork ID)
-	DynamicMinBaseFeeBlock *big.Int       `json:"dynamicMinBaseFeeBlock,omitempty"` // Dynamic min base fee switch block (nil = no fork, 0 = already activated)
-	MinBaseFeeContractAddr common.Address `json:"minBaseFeeContractAddr,omitempty"` // Address of MinBaseFeeGovernor contract (only used when DynamicMinBaseFeeBlock is set)
-	ZeroRewardBlock        *big.Int       `json:"zeroRewardBlock,omitempty"`        // Zero reward switch block (nil = no fork, 0 = already on zero reward)
-	ArrowGlacierBlock      *big.Int       `json:"arrowGlacierBlock,omitempty"`      // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	GrayGlacierBlock       *big.Int       `json:"grayGlacierBlock,omitempty"`       // Eip-5133 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	FastBlock              *big.Int       `json:"fastBlock,omitempty"`              // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
-	MergeNetsplitBlock     *big.Int       `json:"mergeNetsplitBlock,omitempty"`     // Virtual fork after The Merge to use as a network splitter
+	ByzantiumBlock         *big.Int `json:"byzantiumBlock,omitempty"`         // Byzantium switch block (nil = no fork, 0 = already on byzantium)
+	ConstantinopleBlock    *big.Int `json:"constantinopleBlock,omitempty"`    // Constantinople switch block (nil = no fork, 0 = already activated)
+	PetersburgBlock        *big.Int `json:"petersburgBlock,omitempty"`        // Petersburg switch block (nil = same as Constantinople)
+	IstanbulBlock          *big.Int `json:"istanbulBlock,omitempty"`          // Istanbul switch block (nil = no fork, 0 = already on istanbul)
+	MuirGlacierBlock       *big.Int `json:"muirGlacierBlock,omitempty"`       // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	BerlinBlock            *big.Int `json:"berlinBlock,omitempty"`            // Berlin switch block (nil = no fork, 0 = already on berlin)
+	LondonBlock            *big.Int `json:"londonBlock,omitempty"`            // London switch block (nil = no fork, 0 = already on london)
+	FeePoolBlock           *big.Int `json:"feePoolBlock,omitempty"`           // Fee pool switch block (nil = no fork, 0 = already on fee pool)
+	MinBaseFeeBlock        *big.Int `json:"minBaseFeeBlock,omitempty"`        // Min base fee switch block (nil = no fork, 0 = already activated)
+	MinBaseFeeChangeHeight *big.Int `json:"minBaseFeeChangeHeight,omitempty"` // Min base fee change height (not a fork parameter, doesn't affect fork ID)
+	ZeroRewardBlock        *big.Int `json:"zeroRewardBlock,omitempty"`        // Zero reward switch block (nil = no fork, 0 = already on zero reward)
+	ArrowGlacierBlock      *big.Int `json:"arrowGlacierBlock,omitempty"`      // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	GrayGlacierBlock       *big.Int `json:"grayGlacierBlock,omitempty"`       // Eip-5133 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	FastBlock              *big.Int `json:"fastBlock,omitempty"`              // Fast consensus algorithm switch block (nil = no fork, 0 = already activated)
+	MergeNetsplitBlock     *big.Int `json:"mergeNetsplitBlock,omitempty"`     // Virtual fork after The Merge to use as a network splitter
 
 	// MinerRegistryAddress is the address of the on-chain MinerRegistry contract.
 	// Must be set when DPoWTime is non-nil.
@@ -608,6 +606,10 @@ type ChainConfig struct {
 	DPoWMaturityBlocks uint64 `json:"dpowMaturityBlocks,omitempty"`
 
 	IrregularStateChangeHeight *big.Int `json:"irregularStateChangeHeight,omitempty"` // Irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
+
+	// MinBaseFeeContractAddr is the address of the on-chain MinBaseFeeGovernor
+	// contract. Must be set when DynamicMinBaseFeeTime is non-nil.
+	MinBaseFeeContractAddr common.Address `json:"minBaseFeeContractAddr,omitempty"`
 
 	// Fork scheduling was switched from blocks to timestamps here
 
@@ -624,6 +626,16 @@ type ChainConfig struct {
 	// pre- and post-DPoW binaries during the rollout window. See post-Merge
 	// upstream pattern: ShanghaiTime, CancunTime, PragueTime.
 	DPoWTime *uint64 `json:"dpowTime,omitempty"`
+
+	// DynamicMinBaseFeeTime is the Unix timestamp at which the contract-governed
+	// minimum base fee floor takes effect. nil = never activates, 0 = already
+	// activated. The floor itself is read from MinBaseFeeGovernor contract storage
+	// at the parent block's post-state root during block execution.
+	//
+	// Timestamp-based for the same reason as DPoWTime: this is a post-Shanghai
+	// fork, so it must be expressed as a timestamp to keep forkid chronologically
+	// ordered (block forks first, then time forks).
+	DynamicMinBaseFeeTime *uint64 `json:"dynamicMinBaseFeeTime,omitempty"`
 
 	CancunTime *uint64 `json:"cancunTime,omitempty"` // Cancun switch time (nil = no fork, 0 = already on cancun)
 	PragueTime *uint64 `json:"pragueTime,omitempty"` // Prague switch time (nil = no fork, 0 = already on prague)
@@ -851,9 +863,9 @@ func (c *ChainConfig) IsMinBaseFeeChange(num *big.Int) bool {
 	return isBlockForked(c.MinBaseFeeChangeHeight, num)
 }
 
-// IsDynamicMinBaseFee returns whether num is either equal to the Dynamic Min Base Fee fork block or greater.
-func (c *ChainConfig) IsDynamicMinBaseFee(num *big.Int) bool {
-	return isBlockForked(c.DynamicMinBaseFeeBlock, num)
+// IsDynamicMinBaseFee returns whether time is either equal to the Dynamic Min Base Fee fork timestamp or greater.
+func (c *ChainConfig) IsDynamicMinBaseFee(time uint64) bool {
+	return isTimestampForked(c.DynamicMinBaseFeeTime, time)
 }
 
 // IsArrowGlacier returns whether num is either equal to the Arrow Glacier (EIP-4345) fork block or greater.

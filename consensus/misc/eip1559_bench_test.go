@@ -28,11 +28,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+func u64ptr(v uint64) *uint64 { return &v }
+
 // BenchmarkCalcBaseFee_Hardcoded benchmarks the original hardcoded min base fee approach
 func BenchmarkCalcBaseFee_Hardcoded(b *testing.B) {
 	config := &params.ChainConfig{
-		LondonBlock:           big.NewInt(0),
-		MinBaseFeeBlock:       big.NewInt(100),
+		LondonBlock:            big.NewInt(0),
+		MinBaseFeeBlock:        big.NewInt(100),
 		MinBaseFeeChangeHeight: big.NewInt(200),
 	}
 
@@ -64,7 +66,7 @@ func BenchmarkCalcBaseFee_ContractRead(b *testing.B) {
 
 	config := &params.ChainConfig{
 		LondonBlock:            big.NewInt(0),
-		DynamicMinBaseFeeBlock: big.NewInt(100),
+		DynamicMinBaseFeeTime:  u64ptr(100),
 		MinBaseFeeContractAddr: contractAddr,
 	}
 
@@ -93,7 +95,7 @@ func BenchmarkCalcBaseFee_ContractRead_History10(b *testing.B) {
 
 	config := &params.ChainConfig{
 		LondonBlock:            big.NewInt(0),
-		DynamicMinBaseFeeBlock: big.NewInt(100),
+		DynamicMinBaseFeeTime:  u64ptr(100),
 		MinBaseFeeContractAddr: contractAddr,
 	}
 
@@ -122,7 +124,7 @@ func BenchmarkCalcBaseFee_ContractRead_History100(b *testing.B) {
 
 	config := &params.ChainConfig{
 		LondonBlock:            big.NewInt(0),
-		DynamicMinBaseFeeBlock: big.NewInt(100),
+		DynamicMinBaseFeeTime:  u64ptr(100),
 		MinBaseFeeContractAddr: contractAddr,
 	}
 
@@ -151,7 +153,7 @@ func BenchmarkVerifyEip1559Header_Full(b *testing.B) {
 
 	config := &params.ChainConfig{
 		LondonBlock:            big.NewInt(0),
-		DynamicMinBaseFeeBlock: big.NewInt(100),
+		DynamicMinBaseFeeTime:  u64ptr(100),
 		MinBaseFeeContractAddr: contractAddr,
 	}
 

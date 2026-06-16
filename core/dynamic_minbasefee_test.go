@@ -30,7 +30,7 @@ func TestDynamicMinBaseFee_Disabled(t *testing.T) {
 		LondonBlock:            big.NewInt(0),
 		MinBaseFeeBlock:        big.NewInt(0),
 		MinBaseFeeChangeHeight: big.NewInt(10),
-		// DynamicMinBaseFeeBlock is NOT set - feature disabled
+		// DynamicMinBaseFeeTime is NOT set - feature disabled
 		Ethash: new(params.EthashConfig),
 	}
 

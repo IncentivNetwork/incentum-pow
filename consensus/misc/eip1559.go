@@ -32,12 +32,12 @@ import (
 
 var (
 	// Metrics for monitoring minimum base fee
-	minBaseFeeGauge = metrics.NewRegisteredGauge("chain/minbasefee/current", nil)
+	minBaseFeeGauge             = metrics.NewRegisteredGauge("chain/minbasefee/current", nil)
 	minBaseFeeFromContractGauge = metrics.NewRegisteredGauge("chain/minbasefee/contract", nil)
-	minBaseFeeReadErrorsMeter = metrics.NewRegisteredMeter("chain/minbasefee/readerrors", nil)
-	minBaseFeeActiveGauge = metrics.NewRegisteredGauge("chain/minbasefee/active", nil)
-	baseFeeBeforeFloorGauge = metrics.NewRegisteredGauge("chain/basefee/beforefloor", nil)
-	baseFeeAfterFloorGauge = metrics.NewRegisteredGauge("chain/basefee/afterfloor", nil)
+	minBaseFeeReadErrorsMeter   = metrics.NewRegisteredMeter("chain/minbasefee/readerrors", nil)
+	minBaseFeeActiveGauge       = metrics.NewRegisteredGauge("chain/minbasefee/active", nil)
+	baseFeeBeforeFloorGauge     = metrics.NewRegisteredGauge("chain/basefee/beforefloor", nil)
+	baseFeeAfterFloorGauge      = metrics.NewRegisteredGauge("chain/basefee/afterfloor", nil)
 )
 
 // VerifyEip1559Header verifies some header attributes which were changed in EIP-1559,
@@ -104,12 +104,15 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *stat
 		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
 		baseFee := num.Sub(parent.BaseFee, num)
 
-		// Apply minimum base fee floor if MinBaseFee fork is activated for the current block
-		// Check parent.Number + 1 since this function calculates the fee for the next block
+		// Apply minimum base fee floor if MinBaseFee fork is activated for the current block.
+		// nextBlockNum addresses the contract's block-based configHistory selection;
+		// the fork-activation check itself is timestamp-based and uses parent.Time as a
+		// conservative proxy for the new block's intended timestamp (the new block's
+		// timestamp will always be >= parent.Time).
 		nextBlockNum := new(big.Int).Add(parent.Number, common.Big1)
 
 		// Priority 1: Dynamic min base fee (read from contract)
-		if config.IsDynamicMinBaseFee(nextBlockNum) {
+		if config.IsDynamicMinBaseFee(parent.Time) {
 			minBaseFeeActiveGauge.Update(1)
 			baseFeeBeforeFloorGauge.Update(baseFee.Int64())
 

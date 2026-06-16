@@ -31,7 +31,7 @@ func TestDynamicMinBaseFee_Integration_GenesisContract(t *testing.T) {
 		MuirGlacierBlock:       big.NewInt(0),
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
-		DynamicMinBaseFeeBlock: big.NewInt(5),
+		DynamicMinBaseFeeTime:  u64(5),
 		MinBaseFeeContractAddr: contractAddr,
 		Ethash:                 new(params.EthashConfig),
 	}
@@ -138,7 +138,7 @@ func TestDynamicMinBaseFee_Integration_ContractUpdate(t *testing.T) {
 		MuirGlacierBlock:       big.NewInt(0),
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
-		DynamicMinBaseFeeBlock: big.NewInt(1),
+		DynamicMinBaseFeeTime:  u64(1),
 		MinBaseFeeContractAddr: contractAddr,
 		Ethash:                 new(params.EthashConfig),
 	}
@@ -275,7 +275,7 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 		LondonBlock:            big.NewInt(0),
 		MinBaseFeeBlock:        big.NewInt(2),
 		MinBaseFeeChangeHeight: big.NewInt(5),
-		DynamicMinBaseFeeBlock: big.NewInt(8),
+		DynamicMinBaseFeeTime:  u64(8),
 		MinBaseFeeContractAddr: contractAddr,
 		Ethash:                 new(params.EthashConfig),
 	}
@@ -347,7 +347,7 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 		var minBaseFeeSource string
 		var expectedMinBaseFee *big.Int
 
-		if config.IsDynamicMinBaseFee(big.NewInt(int64(tt.blockNum))) {
+		if config.IsDynamicMinBaseFee(block.Time()) {
 			minBaseFee, err := reader.ReadMinBaseFee(stateDB, big.NewInt(int64(tt.blockNum)))
 			if err == nil {
 				expectedMinBaseFee = minBaseFee
