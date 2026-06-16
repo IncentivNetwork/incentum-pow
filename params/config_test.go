@@ -314,14 +314,14 @@ func TestFormatTimestampFork(t *testing.T) {
 }
 
 // TestIncentivNetworkDPoWTimeValues pins the DPoW activation moment embedded
-// in the three Incentiv chain configs. This is the acceptance criterion for
-// DPOW-008-7: mainnet activates at 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv);
-// devnet and testnet ship without DPoW enabled (see the inline rationale on
-// each config).
+// in the three Incentiv chain configs:
+//   - mainnet activates at 2026-06-11 13:00:00 UTC (DPOW-008-7)
+//   - devnet  activates at 2026-06-16 13:00:00 UTC (DPOW-008-9 reactivation)
+//   - testnet ships with DPoW dormant
 //
-// The expectation is derived through time.Date so a numeric typo in
-// IncentivMainnetChainConfig.DPoWTime fails with the human-readable wall time
-// the issue / PR / banner refers to, not with two opaque integers.
+// Expectations are derived through time.Date so a numeric typo in either
+// embedded value fails with the human-readable wall time the issue / PR /
+// banner refers to, not with two opaque integers.
 func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
 	if IncentivMainnetChainConfig.DPoWTime == nil {
 		t.Fatalf("IncentivMainnetChainConfig.DPoWTime must not be nil for the DPOW-008-7 activation")
@@ -330,10 +330,16 @@ func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
 	if got := *IncentivMainnetChainConfig.DPoWTime; got != wantMainnet {
 		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
 		wantWall := time.Unix(int64(wantMainnet), 0).UTC().Format(time.RFC3339)
-		t.Fatalf("IncentivMainnetChainConfig.DPoWTime = %d (%s), want %d (%s) — 2026-06-11 16:00 EEST Kyiv", got, gotWall, wantMainnet, wantWall)
+		t.Fatalf("IncentivMainnetChainConfig.DPoWTime = %d (%s), want %d (%s) — 2026-06-11 13:00 UTC", got, gotWall, wantMainnet, wantWall)
 	}
-	if IncentivDevnetChainConfig.DPoWTime != nil {
-		t.Fatalf("IncentivDevnetChainConfig.DPoWTime = %d, want nil (DPoW intentionally disabled on devnet, see config comment)", *IncentivDevnetChainConfig.DPoWTime)
+	if IncentivDevnetChainConfig.DPoWTime == nil {
+		t.Fatalf("IncentivDevnetChainConfig.DPoWTime must not be nil for the DPOW-008-9 reactivation")
+	}
+	wantDevnet := uint64(time.Date(2026, 6, 16, 13, 0, 0, 0, time.UTC).Unix())
+	if got := *IncentivDevnetChainConfig.DPoWTime; got != wantDevnet {
+		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
+		wantWall := time.Unix(int64(wantDevnet), 0).UTC().Format(time.RFC3339)
+		t.Fatalf("IncentivDevnetChainConfig.DPoWTime = %d (%s), want %d (%s) — 2026-06-16 13:00 UTC", got, gotWall, wantDevnet, wantWall)
 	}
 	if IncentivTestnetChainConfig.DPoWTime != nil {
 		t.Fatalf("IncentivTestnetChainConfig.DPoWTime = %d, want nil (testnet ships with DPoW dormant)", *IncentivTestnetChainConfig.DPoWTime)
