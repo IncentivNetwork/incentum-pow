@@ -340,17 +340,23 @@ var (
 		FastBlock:           big.NewInt(0),
 		ZeroRewardBlock:     big.NewInt(0),
 		MergeNetsplitBlock:  nil,
-		// DPoWTime intentionally nil for devnet. Existing devnet datadirs were
-		// initialised under the old DPoWBlock=274000 binary, so the stored
-		// ChainConfig has storedcfg.DPoWTime == nil (the old field name is just
-		// silently dropped on JSON unmarshal — no block→timestamp migration is
-		// performed). Setting any past timestamp here would make
-		// isForkTimestampIncompatible(nil, &past, headTime) return true and
-		// fail CheckCompatible on every devnet node restart. DPoW is disabled
-		// on this network until a fresh genesis with an explicit DPoWTime is
-		// deployed; the embedded MinerRegistry address is retained for that
-		// future redeploy.
-		DPoWTime:                      nil,
+		// DPoWTime is set to a near-future timestamp to re-enable DPoW on devnet
+		// without rewinding the chain or redeploying contracts. Picking a *past*
+		// timestamp (e.g. when the original devnet DPoWBlock=274000 was mined)
+		// would trip CheckCompatible at every node restart, because stored
+		// ChainConfig has storedcfg.DPoWTime == nil — the old field name is
+		// silently dropped on JSON unmarshal, no block→timestamp migration is
+		// performed — and isForkTimestampIncompatible(nil, &past, headTime)
+		// would force a RewindToTime to before any deployed-contract block.
+		// Picking a *future* timestamp instead makes both sides of the compat
+		// check return false (not forked yet) as long as each node restarts
+		// before head.Time reaches DPoWTime; the existing devnet chain DB is
+		// accepted as-is, and DPoW enforcement re-engages at block.Time >=
+		// DPoWTime. The brief "DPoW off" window between binary upgrade and
+		// activation is acceptable because the devnet fleet is small, fully
+		// operator-controlled, and has no rogue miner that could exploit it.
+		// See DPOW-008-9 (#95) for the full rationale.
+		DPoWTime:                      newUint64(1781614800), // 2026-06-16 13:00:00 UTC
 		MinerRegistryAddress:          newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
 		DPoWMaturityTime:              300,
 		DPoWMaturityBlocks:            60,
