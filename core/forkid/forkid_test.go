@@ -19,6 +19,7 @@ package forkid
 import (
 	"bytes"
 	"math"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -406,5 +407,139 @@ func TestEncoding(t *testing.T) {
 		if !bytes.Equal(have, tt.want) {
 			t.Errorf("test %d: RLP mismatch: have %x, want %x", i, have, tt.want)
 		}
+	}
+}
+
+func TestDPoWForkIDBehavior(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000000100")
+	genesis := common.HexToHash("0x1234")
+	// ShanghaiTime must precede DPoWTime per the chronological invariant enforced
+	// by CheckConfigForkOrder (DPoW is a post-Shanghai time fork on Incentiv).
+	// Using 0 here also keeps Shanghai out of the forkid hash itself — gatherForks
+	// explicitly skips forks at block / timestamp 0 ("that's the genesis ruleset"),
+	// so the test still exercises a single non-trivial time fork (DPoWTime) and
+	// stays comparable to the pre-Shanghai-precondition revision of this test.
+	shanghai := uint64(0)
+	t100 := uint64(100)
+	t200 := uint64(200)
+
+	base := &params.ChainConfig{
+		ChainID:              big.NewInt(1),
+		ShanghaiTime:         &shanghai,
+		DPoWTime:             &t100,
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     300,
+		DPoWMaturityBlocks:   60,
+	}
+
+	sameForkDifferentMaturity := &params.ChainConfig{
+		ChainID:              big.NewInt(1),
+		ShanghaiTime:         &shanghai,
+		DPoWTime:             &t100,
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     999,
+		DPoWMaturityBlocks:   999,
+	}
+
+	differentDPoWTime := &params.ChainConfig{
+		ChainID:              big.NewInt(1),
+		ShanghaiTime:         &shanghai,
+		DPoWTime:             &t200,
+		MinerRegistryAddress: &addr,
+		DPoWMaturityTime:     300,
+		DPoWMaturityBlocks:   60,
+	}
+
+	// DPoWMaturityTime / DPoWMaturityBlocks must NOT affect forkid.
+	id1 := NewID(base, genesis, 0, 1000)
+	id2 := NewID(sameForkDifferentMaturity, genesis, 0, 1000)
+	if id1 != id2 {
+		t.Fatalf("forkid changed when only DPoW maturity settings changed: have=%#v want=%#v", id2, id1)
+	}
+
+	// DPoWTime MUST affect forkid.
+	id3 := NewID(differentDPoWTime, genesis, 0, 1000)
+	if id1 == id3 {
+		t.Fatalf("forkid did not change when DPoWTime changed: id1=%#v id3=%#v", id1, id3)
+	}
+
+	// Before activation, DPoWTime should appear as the next fork.
+	preFork := NewID(base, genesis, 0, 0)
+	if preFork.Next != 100 {
+		t.Fatalf("unexpected next fork before DPoW activation: have=%d want=%d", preFork.Next, 100)
+	}
+}
+
+// TestIncentivMainnetDPoWForkIDs is the regression test for the DPOW-008-7
+// hotfix. It verifies that on the live Incentiv mainnet configuration the
+// forkid hash before DPoW activation is identical to what a pre-DPoW binary
+// (no DPoWTime in config) would compute at the same head, so the two binaries
+// peer freely throughout the rollout window. After activation the hash
+// diverges (folds DPoWTime in) — the standard post-Shanghai hard fork
+// separation point.
+func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
+	cfg := params.IncentivMainnetChainConfig
+	genesis := params.IncentivMainnetGenesisHash
+
+	if cfg.DPoWTime == nil || cfg.ShanghaiTime == nil {
+		t.Fatalf("test requires IncentivMainnetChainConfig to have both ShanghaiTime and DPoWTime set")
+	}
+	dpowTime := *cfg.DPoWTime
+	shanghai := *cfg.ShanghaiTime
+
+	// Precondition: this test only makes sense if the head sits between Shanghai
+	// and DPoW. Requiring dpowTime >= shanghai+60 keeps preTime both >= ShanghaiTime
+	// (so ShanghaiTime is already folded into the hash — the bug class the hotfix
+	// exists to fix) and free of uint64 underflow on the subtraction below. If a
+	// future config change ever brings DPoWTime within 60 seconds of ShanghaiTime
+	// this fails loudly here rather than producing a confusing downstream failure.
+	if dpowTime < shanghai+60 {
+		t.Fatalf("test precondition broken: DPoWTime=%d must be >= ShanghaiTime=%d + 60s", dpowTime, shanghai)
+	}
+
+	// Pre-activation head: well after Shanghai, well before DPoW.
+	preHead := uint64(4_272_003)
+	preTime := dpowTime - 60
+
+	// Build a "pre-DPoW" config that mirrors the v1.11.6-stable binary running
+	// on operator nodes today: no DPoW code at all, so none of the DPoW-related
+	// fields are present in the embedded ChainConfig. The maturity values are
+	// also zeroed (despite not affecting forkid) to keep the simulation honest.
+	preDPoW := *cfg
+	preDPoW.DPoWTime = nil
+	preDPoW.MinerRegistryAddress = nil
+	preDPoW.DPoWMaturityTime = 0
+	preDPoW.DPoWMaturityBlocks = 0
+
+	preDPoWID := NewID(&preDPoW, genesis, preHead, preTime)
+	newBinaryID := NewID(cfg, genesis, preHead, preTime)
+
+	// Hash MUST be identical — this is the cross-version peering invariant.
+	if preDPoWID.Hash != newBinaryID.Hash {
+		t.Fatalf("pre-activation forkid Hash differs between pre-DPoW and new binary:\n  pre-DPoW    = %#v\n  new binary  = %#v\n(this breaks operator rollout peering)", preDPoWID, newBinaryID)
+	}
+	// Pre-DPoW binary has no future fork to advertise.
+	if preDPoWID.Next != 0 {
+		t.Fatalf("pre-DPoW binary unexpected Next: have=%d want=0", preDPoWID.Next)
+	}
+	// New binary advertises DPoWTime as the next fork.
+	if newBinaryID.Next != dpowTime {
+		t.Fatalf("new binary Next mismatch: have=%d want=%d", newBinaryID.Next, dpowTime)
+	}
+
+	// New binary at DPoW activation: Next jumps to the next time fork (cancunTime, which is nil, so 0).
+	atDPoW := NewID(cfg, genesis, preHead, dpowTime)
+	if atDPoW.Hash == newBinaryID.Hash {
+		t.Fatalf("forkid Hash did not change at DPoW activation: pre=%#v at=%#v", newBinaryID, atDPoW)
+	}
+	if atDPoW.Next != 0 {
+		t.Fatalf("forkid Next after DPoW activation: have=%d want=0", atDPoW.Next)
+	}
+
+	// NewFilter on the new binary MUST accept the pre-DPoW binary's forkid
+	// (rule #1b: hashes match, remote Next == 0 disables the early-pass check).
+	filter := newFilter(cfg, genesis, func() (uint64, uint64) { return preHead, preTime })
+	if err := filter(preDPoWID); err != nil {
+		t.Fatalf("new binary rejected pre-DPoW peer's forkid: %v", err)
 	}
 }

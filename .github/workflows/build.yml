@@ -1,0 +1,134 @@
+name: Build Geth
+on:
+  push:
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  linter:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Cache golangci-lint
+        uses: actions/cache@v4
+        with:
+          path: build/cache
+          key: ${{ runner.os }}-golangci-lint-${{ hashFiles('build/ci.go') }}
+
+      - name: Run Linter
+        run: go run build/ci.go lint
+
+  tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      TOTAL_SHARDS: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run Tests (shard ${{ matrix.shard }}/${{ env.TOTAL_SHARDS }})
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          set -eo pipefail
+          PKGS=$(go list ./... | awk "NR % ${TOTAL_SHARDS} == ${SHARD_INDEX}")
+          if [ -z "$PKGS" ]; then
+            echo "No packages assigned to this shard; skipping."
+            exit 0
+          fi
+          go run build/ci.go test $PKGS
+
+  pr-build:
+    needs: [linter, tests]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build Geth
+        run: go run build/ci.go install --static ./cmd/geth
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Build Geth
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: go run build/ci.go install --static ./cmd/geth
+
+      - name: Prepare Release Asset
+        run: |
+          RELEASE_TAG="${GITHUB_REF_NAME}"
+          FILE_NAME="geth-linux-amd64-${RELEASE_TAG}.tar.gz"
+          CHECKSUM_NAME="${FILE_NAME}.sha256"
+
+          tar -czvf "${FILE_NAME}" -C build/bin geth -C "${GITHUB_WORKSPACE}" COPYING
+          sha256sum "${FILE_NAME}" > "${CHECKSUM_NAME}"
+
+          echo "RELEASE_ASSET=${FILE_NAME}" >> $GITHUB_ENV
+          echo "RELEASE_CHECKSUM=${CHECKSUM_NAME}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.RELEASE_ASSET }}
+          path: |
+            ${{ env.RELEASE_ASSET }}
+            ${{ env.RELEASE_CHECKSUM }}
+          retention-days: 7
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Release ${{ env.RELEASE_TAG }}
+          draft: false
+          prerelease: false
+          files: |
+            ${{ env.RELEASE_ASSET }}
+            ${{ env.RELEASE_CHECKSUM }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

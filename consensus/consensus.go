@@ -128,3 +128,11 @@ type PoW interface {
 	// Hashrate returns the current mining hashrate of a PoW consensus engine.
 	Hashrate() float64
 }
+
+// DPoWVerifier is an optional interface implemented by consensus engines
+// that support Delegated Proof-of-Work miner authorization.
+// StateProcessor asserts this interface before calling Finalize() to allow
+// clean error returns instead of panics on unauthorized blocks from peers.
+type DPoWVerifier interface {
+	VerifyMinerAuthorization(config *params.ChainConfig, state *state.StateDB, header *types.Header) error
+}

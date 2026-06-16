@@ -57,6 +57,22 @@ issues:
       text: 'SA1019: "github.com/golang/protobuf/proto" is deprecated: Use the "google.golang.org/protobuf/proto" package instead.'
     - path: accounts/usbwallet/trezor/
       text: 'SA1019: "github.com/golang/protobuf/proto" is deprecated: Use the "google.golang.org/protobuf/proto" package instead.'
+    # elliptic.Marshal/Unmarshal/GenerateKey are deprecated since Go 1.21 in
+    # favor of crypto/ecdh. crypto/ecdh only supports NIST curves and X25519,
+    # so it is not a drop-in replacement for secp256k1 (ECDSA) usage here.
+    - path: accounts/scwallet/
+      text: 'SA1019: elliptic\.(Marshal|Unmarshal|GenerateKey)'
+    - path: crypto/
+      text: 'SA1019: elliptic\.(Marshal|Unmarshal|GenerateKey)'
+    - path: p2p/rlpx/
+      text: 'SA1019: elliptic\.(Marshal|Unmarshal|GenerateKey)'
+    # reflect.SliceHeader is used in consensus-critical ethash DAG code and in
+    # the RLP zero-copy decoder. Migrating to unsafe.Slice / unsafe.SliceData
+    # requires dedicated review and is out of scope for CI tooling changes.
+    - path: consensus/ethash/
+      text: 'SA1019: reflect\.SliceHeader'
+    - path: rlp/
+      text: 'SA1019: reflect\.SliceHeader'
   exclude:
     - 'SA1019: event.TypeMux is deprecated: use Feed'
     - 'SA1019: strings.Title is deprecated'
