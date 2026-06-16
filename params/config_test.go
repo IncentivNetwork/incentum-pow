@@ -386,6 +386,16 @@ func TestCheckCompatibleDPoW(t *testing.T) {
 			},
 		},
 		{
+			name:   "dpow time introduced as future before head reaches it is compatible",
+			stored: &ChainConfig{},
+			new: &ChainConfig{
+				DPoWTime:             newUint64(200),
+				MinerRegistryAddress: &addr1,
+			},
+			headTime: 150,
+			wantErr:  nil,
+		},
+		{
 			name: "dpow time mismatch before activation is allowed",
 			stored: &ChainConfig{
 				DPoWTime:             newUint64(100),
