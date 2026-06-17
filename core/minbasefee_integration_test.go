@@ -32,7 +32,7 @@ func TestDynamicMinBaseFee_Integration_GenesisContract(t *testing.T) {
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
 		DynamicMinBaseFeeTime:  u64(5),
-		MinBaseFeeContractAddr: contractAddr,
+		MinBaseFeeContractAddr: &contractAddr,
 		Ethash:                 new(params.EthashConfig),
 	}
 
@@ -139,7 +139,7 @@ func TestDynamicMinBaseFee_Integration_ContractUpdate(t *testing.T) {
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
 		DynamicMinBaseFeeTime:  u64(1),
-		MinBaseFeeContractAddr: contractAddr,
+		MinBaseFeeContractAddr: &contractAddr,
 		Ethash:                 new(params.EthashConfig),
 	}
 
@@ -276,7 +276,7 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 		MinBaseFeeBlock:        big.NewInt(2),
 		MinBaseFeeChangeHeight: big.NewInt(5),
 		DynamicMinBaseFeeTime:  u64(8),
-		MinBaseFeeContractAddr: contractAddr,
+		MinBaseFeeContractAddr: &contractAddr,
 		Ethash:                 new(params.EthashConfig),
 	}
 

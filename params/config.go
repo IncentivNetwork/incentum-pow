@@ -609,7 +609,7 @@ type ChainConfig struct {
 
 	// MinBaseFeeContractAddr is the address of the on-chain MinBaseFeeGovernor
 	// contract. Must be set when DynamicMinBaseFeeTime is non-nil.
-	MinBaseFeeContractAddr common.Address `json:"minBaseFeeContractAddr,omitempty"`
+	MinBaseFeeContractAddr *common.Address `json:"minBaseFeeContractAddr,omitempty"`
 
 	// Fork scheduling was switched from blocks to timestamps here
 
@@ -927,6 +927,29 @@ func (c *ChainConfig) CheckDPoWConfig() error {
 	}
 }
 
+// GetMinBaseFeeContractAddr returns the configured MinBaseFeeGovernor contract
+// address, or the zero address when unset.
+func (c *ChainConfig) GetMinBaseFeeContractAddr() common.Address {
+	if c.MinBaseFeeContractAddr == nil {
+		return common.Address{}
+	}
+	return *c.MinBaseFeeContractAddr
+}
+
+// CheckMinBaseFeeConfig validates DynamicMinBaseFee-specific chain config
+// invariants. When DynamicMinBaseFeeTime is set, MinBaseFeeContractAddr must
+// also be set to a non-zero address.
+func (c *ChainConfig) CheckMinBaseFeeConfig() error {
+	switch {
+	case c.DynamicMinBaseFeeTime == nil:
+		return nil
+	case c.MinBaseFeeContractAddr == nil || *c.MinBaseFeeContractAddr == (common.Address{}):
+		return fmt.Errorf("dynamicMinBaseFeeTime is set to %d but minBaseFeeContractAddr is missing or zero address", *c.DynamicMinBaseFeeTime)
+	default:
+		return nil
+	}
+}
+
 // IsIrregularStateChange returns whether num is equal to the irregular state change height.
 func (c *ChainConfig) IsIrregularStateChange(num *big.Int) bool {
 	if c.IrregularStateChangeHeight == nil || num == nil {
@@ -1124,6 +1147,15 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if c.IsDPoW(headTimestamp) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
 		return newTimestampCompatError("DPoW maturity blocks", c.DPoWTime, newcfg.DPoWTime)
+	}
+	if isForkTimestampIncompatible(c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime, headTimestamp) {
+		return newTimestampCompatError("DynamicMinBaseFee fork timestamp", c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
+	}
+	// MinBaseFeeContractAddr is the address the consensus layer reads the floor
+	// from once DynamicMinBaseFeeTime has fired; once the fork is active, changing
+	// it would silently re-route the floor read to a different contract.
+	if c.IsDynamicMinBaseFee(headTimestamp) && c.GetMinBaseFeeContractAddr() != newcfg.GetMinBaseFeeContractAddr() {
+		return newTimestampCompatError("DynamicMinBaseFee contract address", c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
 	}
 	if isForkTimestampIncompatible(c.CancunTime, newcfg.CancunTime, headTimestamp) {
 		return newTimestampCompatError("Cancun fork timestamp", c.CancunTime, newcfg.CancunTime)

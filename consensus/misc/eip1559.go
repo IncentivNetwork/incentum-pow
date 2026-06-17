@@ -163,11 +163,12 @@ func readMinBaseFeeFromContract(config *params.ChainConfig, stateDB *state.State
 	}
 
 	// Check if contract address is configured
-	if config.MinBaseFeeContractAddr == (common.Address{}) {
+	addr := config.GetMinBaseFeeContractAddr()
+	if addr == (common.Address{}) {
 		return nil, fmt.Errorf("MinBaseFeeContractAddr not configured")
 	}
 
-	reader := minbasefee.NewReader(config.MinBaseFeeContractAddr)
+	reader := minbasefee.NewReader(addr)
 	minBaseFee, err := reader.ReadMinBaseFee(stateDB, blockNumber)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from contract: %w", err)

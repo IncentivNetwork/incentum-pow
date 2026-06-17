@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -506,5 +507,48 @@ func TestCheckCompatibleDPoW(t *testing.T) {
 		if !reflect.DeepEqual(err, tt.wantErr) {
 			t.Fatalf("%s: unexpected compatibility error: got=%v want=%v", tt.name, err, tt.wantErr)
 		}
+	}
+}
+
+// TestMinBaseFeeContractAddrJSON guards the JSON round-trip of the optional
+// MinBaseFeeContractAddr field for both unset (nil) and set states.
+func TestMinBaseFeeContractAddrJSON(t *testing.T) {
+	addr := common.HexToAddress("0x000000000000000000000000000000000000beef")
+	cases := []struct {
+		name    string
+		in      *ChainConfig
+		jsonHas bool
+	}{
+		{
+			name:    "nil omits field",
+			in:      &ChainConfig{ChainID: big.NewInt(1)},
+			jsonHas: false,
+		},
+		{
+			name:    "set address round-trips",
+			in:      &ChainConfig{ChainID: big.NewInt(1), MinBaseFeeContractAddr: &addr},
+			jsonHas: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.in)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if has := strings.Contains(string(data), "minBaseFeeContractAddr"); has != tc.jsonHas {
+				t.Fatalf("json field presence: got=%v want=%v (json=%s)", has, tc.jsonHas, data)
+			}
+			var out ChainConfig
+			if err := json.Unmarshal(data, &out); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if (out.MinBaseFeeContractAddr == nil) != (tc.in.MinBaseFeeContractAddr == nil) {
+				t.Fatalf("nil mismatch: got=%v want=%v", out.MinBaseFeeContractAddr, tc.in.MinBaseFeeContractAddr)
+			}
+			if out.MinBaseFeeContractAddr != nil && *out.MinBaseFeeContractAddr != *tc.in.MinBaseFeeContractAddr {
+				t.Fatalf("value mismatch: got=%v want=%v", *out.MinBaseFeeContractAddr, *tc.in.MinBaseFeeContractAddr)
+			}
+		})
 	}
 }

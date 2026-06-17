@@ -67,7 +67,7 @@ func BenchmarkCalcBaseFee_ContractRead(b *testing.B) {
 	config := &params.ChainConfig{
 		LondonBlock:            big.NewInt(0),
 		DynamicMinBaseFeeTime:  u64ptr(100),
-		MinBaseFeeContractAddr: contractAddr,
+		MinBaseFeeContractAddr: &contractAddr,
 	}
 
 	parent := &types.Header{
@@ -96,7 +96,7 @@ func BenchmarkCalcBaseFee_ContractRead_History10(b *testing.B) {
 	config := &params.ChainConfig{
 		LondonBlock:            big.NewInt(0),
 		DynamicMinBaseFeeTime:  u64ptr(100),
-		MinBaseFeeContractAddr: contractAddr,
+		MinBaseFeeContractAddr: &contractAddr,
 	}
 
 	parent := &types.Header{
@@ -125,7 +125,7 @@ func BenchmarkCalcBaseFee_ContractRead_History100(b *testing.B) {
 	config := &params.ChainConfig{
 		LondonBlock:            big.NewInt(0),
 		DynamicMinBaseFeeTime:  u64ptr(100),
-		MinBaseFeeContractAddr: contractAddr,
+		MinBaseFeeContractAddr: &contractAddr,
 	}
 
 	parent := &types.Header{
@@ -154,7 +154,7 @@ func BenchmarkVerifyEip1559Header_Full(b *testing.B) {
 	config := &params.ChainConfig{
 		LondonBlock:            big.NewInt(0),
 		DynamicMinBaseFeeTime:  u64ptr(100),
-		MinBaseFeeContractAddr: contractAddr,
+		MinBaseFeeContractAddr: &contractAddr,
 	}
 
 	parent := &types.Header{
