@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/minbasefee"
+	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -372,5 +373,96 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 			block.BaseFee(),
 			minBaseFeeSource,
 			new(big.Int).Div(expectedMinBaseFee, big.NewInt(params.GWei)))
+	}
+}
+
+// TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState exercises the end-to-end path:
+// CalcBaseFee is invoked with the parent's post-state, the reader pulls the
+// floor from MinBaseFeeGovernor storage seeded at genesis, and the floor is
+// applied to the EIP-1559 result. By construction this test cannot pass without
+// the fork-active branch of CalcBaseFee actually reading the contract, which
+// the original feature-branch wiring (stateDB always nil at production call
+// sites) made impossible.
+func TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState(t *testing.T) {
+	contractAddr := common.HexToAddress("0x0000000000000000000000000000000000000100")
+	governanceAddr := common.HexToAddress("0x0000000000000000000000000000000000000200")
+	// Contract floor: 1500 gwei. Genesis baseFee below the floor so that, when
+	// the floor is applied, the next block's baseFee must jump up to the floor.
+	floorWei := new(big.Int).Mul(big.NewInt(1500), big.NewInt(params.GWei))
+	genesisBaseFee := new(big.Int).Mul(big.NewInt(100), big.NewInt(params.GWei))
+
+	config := &params.ChainConfig{
+		ChainID:                big.NewInt(1337),
+		HomesteadBlock:         big.NewInt(0),
+		EIP150Block:            big.NewInt(0),
+		EIP155Block:            big.NewInt(0),
+		EIP158Block:            big.NewInt(0),
+		ByzantiumBlock:         big.NewInt(0),
+		ConstantinopleBlock:    big.NewInt(0),
+		PetersburgBlock:        big.NewInt(0),
+		IstanbulBlock:          big.NewInt(0),
+		MuirGlacierBlock:       big.NewInt(0),
+		BerlinBlock:            big.NewInt(0),
+		LondonBlock:            big.NewInt(0),
+		DynamicMinBaseFeeTime:  u64(0), // active from genesis
+		MinBaseFeeContractAddr: &contractAddr,
+		Ethash:                 new(params.EthashConfig),
+	}
+
+	alloc := GenesisAlloc{
+		contractAddr: GenesisAccount{
+			Balance: common.Big0,
+			Storage: make(map[common.Hash]common.Hash),
+		},
+		governanceAddr: GenesisAccount{
+			Balance: big.NewInt(1000000000000000000),
+		},
+	}
+
+	// Seed configHistory with a single entry at activationBlock=0 and floor.
+	arraySlot := crypto.Keccak256Hash(common.BigToHash(big.NewInt(1)).Bytes())
+	alloc[contractAddr].Storage[common.BigToHash(big.NewInt(0))] = common.BytesToHash(governanceAddr.Bytes())
+	alloc[contractAddr].Storage[common.BigToHash(big.NewInt(1))] = common.BigToHash(big.NewInt(1))
+	alloc[contractAddr].Storage[arraySlot] = common.BigToHash(floorWei)
+	alloc[contractAddr].Storage[common.BigToHash(new(big.Int).Add(arraySlot.Big(), big.NewInt(1)))] = common.BigToHash(big.NewInt(0))
+	alloc[contractAddr].Storage[common.BigToHash(new(big.Int).Add(arraySlot.Big(), big.NewInt(2)))] = common.BigToHash(big.NewInt(1))
+
+	genesis := &Genesis{
+		Config:     config,
+		Alloc:      alloc,
+		ExtraData:  []byte("dmbf e2e"),
+		Timestamp:  10,
+		BaseFee:    genesisBaseFee,
+		Difficulty: big.NewInt(0),
+		GasLimit:   30000000,
+	}
+
+	engine := ethash.NewFaker()
+	db := rawdb.NewMemoryDatabase()
+	chain, err := NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create blockchain: %v", err)
+	}
+	defer chain.Stop()
+
+	parent := chain.CurrentHeader()
+	parentState, err := chain.StateAt(parent.Root)
+	if err != nil {
+		t.Fatalf("Failed to get parent state: %v", err)
+	}
+
+	// CalcBaseFee with a non-nil state must succeed and return at least the floor.
+	got, err := misc.CalcBaseFee(config, parent, parentState)
+	if err != nil {
+		t.Fatalf("CalcBaseFee with parent state failed: %v", err)
+	}
+	if got.Cmp(floorWei) < 0 {
+		t.Fatalf("expected baseFee >= floor; got=%s floor=%s", got, floorWei)
+	}
+
+	// CalcBaseFee with nil state must return an explicit error after activation -
+	// this is what gates the consensus path against silent fallback.
+	if _, err := misc.CalcBaseFee(config, parent, nil); err == nil {
+		t.Fatalf("expected CalcBaseFee with nil state to error post-activation; got nil")
 	}
 }
