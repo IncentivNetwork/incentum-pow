@@ -25,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/minbasefee"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -57,7 +56,10 @@ func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Heade
 		return fmt.Errorf("header is missing baseFee")
 	}
 	// Verify the baseFee is correct based on the parent header.
-	expectedBaseFee := CalcBaseFee(config, parent, stateDB)
+	expectedBaseFee, err := CalcBaseFee(config, parent, stateDB)
+	if err != nil {
+		return fmt.Errorf("baseFee verification: %w", err)
+	}
 	if header.BaseFee.Cmp(expectedBaseFee) != 0 {
 		return fmt.Errorf("invalid baseFee: have %s, want %s, parentBaseFee %s, parentGasUsed %d",
 			header.BaseFee, expectedBaseFee, parent.BaseFee, parent.GasUsed)
@@ -66,17 +68,23 @@ func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Heade
 }
 
 // CalcBaseFee calculates the basefee of the header.
-// stateDB is optional and only required when DynamicMinBaseFee fork is active.
-func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *state.StateDB) *big.Int {
+//
+// When DynamicMinBaseFee fork is active for the parent timestamp, stateDB is
+// required (the contract floor is read from it) and any error reading the
+// contract is returned as a hard error - there is no silent fallback to the
+// legacy hard-coded floor. Pre-activation, or for callers that do not require
+// the contract floor (callers passing nil stateDB on a fork-inactive chain),
+// the function returns the value computed from the parent header alone.
+func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *state.StateDB) (*big.Int, error) {
 	// If the current block is the first EIP-1559 block, return the InitialBaseFee.
 	if !config.IsLondon(parent.Number) {
-		return new(big.Int).SetUint64(params.InitialBaseFee)
+		return new(big.Int).SetUint64(params.InitialBaseFee), nil
 	}
 
 	parentGasTarget := parent.GasLimit / config.ElasticityMultiplier()
 	// If the parent gasUsed is the same as the target, the baseFee remains unchanged.
 	if parent.GasUsed == parentGasTarget {
-		return new(big.Int).Set(parent.BaseFee)
+		return new(big.Int).Set(parent.BaseFee), nil
 	}
 
 	var (
@@ -93,61 +101,60 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *stat
 		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
 		baseFeeDelta := math.BigMax(num, common.Big1)
 
-		return num.Add(parent.BaseFee, baseFeeDelta)
-	} else {
-		// Otherwise if the parent block used less gas than its target, the baseFee should decrease.
-		// Compute the decrease amount: parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator,
-		// subtract it from parentBaseFee, then apply the minimum base fee floor if the fork is activated.
-		num.SetUint64(parentGasTarget - parent.GasUsed)
-		num.Mul(num, parent.BaseFee)
-		num.Div(num, denom.SetUint64(parentGasTarget))
-		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
-		baseFee := num.Sub(parent.BaseFee, num)
-
-		// Apply minimum base fee floor if MinBaseFee fork is activated for the current block.
-		// nextBlockNum addresses the contract's block-based configHistory selection;
-		// the fork-activation check itself is timestamp-based and uses parent.Time as a
-		// conservative proxy for the new block's intended timestamp (the new block's
-		// timestamp will always be >= parent.Time).
-		nextBlockNum := new(big.Int).Add(parent.Number, common.Big1)
-
-		// Priority 1: Dynamic min base fee (read from contract)
-		if config.IsDynamicMinBaseFee(parent.Time) {
-			minBaseFeeActiveGauge.Update(1)
-			baseFeeBeforeFloorGauge.Update(baseFee.Int64())
-
-			minimumBaseFee, err := readMinBaseFeeFromContract(config, stateDB, nextBlockNum)
-			if err != nil {
-				// Log error but don't panic - fall back to previous behavior
-				log.Error("Failed to read min base fee from contract, using hardcoded fallback",
-					"block", nextBlockNum, "err", err)
-				minBaseFeeReadErrorsMeter.Mark(1)
-				// Fall through to legacy logic
-			} else {
-				minBaseFeeFromContractGauge.Update(minimumBaseFee.Int64())
-				result := math.BigMax(baseFee, minimumBaseFee)
-				baseFeeAfterFloorGauge.Update(result.Int64())
-				minBaseFeeGauge.Update(minimumBaseFee.Int64())
-				return result
-			}
-		} else {
-			minBaseFeeActiveGauge.Update(0)
-		}
-
-		// Priority 2: Legacy hardcoded min base fee logic
-		if config.IsMinBaseFee(nextBlockNum) {
-			var minimumBaseFee *big.Int
-			if config.IsMinBaseFeeChange(nextBlockNum) {
-				minimumBaseFee = new(big.Int).SetUint64(params.MinBaseFeeUpdated)
-			} else {
-				minimumBaseFee = new(big.Int).SetUint64(params.MinimumBaseFee)
-			}
-			return math.BigMax(baseFee, minimumBaseFee)
-		}
-
-		// Before MinBaseFee fork, allow baseFee to decrease to zero
-		return math.BigMax(baseFee, common.Big0)
+		return num.Add(parent.BaseFee, baseFeeDelta), nil
 	}
+
+	// Otherwise if the parent block used less gas than its target, the baseFee should decrease.
+	// Compute the decrease amount: parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator,
+	// subtract it from parentBaseFee, then apply the minimum base fee floor if the fork is activated.
+	num.SetUint64(parentGasTarget - parent.GasUsed)
+	num.Mul(num, parent.BaseFee)
+	num.Div(num, denom.SetUint64(parentGasTarget))
+	num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
+	baseFee := num.Sub(parent.BaseFee, num)
+
+	// Apply minimum base fee floor if the MinBaseFee fork is activated.
+	// nextBlockNum addresses the contract's block-based configHistory selection;
+	// the fork-activation check itself is timestamp-based and uses parent.Time as a
+	// conservative proxy for the new block's intended timestamp (the new block's
+	// timestamp will always be >= parent.Time).
+	nextBlockNum := new(big.Int).Add(parent.Number, common.Big1)
+
+	// Priority 1: Dynamic min base fee read from contract.
+	if config.IsDynamicMinBaseFee(parent.Time) {
+		minBaseFeeActiveGauge.Update(1)
+		baseFeeBeforeFloorGauge.Update(baseFee.Int64())
+
+		if stateDB == nil {
+			minBaseFeeReadErrorsMeter.Mark(1)
+			return nil, fmt.Errorf("dynamic min base fee fork active at parent time %d but stateDB is nil", parent.Time)
+		}
+		minimumBaseFee, err := readMinBaseFeeFromContract(config, stateDB, nextBlockNum)
+		if err != nil {
+			minBaseFeeReadErrorsMeter.Mark(1)
+			return nil, fmt.Errorf("failed to read min base fee from contract for block %s: %w", nextBlockNum, err)
+		}
+		minBaseFeeFromContractGauge.Update(minimumBaseFee.Int64())
+		result := math.BigMax(baseFee, minimumBaseFee)
+		baseFeeAfterFloorGauge.Update(result.Int64())
+		minBaseFeeGauge.Update(minimumBaseFee.Int64())
+		return result, nil
+	}
+	minBaseFeeActiveGauge.Update(0)
+
+	// Priority 2: Legacy hardcoded min base fee logic (pre-DynamicMinBaseFee chains).
+	if config.IsMinBaseFee(nextBlockNum) {
+		var minimumBaseFee *big.Int
+		if config.IsMinBaseFeeChange(nextBlockNum) {
+			minimumBaseFee = new(big.Int).SetUint64(params.MinBaseFeeUpdated)
+		} else {
+			minimumBaseFee = new(big.Int).SetUint64(params.MinimumBaseFee)
+		}
+		return math.BigMax(baseFee, minimumBaseFee), nil
+	}
+
+	// Before MinBaseFee fork, allow baseFee to decrease to zero.
+	return math.BigMax(baseFee, common.Big0), nil
 }
 
 // readMinBaseFeeFromContract reads the minimum base fee from the governance contract

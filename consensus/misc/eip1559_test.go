@@ -124,7 +124,12 @@ func TestCalcBaseFee(t *testing.T) {
 			GasUsed:  test.parentGasUsed,
 			BaseFee:  big.NewInt(test.parentBaseFee),
 		}
-		if have, want := CalcBaseFee(config(), parent, nil), big.NewInt(test.expectedBaseFee); have.Cmp(want) != 0 {
+		have, err := CalcBaseFee(config(), parent, nil)
+		if err != nil {
+			t.Errorf("test %d: unexpected error: %v", i, err)
+			continue
+		}
+		if want := big.NewInt(test.expectedBaseFee); have.Cmp(want) != 0 {
 			t.Errorf("test %d: have %d  want %d, ", i, have, want)
 		}
 	}

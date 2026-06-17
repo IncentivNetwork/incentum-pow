@@ -146,7 +146,10 @@ func TestMinBaseFee_Calculation(t *testing.T) {
 				BaseFee:  new(big.Int).SetUint64(tt.parentBaseFee),
 			}
 
-			baseFee := misc.CalcBaseFee(config, parent, nil)
+			baseFee, err := misc.CalcBaseFee(config, parent, nil)
+			if err != nil {
+				t.Fatalf("CalcBaseFee returned error: %v", err)
+			}
 
 			if tt.expectedMin > 0 {
 				minFee := new(big.Int).SetUint64(tt.expectedMin)

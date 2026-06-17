@@ -19,6 +19,7 @@ package core
 import (
 	"crypto/ecdsa"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -350,19 +351,23 @@ func TestStateProcessorErrors(t *testing.T) {
 			smallInitCode  = [320]byte{}
 		)
 		defer blockchain.Stop()
+		genesisBaseFee, err := misc.CalcBaseFee(config, genesis.Header(), nil)
+		if err != nil {
+			t.Fatalf("CalcBaseFee for genesis header: %v", err)
+		}
 		for i, tt := range []struct {
 			txs  []*types.Transaction
 			want string
 		}{
 			{ // ErrMaxInitCodeSizeExceeded
 				txs: []*types.Transaction{
-					mkDynamicCreationTx(0, 500000, common.Big0, misc.CalcBaseFee(config, genesis.Header(), nil), tooBigInitCode[:]),
+					mkDynamicCreationTx(0, 500000, common.Big0, genesisBaseFee, tooBigInitCode[:]),
 				},
 				want: "could not apply tx 0 [0x832b54a6c3359474a9f504b1003b2cc1b6fcaa18e4ef369eb45b5d40dad6378f]: max initcode size exceeded: code size 49153 limit 49152",
 			},
 			{ // ErrIntrinsicGas: Not enough gas to cover init code
 				txs: []*types.Transaction{
-					mkDynamicCreationTx(0, 54299, common.Big0, misc.CalcBaseFee(config, genesis.Header(), nil), smallInitCode[:]),
+					mkDynamicCreationTx(0, 54299, common.Big0, genesisBaseFee, smallInitCode[:]),
 				},
 				want: "could not apply tx 0 [0x39b7436cb432d3662a25626474282c5c4c1a213326fd87e4e18a91477bae98b2]: intrinsic gas too low: have 54299, want 54300",
 			},
@@ -404,7 +409,11 @@ func GenerateBadBlock(parent *types.Block, engine consensus.Engine, txs types.Tr
 		UncleHash:  types.EmptyUncleHash,
 	}
 	if config.IsLondon(header.Number) {
-		header.BaseFee = misc.CalcBaseFee(config, parent.Header(), nil)
+		bf, err := misc.CalcBaseFee(config, parent.Header(), nil)
+		if err != nil {
+			panic(fmt.Sprintf("CalcBaseFee in GenerateBadBlock: %v", err))
+		}
+		header.BaseFee = bf
 	}
 	if config.IsShanghai(header.Time) {
 		header.WithdrawalsHash = &types.EmptyWithdrawalsHash

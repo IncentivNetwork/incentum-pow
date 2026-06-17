@@ -1021,7 +1021,12 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 			}
 			parentState = s
 		}
-		header.BaseFee = misc.CalcBaseFee(w.chainConfig, parent, parentState)
+		baseFee, err := misc.CalcBaseFee(w.chainConfig, parent, parentState)
+		if err != nil {
+			log.Error("Failed to compute base fee for sealing", "parent", parent.Hash(), "err", err)
+			return nil, fmt.Errorf("min base fee: %w", err)
+		}
+		header.BaseFee = baseFee
 		if !w.chainConfig.IsLondon(parent.Number) {
 			parentGasLimit := parent.GasLimit * w.chainConfig.ElasticityMultiplier()
 			header.GasLimit = core.CalcGasLimit(parentGasLimit, w.config.GasCeil)

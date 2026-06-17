@@ -94,7 +94,14 @@ func (oracle *Oracle) processBlock(bf *blockFees, percentiles []float64) {
 		bf.results.baseFee = new(big.Int)
 	}
 	if chainconfig.IsLondon(big.NewInt(int64(bf.blockNumber + 1))) {
-		bf.results.nextBaseFee = misc.CalcBaseFee(chainconfig, bf.header, nil)
+		nextBaseFee, err := misc.CalcBaseFee(chainconfig, bf.header, nil)
+		if err != nil {
+			// Post-DynamicMinBaseFee the floor needs parent state; this prediction
+			// path runs without state, so leave nextBaseFee empty rather than guess.
+			bf.results.nextBaseFee = new(big.Int)
+		} else {
+			bf.results.nextBaseFee = nextBaseFee
+		}
 	} else {
 		bf.results.nextBaseFee = new(big.Int)
 	}

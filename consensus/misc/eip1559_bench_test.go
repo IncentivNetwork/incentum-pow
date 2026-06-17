@@ -49,7 +49,7 @@ func BenchmarkCalcBaseFee_Hardcoded(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		CalcBaseFee(config, parent, nil)
+		_, _ = CalcBaseFee(config, parent, nil)
 	}
 }
 
@@ -81,7 +81,7 @@ func BenchmarkCalcBaseFee_ContractRead(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		CalcBaseFee(config, parent, stateDB)
+		_, _ = CalcBaseFee(config, parent, stateDB)
 	}
 }
 
@@ -110,7 +110,7 @@ func BenchmarkCalcBaseFee_ContractRead_History10(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		CalcBaseFee(config, parent, stateDB)
+		_, _ = CalcBaseFee(config, parent, stateDB)
 	}
 }
 
@@ -139,7 +139,7 @@ func BenchmarkCalcBaseFee_ContractRead_History100(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		CalcBaseFee(config, parent, stateDB)
+		_, _ = CalcBaseFee(config, parent, stateDB)
 	}
 }
 
@@ -165,7 +165,7 @@ func BenchmarkVerifyEip1559Header_Full(b *testing.B) {
 	}
 
 	// Calculate expected base fee for child
-	expectedBaseFee := CalcBaseFee(config, parent, stateDB)
+	expectedBaseFee, _ := CalcBaseFee(config, parent, stateDB)
 
 	header := &types.Header{
 		Number:   big.NewInt(300),
@@ -178,7 +178,7 @@ func BenchmarkVerifyEip1559Header_Full(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		VerifyEip1559Header(config, parent, header, stateDB)
+		_ = VerifyEip1559Header(config, parent, header, stateDB)
 	}
 }
 
