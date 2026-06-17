@@ -36,10 +36,7 @@ contract MinBaseFeeGovernorTest is Test {
         uint256 timestamp
     );
 
-    event Paused();
-    event Unpaused();
     event TimelockDelayUpdated(uint256 oldDelay, uint256 newDelay);
-    event FallbackMinBaseFeeUpdated(uint256 oldValue, uint256 newValue);
 
     function setUp() public {
         vm.prank(governance);
@@ -53,7 +50,6 @@ contract MinBaseFeeGovernorTest is Test {
         assertEq(governor.getCurrentMinBaseFee(), initialMinBaseFee);
         assertEq(governor.getConfigHistoryLength(), 1);
         assertEq(governor.timelockDelay(), 2 days);
-        assertFalse(governor.paused());
     }
 
     function test_GetMinBaseFeeForBlock() public {
@@ -226,31 +222,10 @@ contract MinBaseFeeGovernorTest is Test {
         governor.cancelProposal(proposalId);
     }
 
-    function test_OnlyGovernanceCanPause() public {
-        vm.prank(attacker);
-        vm.expectRevert();
-        governor.pause();
-    }
-
-    function test_OnlyGovernanceCanUnpause() public {
-        vm.prank(governance);
-        governor.pause();
-
-        vm.prank(attacker);
-        vm.expectRevert();
-        governor.unpause();
-    }
-
     function test_OnlyGovernanceCanSetTimelockDelay() public {
         vm.prank(attacker);
         vm.expectRevert();
         governor.setTimelockDelay(3 days);
-    }
-
-    function test_OnlyGovernanceCanSetFallbackMinBaseFee() public {
-        vm.prank(attacker);
-        vm.expectRevert();
-        governor.setFallbackMinBaseFee(10000 gwei);
     }
 
     function test_OnlyGovernanceCanTransferGovernance() public {
@@ -350,68 +325,6 @@ contract MinBaseFeeGovernorTest is Test {
         vm.stopPrank();
     }
 
-    // ========== Pause Tests ==========
-
-    function test_CanPause() public {
-        vm.prank(governance);
-
-        vm.expectEmit(false, false, false, false);
-        emit Paused();
-
-        governor.pause();
-
-        assertTrue(governor.paused());
-    }
-
-    function test_WhenPausedReturnsFallback() public {
-        vm.startPrank(governance);
-
-        governor.pause();
-
-        uint256 minBaseFee = governor.getCurrentMinBaseFee();
-        assertEq(minBaseFee, governor.fallbackMinBaseFee());
-
-        vm.stopPrank();
-    }
-
-    function test_CannotProposeWhenPaused() public {
-        vm.startPrank(governance);
-
-        governor.pause();
-
-        vm.expectRevert();
-        governor.proposeMinBaseFee(15000 gwei, block.number + 20000);
-
-        vm.stopPrank();
-    }
-
-    function test_CanUnpause() public {
-        vm.startPrank(governance);
-
-        governor.pause();
-
-        vm.expectEmit(false, false, false, false);
-        emit Unpaused();
-
-        governor.unpause();
-
-        assertFalse(governor.paused());
-
-        vm.stopPrank();
-    }
-
-    function test_AfterUnpauseReturnsNormalValue() public {
-        vm.startPrank(governance);
-
-        governor.pause();
-        governor.unpause();
-
-        uint256 minBaseFee = governor.getCurrentMinBaseFee();
-        assertEq(minBaseFee, initialMinBaseFee);
-
-        vm.stopPrank();
-    }
-
     // ========== Timelock Delay Tests ==========
 
     function test_CanUpdateTimelockDelay() public {
@@ -447,42 +360,6 @@ contract MinBaseFeeGovernorTest is Test {
 
         vm.warp(block.timestamp + 1 days);
         governor.executeProposal(proposalId);
-
-        vm.stopPrank();
-    }
-
-    // ========== Fallback Min Base Fee Tests ==========
-
-    function test_CanUpdateFallbackMinBaseFee() public {
-        vm.prank(governance);
-
-        uint256 newFallback = 10000 gwei;
-
-        vm.expectEmit(false, false, false, true);
-        emit FallbackMinBaseFeeUpdated(12600 gwei, newFallback);
-
-        governor.setFallbackMinBaseFee(newFallback);
-
-        assertEq(governor.fallbackMinBaseFee(), newFallback);
-    }
-
-    function test_CannotSetFallbackToZero() public {
-        vm.prank(governance);
-
-        vm.expectRevert();
-        governor.setFallbackMinBaseFee(0);
-    }
-
-    function test_UpdatedFallbackUsedWhenPaused() public {
-        vm.startPrank(governance);
-
-        uint256 newFallback = 10000 gwei;
-        governor.setFallbackMinBaseFee(newFallback);
-
-        governor.pause();
-
-        uint256 minBaseFee = governor.getCurrentMinBaseFee();
-        assertEq(minBaseFee, newFallback);
 
         vm.stopPrank();
     }

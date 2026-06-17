@@ -200,15 +200,6 @@ func TestMinBaseFeeGovernorAccessControl(t *testing.T) {
 	if err == nil {
 		t.Errorf("Attacker should not be able to propose")
 	}
-
-	tx, err := contract.Pause(attackerAuth)
-	if err == nil {
-		sim.Commit()
-		receipt, _ := sim.TransactionReceipt(nil, tx.Hash())
-		if receipt.Status == 1 {
-			t.Errorf("Attacker should not be able to pause")
-		}
-	}
 }
 
 func TestMinBaseFeeGovernorSafetyBounds(t *testing.T) {
@@ -261,96 +252,6 @@ func TestMinBaseFeeGovernorSafetyBounds(t *testing.T) {
 	_, err = contract.ProposeMinBaseFee(auth, tooSmallChange, newActivationBlock)
 	if err == nil {
 		t.Errorf("Should not allow change less than 1/MAX_CHANGE_PERCENT")
-	}
-}
-
-func TestMinBaseFeeGovernorPause(t *testing.T) {
-	sim, auth, _ := setupMinBaseFeeTestBackend(t)
-	defer sim.Close()
-
-	initialMinBaseFee := big.NewInt(12600000000000)
-	activationBlock := big.NewInt(0)
-
-	_, _, contract, err := minbasefee.DeployMinBaseFeeGovernor(
-		auth,
-		sim,
-		auth.From,
-		initialMinBaseFee,
-		activationBlock,
-		big.NewInt(172800), // _minTimelockDelay (2 days)
-		big.NewInt(13000),  // _minActivationDelayBlocks
-	)
-	if err != nil {
-		t.Fatalf("Failed to deploy contract: %v", err)
-	}
-	sim.Commit()
-
-	tx, err := contract.Pause(auth)
-	if err != nil {
-		t.Fatalf("Failed to pause: %v", err)
-	}
-	sim.Commit()
-
-	receipt, err := sim.TransactionReceipt(nil, tx.Hash())
-	if err != nil {
-		t.Fatalf("Failed to get receipt: %v", err)
-	}
-
-	if receipt.Status != 1 {
-		t.Fatalf("Pause transaction failed")
-	}
-
-	paused, err := contract.Paused(nil)
-	if err != nil {
-		t.Fatalf("Failed to get paused status: %v", err)
-	}
-
-	if !paused {
-		t.Errorf("Contract should be paused")
-	}
-
-	currentMinBaseFee, err := contract.GetCurrentMinBaseFee(nil)
-	if err != nil {
-		t.Fatalf("Failed to get current min base fee: %v", err)
-	}
-
-	fallbackMinBaseFee, err := contract.FallbackMinBaseFee(nil)
-	if err != nil {
-		t.Fatalf("Failed to get fallback min base fee: %v", err)
-	}
-
-	if currentMinBaseFee.Cmp(fallbackMinBaseFee) != 0 {
-		t.Errorf("When paused, should return fallback min base fee")
-	}
-
-	newActivationBlock := new(big.Int).Add(sim.Blockchain().CurrentBlock().Number, big.NewInt(20000))
-	_, err = contract.ProposeMinBaseFee(auth, big.NewInt(15000000000000), newActivationBlock)
-	if err == nil {
-		t.Errorf("Should not be able to propose when paused")
-	}
-
-	tx, err = contract.Unpause(auth)
-	if err != nil {
-		t.Fatalf("Failed to unpause: %v", err)
-	}
-	sim.Commit()
-
-	paused, err = contract.Paused(nil)
-	if err != nil {
-		t.Fatalf("Failed to get paused status: %v", err)
-	}
-
-	if paused {
-		t.Errorf("Contract should not be paused after unpause")
-	}
-
-	currentMinBaseFee, err = contract.GetCurrentMinBaseFee(nil)
-	if err != nil {
-		t.Fatalf("Failed to get current min base fee: %v", err)
-	}
-
-	if currentMinBaseFee.Cmp(initialMinBaseFee) != 0 {
-		t.Errorf("After unpause, should return normal min base fee")
 	}
 }
 

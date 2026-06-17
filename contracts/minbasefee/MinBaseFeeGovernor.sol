@@ -63,12 +63,6 @@ contract MinBaseFeeGovernor {
     /// @notice Maximum change percentage per update (200% = can increase 3x or decrease to 1/3)
     uint256 public constant MAX_CHANGE_PERCENT = 200;
 
-    /// @notice Paused state - when true, returns fallback value
-    bool public paused;
-
-    /// @notice Fallback minimum base fee used when contract is paused
-    uint256 public fallbackMinBaseFee = 12600 gwei;
-
     /// @notice Emitted when a new minimum base fee is proposed
     event MinBaseFeeProposed(
         bytes32 indexed proposalId,
@@ -101,15 +95,6 @@ contract MinBaseFeeGovernor {
 
     /// @notice Emitted when timelock delay is updated
     event TimelockDelayUpdated(uint256 oldDelay, uint256 newDelay);
-
-    /// @notice Emitted when contract is paused
-    event Paused();
-
-    /// @notice Emitted when contract is unpaused
-    event Unpaused();
-
-    /// @notice Emitted when fallback min base fee is updated
-    event FallbackMinBaseFeeUpdated(uint256 oldValue, uint256 newValue);
 
     /// @notice Thrown when caller is not governance
     error OnlyGovernance();
@@ -147,16 +132,8 @@ contract MinBaseFeeGovernor {
     /// @notice Thrown when trying to set invalid timelock delay
     error InvalidTimelockDelay(uint256 delay);
 
-    /// @notice Thrown when trying to propose while paused
-    error ContractPaused();
-
     modifier onlyGovernance() {
         if (msg.sender != governance) revert OnlyGovernance();
-        _;
-    }
-
-    modifier whenNotPaused() {
-        if (paused) revert ContractPaused();
         _;
     }
 
@@ -201,9 +178,6 @@ contract MinBaseFeeGovernor {
      * @return The minimum base fee in wei that is active at current block
      */
     function getCurrentMinBaseFee() external view returns (uint256) {
-        if (paused) {
-            return fallbackMinBaseFee;
-        }
         return getMinBaseFeeForBlock(block.number);
     }
 
@@ -248,7 +222,6 @@ contract MinBaseFeeGovernor {
     function proposeMinBaseFee(uint256 _minBaseFee, uint256 _activationBlock)
         external
         onlyGovernance
-        whenNotPaused
         returns (bytes32)
     {
         // Validate min base fee is not zero
@@ -408,24 +381,6 @@ contract MinBaseFeeGovernor {
     }
 
     /**
-     * @notice Pause the contract - returns fallback value when paused
-     * @dev Can only be called by governance in emergency situations
-     */
-    function pause() external onlyGovernance {
-        paused = true;
-        emit Paused();
-    }
-
-    /**
-     * @notice Unpause the contract - resume normal operation
-     * @dev Can only be called by governance
-     */
-    function unpause() external onlyGovernance {
-        paused = false;
-        emit Unpaused();
-    }
-
-    /**
      * @notice Update the timelock delay
      * @param newDelay New timelock delay in seconds
      * @dev Cannot be set below MIN_TIMELOCK_DELAY
@@ -439,19 +394,6 @@ contract MinBaseFeeGovernor {
         timelockDelay = newDelay;
 
         emit TimelockDelayUpdated(oldDelay, newDelay);
-    }
-
-    /**
-     * @notice Update the fallback minimum base fee (used when paused)
-     * @param newFallback New fallback value in wei
-     */
-    function setFallbackMinBaseFee(uint256 newFallback) external onlyGovernance {
-        if (newFallback == 0) revert MinBaseFeeZero();
-
-        uint256 oldValue = fallbackMinBaseFee;
-        fallbackMinBaseFee = newFallback;
-
-        emit FallbackMinBaseFeeUpdated(oldValue, newFallback);
     }
 
     /**
