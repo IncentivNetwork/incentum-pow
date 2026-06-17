@@ -151,7 +151,13 @@ func (r *Reader) findConfigForBlock(stateDB *state.StateDB, blockNumber *big.Int
 	}
 
 	if result == nil {
-		return nil, fmt.Errorf("no configuration found for block %d", blockNumber)
+		// blockNumber is before configHistory[0].activationBlock. Match the Solidity
+		// getMinBaseFeeForBlock semantics by returning the first config entry.
+		first, err := r.readConfigAt(stateDB, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read config[0]: %w", err)
+		}
+		return first, nil
 	}
 
 	return result, nil

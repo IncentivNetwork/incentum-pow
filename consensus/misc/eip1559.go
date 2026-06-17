@@ -173,15 +173,13 @@ func readMinBaseFeeFromContract(config *params.ChainConfig, stateDB *state.State
 		return nil, fmt.Errorf("failed to read from contract: %w", err)
 	}
 
-	// Validate that the value is reasonable (non-zero and not too large)
-	if minBaseFee.Sign() <= 0 {
-		return nil, fmt.Errorf("invalid min base fee from contract: %s (must be positive)", minBaseFee)
+	// Validate against the canonical bounds (single source of truth in params,
+	// kept in sync with Solidity MIN_MIN_BASE_FEE / MAX_MIN_BASE_FEE).
+	if minBaseFee.Cmp(params.DynamicMinBaseFeeLowerWei) < 0 {
+		return nil, fmt.Errorf("min base fee from contract %s below lower bound %s", minBaseFee, params.DynamicMinBaseFeeLowerWei)
 	}
-
-	// Sanity check: min base fee shouldn't be absurdly large (e.g., > 1000 ETH)
-	maxReasonable := new(big.Int).Mul(big.NewInt(1000), big.NewInt(params.Ether))
-	if minBaseFee.Cmp(maxReasonable) > 0 {
-		return nil, fmt.Errorf("min base fee from contract too large: %s (max %s)", minBaseFee, maxReasonable)
+	if minBaseFee.Cmp(params.DynamicMinBaseFeeUpperWei) > 0 {
+		return nil, fmt.Errorf("min base fee from contract %s above upper bound %s", minBaseFee, params.DynamicMinBaseFeeUpperWei)
 	}
 
 	return minBaseFee, nil
