@@ -1009,7 +1009,19 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	}
 	// Set baseFee and GasLimit if we are on an EIP-1559 chain
 	if w.chainConfig.IsLondon(header.Number) {
-		header.BaseFee = misc.CalcBaseFee(w.chainConfig, parent, nil)
+		// Load the parent's post-state when the dynamic min base fee fork is active,
+		// so the floor stamped on the sealed header matches what verifiers will
+		// recompute from the same state root in core.StateProcessor.Process.
+		var parentState *state.StateDB
+		if w.chainConfig.IsDynamicMinBaseFee(parent.Time) {
+			s, err := w.chain.StateAt(parent.Root)
+			if err != nil {
+				log.Error("Failed to load parent state for dynamic min base fee", "parent", parent.Hash(), "err", err)
+				return nil, fmt.Errorf("min base fee: failed to load parent state: %w", err)
+			}
+			parentState = s
+		}
+		header.BaseFee = misc.CalcBaseFee(w.chainConfig, parent, parentState)
 		if !w.chainConfig.IsLondon(parent.Number) {
 			parentGasLimit := parent.GasLimit * w.chainConfig.ElasticityMultiplier()
 			header.GasLimit = core.CalcGasLimit(parentGasLimit, w.config.GasCeil)
