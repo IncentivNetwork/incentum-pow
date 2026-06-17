@@ -70,6 +70,26 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
 	}
+
+	// Verify the block's BaseFee against the contract-derived floor when the
+	// dynamic min base fee fork is active. VerifyEip1559Header runs during
+	// header-only verification where parent state is not available, so a
+	// state-aware recomputation must happen here, with statedb holding the
+	// parent's post-state (this point in Process is before any transaction
+	// from the current block has been applied).
+	if p.config.IsDynamicMinBaseFee(header.Time) {
+		parent := p.bc.GetHeaderByHash(header.ParentHash)
+		if parent == nil {
+			return nil, nil, 0, fmt.Errorf("min base fee: parent header %s not found at block %s",
+				header.ParentHash.Hex(), block.Number().String())
+		}
+		expectedBaseFee := misc.CalcBaseFee(p.config, parent, statedb)
+		if header.BaseFee == nil || header.BaseFee.Cmp(expectedBaseFee) != 0 {
+			return nil, nil, 0, fmt.Errorf("min base fee: block %s baseFee=%v does not match contract-derived floor %v",
+				block.Number().String(), header.BaseFee, expectedBaseFee)
+		}
+	}
+
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)
 	// Iterate over and process the individual transactions
