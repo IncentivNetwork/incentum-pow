@@ -29,15 +29,34 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+// Metrics for monitoring minimum base fee. Values that are wei-denominated are
+// reported in gwei (wei / 1e9) so they stay representable as int64 even at the
+// upper bound of MAX_MIN_BASE_FEE (100 ether); reading the raw wei into Int64()
+// silently overflows around 9.22 ether and would corrupt the only out-of-band
+// signal the consensus layer has after activation.
 var (
-	// Metrics for monitoring minimum base fee
-	minBaseFeeGauge             = metrics.NewRegisteredGauge("chain/minbasefee/current", nil)
-	minBaseFeeFromContractGauge = metrics.NewRegisteredGauge("chain/minbasefee/contract", nil)
-	minBaseFeeReadErrorsMeter   = metrics.NewRegisteredMeter("chain/minbasefee/readerrors", nil)
-	minBaseFeeActiveGauge       = metrics.NewRegisteredGauge("chain/minbasefee/active", nil)
-	baseFeeBeforeFloorGauge     = metrics.NewRegisteredGauge("chain/basefee/beforefloor", nil)
-	baseFeeAfterFloorGauge      = metrics.NewRegisteredGauge("chain/basefee/afterfloor", nil)
+	minBaseFeeGwei             = metrics.NewRegisteredGauge("chain/minbasefee/current_gwei", nil)
+	minBaseFeeFromContractGwei = metrics.NewRegisteredGauge("chain/minbasefee/contract_gwei", nil)
+	minBaseFeeReadErrorsMeter  = metrics.NewRegisteredMeter("chain/minbasefee/readerrors", nil)
+	minBaseFeeActiveGauge      = metrics.NewRegisteredGauge("chain/minbasefee/active", nil)
+	baseFeeBeforeFloorGwei     = metrics.NewRegisteredGauge("chain/basefee/beforefloor_gwei", nil)
+	baseFeeAfterFloorGwei      = metrics.NewRegisteredGauge("chain/basefee/afterfloor_gwei", nil)
 )
+
+// weiToGweiClamped converts a wei value to gwei for gauge reporting. Values
+// that still exceed int64 (extremely large floors) are clamped to the int64
+// max so the gauge stays positive and useful for alerting rather than wrapping
+// to a negative number.
+func weiToGweiClamped(wei *big.Int) int64 {
+	if wei == nil {
+		return 0
+	}
+	gwei := new(big.Int).Quo(wei, big.NewInt(params.GWei))
+	if gwei.IsInt64() {
+		return gwei.Int64()
+	}
+	return int64(^uint64(0) >> 1)
+}
 
 // VerifyEip1559Header verifies some header attributes which were changed in EIP-1559,
 // - gas limit check
@@ -115,9 +134,9 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *stat
 	if err != nil {
 		return nil, err
 	}
-	baseFeeBeforeFloorGauge.Update(baseFee.Int64())
+	baseFeeBeforeFloorGwei.Update(weiToGweiClamped(baseFee))
 	result := math.BigMax(baseFee, floor)
-	baseFeeAfterFloorGauge.Update(result.Int64())
+	baseFeeAfterFloorGwei.Update(weiToGweiClamped(result))
 	return result, nil
 }
 
@@ -141,8 +160,8 @@ func computeMinBaseFeeFloor(config *params.ChainConfig, parent *types.Header, st
 			minBaseFeeReadErrorsMeter.Mark(1)
 			return nil, fmt.Errorf("failed to read min base fee from contract for block %s: %w", nextBlockNum, err)
 		}
-		minBaseFeeFromContractGauge.Update(minimumBaseFee.Int64())
-		minBaseFeeGauge.Update(minimumBaseFee.Int64())
+		minBaseFeeFromContractGwei.Update(weiToGweiClamped(minimumBaseFee))
+		minBaseFeeGwei.Update(weiToGweiClamped(minimumBaseFee))
 		return minimumBaseFee, nil
 	}
 	minBaseFeeActiveGauge.Update(0)

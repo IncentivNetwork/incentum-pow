@@ -85,11 +85,16 @@ func (r *Reader) ReadMinBaseFee(stateDB *state.StateDB, blockNumber *big.Int) (*
 	return config.MinBaseFee, nil
 }
 
-// readConfigHistoryLength reads the length of the configHistory array from storage
+// readConfigHistoryLength reads the length of the configHistory array from storage.
+// It rejects values that do not fit in a uint64 to keep downstream arithmetic safe.
 func (r *Reader) readConfigHistoryLength(stateDB *state.StateDB) (uint64, error) {
 	lengthSlot := common.BigToHash(big.NewInt(ConfigHistorySlot))
 	lengthValue := stateDB.GetState(r.contractAddress, lengthSlot)
-	return lengthValue.Big().Uint64(), nil
+	asBig := lengthValue.Big()
+	if asBig.BitLen() > 64 {
+		return 0, fmt.Errorf("configHistory length %s exceeds uint64", asBig)
+	}
+	return asBig.Uint64(), nil
 }
 
 // readConfigAt reads a MinBaseFeeConfig at the given index in configHistory array
