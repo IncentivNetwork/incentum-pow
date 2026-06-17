@@ -177,6 +177,9 @@ contract MinBaseFeeGovernor {
     ) {
         if (_governance == address(0)) revert GovernanceZero();
         if (_initialMinBaseFee == 0) revert MinBaseFeeZero();
+        if (_initialMinBaseFee < MIN_MIN_BASE_FEE || _initialMinBaseFee > MAX_MIN_BASE_FEE) {
+            revert MinBaseFeeOutOfBounds(_initialMinBaseFee, MIN_MIN_BASE_FEE, MAX_MIN_BASE_FEE);
+        }
 
         governance = _governance;
         MIN_TIMELOCK_DELAY = _minTimelockDelay;
@@ -318,6 +321,18 @@ contract MinBaseFeeGovernor {
         uint256 executeAfter = proposal.proposedAt + timelockDelay;
         if (block.timestamp < executeAfter) {
             revert TimelockNotExpired(block.timestamp, executeAfter);
+        }
+
+        // Re-validate sortedness against current configHistory tail. proposeMinBaseFee
+        // only checked the tail at propose time, so two pending proposals whose
+        // activationBlocks were both above the tail-at-propose-time can be ordered
+        // differently from their activationBlocks if executed out of activation
+        // order. The Go reader binary-searches configHistory assuming activationBlocks
+        // are strictly increasing, so executing the later-activationBlock proposal
+        // first would silently corrupt that invariant. Reject here instead.
+        uint256 lastActivationBlock = configHistory[configHistory.length - 1].activationBlock;
+        if (proposal.activationBlock <= lastActivationBlock) {
+            revert ActivationBlockNotSequential(proposal.activationBlock, lastActivationBlock);
         }
 
         // Execute: add configuration to history
