@@ -81,7 +81,7 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
 3. **Update network configuration:**
    - Add contract address to `params.ChainConfig.MinBaseFeeContractAddr`
-   - Set `DynamicMinBaseFeeBlock` to the block where dynamic min base fee activates
+   - Set `DynamicMinBaseFeeTime` to the timestamp where the dynamic min base fee activates
 
 4. **Verify deployment:**
    ```bash

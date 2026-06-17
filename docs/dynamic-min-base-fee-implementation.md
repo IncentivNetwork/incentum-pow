@@ -2,240 +2,175 @@
 
 ## Overview
 
-This document describes the implementation of dynamic minimum base fee management through a governance-controlled smart contract in the Incentum network.
+The Incentum network's EIP-1559 base fee is computed from the parent header alone (standard formula) and then floored to a value read from the on-chain `MinBaseFeeGovernor` contract. Governance can adjust the floor without a client upgrade once the `DynamicMinBaseFeeTime` fork has activated. Before activation, and on chains that never activate the fork, the floor falls through to the legacy hard-coded values (`MinimumBaseFee` / `MinBaseFeeUpdated`).
 
 ## Motivation
 
-Previously, the minimum base fee was hardcoded in `params/protocol_params.go`:
+Previously, the minimum base fee was hard-coded in `params/protocol_params.go`:
+
 - `MinimumBaseFee = 40000 gwei` (initial value)
 - `MinBaseFeeUpdated = 12600 gwei` (updated value)
 
-These values were applied based on fork blocks defined in chain configuration. Changing these values required a client upgrade and hard fork.
+Changing either constant required a client upgrade and a hard fork. The dynamic implementation lets a governance contract change the floor through a timelock-gated proposal cycle, on-chain, with no client change required after the activation fork.
 
-The new implementation allows the minimum base fee to be adjusted dynamically through on-chain governance without requiring client upgrades.
+## Activation
 
-## Architecture
+The fork activation is timestamp-based:
 
-### 1. Smart Contract (`contracts/minbasefee/MinBaseFeeGovernor.sol`)
-
-**Purpose**: Store and manage minimum base fee configurations with historical tracking.
-
-**Key Features**:
-- Stores historical configurations with activation blocks
-- Governance-controlled updates (via timelock)
-- Binary search for efficient historical lookups
-- Event emission for all changes
-
-**Storage Layout**:
-```solidity
-struct MinBaseFeeConfig {
-    uint256 minBaseFee;      // Minimum base fee in wei
-    uint256 activationBlock; // Block number when active
-    uint256 timestamp;       // Timestamp when set
-}
-
-MinBaseFeeConfig[] public configHistory;
-```
-
-**Main Functions**:
-- `getCurrentMinBaseFee()` - Get current active min base fee
-- `getMinBaseFeeForBlock(uint256)` - Get min base fee for specific block (historical queries)
-- `scheduleMinBaseFee(uint256, uint256)` - Schedule new min base fee (governance only)
-
-**Access Control**: Only the governance address (typically a Timelock contract) can schedule new values.
-
-### 2. State Reader (`consensus/minbasefee/reader.go`)
-
-**Purpose**: Read minimum base fee from contract storage during block validation.
-
-**Key Features**:
-- Reads from `stateDB` (avoids external calls during consensus)
-- Implements binary search to find active configuration
-- Correctly handles Solidity dynamic array storage layout
-
-**Storage Slot Calculation**:
-- Array length stored at slot 1
-- Array elements start at `keccak256(1)`
-- Each struct element occupies 3 consecutive slots (minBaseFee, activationBlock, timestamp)
-
-**Usage**:
-```go
-reader := minbasefee.NewReader(contractAddress)
-minBaseFee, err := reader.ReadMinBaseFee(stateDB, blockNumber)
-```
-
-### 3. Core Integration (`consensus/misc/eip1559.go`)
-
-**Modified Functions**:
-
-#### `CalcBaseFee(config, parent, stateDB)`
-- **New parameter**: `stateDB *state.StateDB` (optional, can be `nil`)
-- **Behavior**:
-  - If `DynamicMinBaseFee` fork is active AND `stateDB != nil`: reads from contract
-  - Otherwise: uses legacy hardcoded values
-  - Falls back gracefully on errors (logs error, uses hardcoded fallback)
-
-#### `VerifyEip1559Header(config, parent, header, stateDB)`
-- **New parameter**: `stateDB *state.StateDB` (optional, can be `nil`)
-- **Behavior**: Passes `stateDB` to `CalcBaseFee` for validation
-
-**Priority System**:
-1. **Dynamic** (contract-based) - if `DynamicMinBaseFeeBlock` fork is active
-2. **Legacy hardcoded** - `MinBaseFeeUpdated` or `MinimumBaseFee` based on fork blocks
-3. **Zero floor** - before `MinBaseFeeBlock` fork
-
-**Error Handling**:
-- Logs errors instead of panicking
-- Falls back to legacy behavior on any error
-- Validates returned values (non-zero, not absurdly large)
-
-### 4. Chain Configuration (`params/config.go`)
-
-**New Fields**:
 ```go
 type ChainConfig struct {
     // ...
-    DynamicMinBaseFeeBlock   *big.Int       `json:"dynamicMinBaseFeeBlock,omitempty"`
-    MinBaseFeeContractAddr   common.Address `json:"minBaseFeeContractAddr,omitempty"`
+    DynamicMinBaseFeeTime  *uint64         `json:"dynamicMinBaseFeeTime,omitempty"`
+    MinBaseFeeContractAddr *common.Address `json:"minBaseFeeContractAddr,omitempty"`
+}
+
+func (c *ChainConfig) IsDynamicMinBaseFee(time uint64) bool {
+    return isTimestampForked(c.DynamicMinBaseFeeTime, time)
 }
 ```
 
-**New Helper Method**:
-```go
-func (c *ChainConfig) IsDynamicMinBaseFee(num *big.Int) bool {
-    return isBlockForked(c.DynamicMinBaseFeeBlock, num)
-}
+Both fields are optional. `CheckMinBaseFeeConfig` (called at chain-config load) enforces the invariant that `DynamicMinBaseFeeTime != nil ⇒ MinBaseFeeContractAddr ≠ nil and ≠ zero-address`; misconfigured chains refuse to start. `CheckCompatible` covers the same two fields so an upgrade attempting to change `DynamicMinBaseFeeTime` or `MinBaseFeeContractAddr` after activation is rejected with a clear error.
+
+## Base fee formula
+
+`CalcBaseFee` returns `(*big.Int, error)`. The raw base fee is computed from the parent header in the usual EIP-1559 way, and a floor is applied to the result in all three branches (gas-used below, at, and above target):
+
+```
+rawBaseFee = EIP1559(parent.BaseFee, parent.GasUsed, parent.GasLimit)
+floor      = computeMinBaseFeeFloor(config, parent, stateDB)
+baseFee    = max(rawBaseFee, floor)
 ```
 
-### 5. Consensus Engine Updates
+Applying the floor uniformly means a governance-driven floor increase takes effect on the next block regardless of which gas-usage branch fires.
 
-**Modified Files**:
-- `consensus/ethash/consensus.go`
-- `consensus/clique/clique.go`
-- `consensus/beacon/consensus.go`
+### Floor resolution
 
-**Changes**: All engines now pass `nil` as `stateDB` parameter to `VerifyEip1559Header`.
+`computeMinBaseFeeFloor` picks the floor in priority order:
 
-**Reason**: During header-only verification (without state), we fall back to legacy behavior. Full state-based verification happens in `Process` methods.
+1. If `IsDynamicMinBaseFee(parent.Time)` — read the floor from `MinBaseFeeGovernor` storage at the parent's post-state root. A read failure or a missing `stateDB` returns a hard error.
+2. Else if the legacy `MinBaseFeeBlock` fork is active for the next block — return `MinimumBaseFee` or `MinBaseFeeUpdated` (depending on `MinBaseFeeChangeHeight`).
+3. Else — no floor (`common.Big0`).
 
-### 6. Client Integration Points
+The dynamic and legacy paths are mutually exclusive in time: after `DynamicMinBaseFeeTime` fires, the legacy hard-coded values are no longer consulted on that chain.
 
-**All `CalcBaseFee` call sites updated**:
-- `core/chain_makers.go` - Block generation (passes `nil`)
-- `miner/worker.go` - Mining (passes `nil`)
-- `internal/ethapi/api.go` - RPC pending transactions (passes `nil`)
-- `eth/gasprice/feehistory.go` - Fee history API (passes `nil`)
-- `graphql/graphql.go` - GraphQL API (passes `nil`)
-- `core/txpool/txpool.go` - Transaction pool (passes `nil`)
-- `core/state_processor_test.go` - Tests (passes `nil`)
-- `cmd/evm/internal/t8ntool/transition.go` - EVM tool (passes `nil`)
+The fork-activation check uses `parent.Time` as a conservative proxy for the next block's intended timestamp - because the next block's `Time` is always `>= parent.Time`, this keeps the predicate consistent between miner and verifier without requiring the new block's timestamp at floor-resolution time.
 
-**Note**: Most call sites pass `nil` for backward compatibility. State-aware calls will be implemented in later phases.
+## Where the contract is read
 
-## Implementation Status
+EIP-1559 base fee was historically header-only verifiable. Adding a contract-derived floor creates a new state dependency, which cannot be evaluated in the header-only verification path (`VerifyEip1559Header` runs without `stateDB` during block import, snap sync, and headers-first sync).
 
-### Completed (Phase 1 & 2)
+The shipped implementation resolves this by running the floor verification at block-execution time, where the parent post-state root is already attached:
 
-1. **Smart Contract**:
-   - `MinBaseFeeGovernor.sol` with full functionality
-   - Governance access control
-   - Historical configuration tracking
-   - Binary search implementation
+- **Miner** (`miner/worker.go`): when the dynamic fork is active for `parent.Time`, the miner loads `parent`'s post-state via `chain.StateAt(parent.Root)` and passes it to `CalcBaseFee` while sealing. A state-load failure aborts the seal; the miner does not produce a block with the wrong floor.
+- **Verifier** (`core/state_processor.go`): before applying any transaction of the block being processed, `Process` recomputes the expected base fee using the parent header and the `stateDB` it received (which is the parent's post-state at this point) and rejects the block if `header.BaseFee` does not match.
 
-2. **Go Client Integration**:
-   - State reader package (`consensus/minbasefee/reader.go`)
-   - `CalcBaseFee` function updated
-   - `VerifyEip1559Header` function updated
-   - Chain configuration fields added
-   - All call sites updated
-   - Consensus engines updated
+Both sides read the same contract storage from the same state root, so the floor used at sealing always matches the floor enforced at verification.
 
-3. **Testing**:
-   - Existing unit tests pass (`consensus/misc` tests)
-   - Code compiles successfully
+### Nodes that do not execute blocks
 
-### Remaining Work (Phase 3-5)
+Headers-first / snap-sync phases and light clients do not have parent state available. They accept the block header's claimed `BaseFee` provisionally; full nodes verify the floor when they execute the block. This is an explicit trade-off: light clients on this chain do not independently verify any state-dependent rule, and the dynamic floor is treated the same way.
 
-1. **Solidity Unit Tests**:
-   - Contract initialization tests
-   - Governance access control tests
-   - Binary search correctness tests
-   - Edge case handling
+## Consensus-safety
 
-2. **Go Integration Tests**:
-   - Test with `simulated.Backend`
-   - Test contract read during block processing
-   - Test fork activation
-   - Test historical queries
+After activation, contract-read failures (corrupted storage, missing config, value out of bounds) return a hard error from `CalcBaseFee` and from the `state_processor` guard. There is no silent fallback to the legacy hard-coded floor for a fork-active chain — a soft fallback would allow nodes that fail to read to diverge from nodes that succeed and would silently split the chain. Misconfigured chains halt at startup via `CheckMinBaseFeeConfig`; corrupt-state-at-runtime halts the affected node.
 
-3. **Performance Benchmarks**:
-   - Measure state read overhead
-   - Compare dynamic vs hardcoded performance
+Non-consensus callers (txpool pending-fee snapshot, `eth_gasPrice`/`eth_feeHistory`, GraphQL `nextBaseFee`, RPC `NewRPCPendingTransaction`) accept the error and either drop the prediction or return a JSON-RPC error to the caller, rather than guessing.
 
-4. **Documentation**:
-   - Storage slot layout documentation
-   - Governance process guide
-   - Migration guide
+## MinBaseFeeGovernor (contract)
 
-5. **Deployment**:
-   - Deploy contract to testnet
-   - Configure testnet chain config
-   - Test end-to-end on testnet
-   - Deploy to mainnet
-   - Activate fork on mainnet
+Located at `contracts/minbasefee/MinBaseFeeGovernor.sol`.
 
-## Key Design Decisions
+### Storage and bounds
 
-### 1. Why read from state instead of calling contract?
+```solidity
+struct MinBaseFeeConfig {
+    uint256 minBaseFee;
+    uint256 activationBlock;
+    uint256 timestamp;
+}
 
-During consensus, we cannot make external calls. We read directly from `stateDB` storage, which is already loaded during block processing.
+address public governance;                              // slot 0
+MinBaseFeeConfig[] public configHistory;                // slot 1 (length); elements at keccak256(1)
+mapping(bytes32 => Proposal) public proposals;          // slot 2
+uint256 public immutable MIN_TIMELOCK_DELAY;            // set at deployment
+uint256 public timelockDelay;                           // slot 3
+uint256 public immutable MIN_ACTIVATION_DELAY_BLOCKS;   // set at deployment
 
-### 2. Why is stateDB optional (can be nil)?
+uint256 public constant MIN_MIN_BASE_FEE  = 1 gwei;
+uint256 public constant MAX_MIN_BASE_FEE  = 100 ether;
+uint256 public constant MAX_CHANGE_PERCENT = 200;  // ±200% per proposal
+```
 
-Many parts of the codebase calculate base fee without state context:
-- RPC endpoints for pending transactions
-- Block template generation
-- Historical fee calculations
+`MIN_MIN_BASE_FEE` and `MAX_MIN_BASE_FEE` are the canonical bounds. The Go reader rejects any value outside `[DynamicMinBaseFeeLowerWei, DynamicMinBaseFeeUpperWei]` in `params/protocol_params.go`, which mirror the Solidity constants. Both the constructor and `proposeMinBaseFee` enforce the same `[MIN_MIN_BASE_FEE, MAX_MIN_BASE_FEE]` range.
 
-Passing `nil` triggers fallback to legacy hardcoded values, maintaining backward compatibility.
+### Constructor
 
-### 3. Why graceful error handling instead of panicking?
+```solidity
+constructor(
+    address _governance,
+    uint256 _initialMinBaseFee,
+    uint256 _activationBlock,
+    uint256 _minTimelockDelay,
+    uint256 _minActivationDelayBlocks
+)
+```
 
-Consensus must be deterministic. If contract read fails (corrupted storage, unexpected format), we fall back to hardcoded values that all nodes agree on, rather than causing chain halt.
+`_minTimelockDelay` and `_minActivationDelayBlocks` are deployment-time parameters (held as immutables, not settable later). Production deployments use 2 days / 13000 blocks; devnet deployments use shorter values (e.g. 10 minutes / 100 blocks) so a full governance cycle fits inside a single test window. The choice is enforced by the deployment script per chain ID, not by an on-chain absolute floor.
 
-### 4. Why maintain legacy hardcoded values?
+### Governance flow
 
-- Backward compatibility before fork activation
-- Fallback if contract read fails
-- Support for light clients that may not have full state
+`proposeMinBaseFee(newMinBaseFee, activationBlock)`:
 
-### 5. Storage layout for Solidity dynamic arrays
+- callable only by `governance`;
+- `newMinBaseFee` must be inside `[MIN_MIN_BASE_FEE, MAX_MIN_BASE_FEE]`;
+- `newMinBaseFee` must be within `±MAX_CHANGE_PERCENT` of the current effective floor;
+- `activationBlock` must be `≥ block.number + MIN_ACTIVATION_DELAY_BLOCKS`;
+- `activationBlock` must be strictly greater than the current `configHistory[last].activationBlock`;
+- returns a `proposalId`; emits `MinBaseFeeProposed`.
 
-Solidity stores dynamic arrays as:
-- Slot N: array length
-- `keccak256(N) + index * struct_size`: array elements
+`executeProposal(proposalId)`:
 
-Our reader correctly implements this to read `configHistory` array from storage.
+- callable only by `governance`;
+- requires `block.timestamp ≥ proposedAt + timelockDelay`;
+- **re-validates** that `proposal.activationBlock > configHistory[last].activationBlock` at execute time (two pending proposals whose `activationBlock` values were both above the tail at propose-time can still violate sortedness if executed out of activation order; the re-check rejects the out-of-order execution);
+- pushes the new config to `configHistory` and emits `ProposalExecuted` + `MinBaseFeeScheduled`.
 
-## Security Considerations
+`setTimelockDelay(newDelay)`: callable only by `governance`, must be `≥ MIN_TIMELOCK_DELAY`.
 
-1. **Governance Control**: Only governance/timelock can update values
-2. **Validation**: Client validates returned values (non-zero, reasonable upper bound)
-3. **Determinism**: All nodes read same state, produce same results
-4. **Fallback Safety**: Errors fall back to known-good hardcoded values
-5. **No External Calls**: Direct state reads avoid reentrancy and gas issues
+`transferGovernance(newGovernance)`: callable only by current `governance`, target must be non-zero.
 
-## Future Enhancements
+There is no `pause` lever and no fallback value in the contract. A misbehaving floor is corrected by proposing a new configuration through the normal cycle.
 
-1. **State-aware block generation**: Pass actual state to mining/generation
-2. **Caching**: Cache contract reads within same block to reduce overhead
-3. **Multi-parameter governance**: Extend to other EIP-1559 parameters
-4. **Timelock integration**: Implement full OpenZeppelin Timelock/Governor
-5. **Event monitoring**: Index and display governance proposals in block explorer
+## State reader (`consensus/minbasefee/reader.go`)
 
-## References
+The reader pulls `configHistory` directly from `stateDB.GetState(contractAddr, slot)` - no EVM call, no gas, no reentrancy surface.
 
-- Smart Contract: `contracts/minbasefee/MinBaseFeeGovernor.sol`
-- State Reader: `consensus/minbasefee/reader.go`
-- Core Logic: `consensus/misc/eip1559.go`
-- Related Issues: IND-715, IND-716, IND-717, IND-718, IND-719
+- Slot `0` holds `governance`.
+- Slot `1` holds `configHistory.length`. The reader rejects lengths that do not fit in `uint64`.
+- `configHistory` elements live at `keccak256(slot=1) + 3 * index`, with three 32-byte words per element (`minBaseFee`, `activationBlock`, `timestamp`).
+- `findConfigForBlock` does a binary search over the array to find the last entry with `activationBlock ≤ blockNumber`. For `blockNumber < configHistory[0].activationBlock`, it returns `configHistory[0]` to match the Solidity `getMinBaseFeeForBlock` semantics.
+
+The block number used for the lookup is `parent.Number + 1`. The fork-activation check that gates the dynamic path uses `parent.Time`; these two predicates serve different purposes and intentionally use different units.
+
+## Metrics
+
+All exposed under `chain/minbasefee/*` and `chain/basefee/*`. Wei-denominated metrics are reported in gwei so they stay inside `int64` even at the upper bound of 100 ether; raw-wei reporting would silently overflow `int64` around 9.22 ether.
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `chain/minbasefee/active` | gauge | 1 when the dynamic floor was applied to the most recent block, 0 otherwise. |
+| `chain/minbasefee/current_gwei` | gauge | Floor used on the most recent block. |
+| `chain/minbasefee/contract_gwei` | gauge | Raw value most recently read from the contract. |
+| `chain/minbasefee/readerrors` | meter | Read failures since process start. Any non-zero value after activation is an alert condition. |
+| `chain/basefee/beforefloor_gwei` | gauge | `rawBaseFee` (EIP-1559 result, before flooring). |
+| `chain/basefee/afterfloor_gwei` | gauge | `max(rawBaseFee, floor)` (header.BaseFee). |
+
+## Code layout
+
+- `params/config.go` - `DynamicMinBaseFeeTime`, `MinBaseFeeContractAddr`, `IsDynamicMinBaseFee`, `CheckMinBaseFeeConfig`, `CheckCompatible` coverage.
+- `params/protocol_params.go` - `DynamicMinBaseFeeLowerWei`, `DynamicMinBaseFeeUpperWei`.
+- `consensus/misc/eip1559.go` - `CalcBaseFee`, `VerifyEip1559Header`, `computeMinBaseFeeFloor`, `readMinBaseFeeFromContract`, metrics.
+- `consensus/minbasefee/reader.go` - storage-layout-aware reader.
+- `contracts/minbasefee/MinBaseFeeGovernor.sol` - governance contract.
+- `core/state_processor.go` - block-execution-time floor guard.
+- `miner/worker.go` - state-aware base fee computation at sealing time.
