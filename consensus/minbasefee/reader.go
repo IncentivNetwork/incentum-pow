@@ -103,7 +103,15 @@ func (r *Reader) readConfigAt(stateDB *state.StateDB, index uint64) (*MinBaseFee
 	// Array elements start at keccak256(ConfigHistorySlot)
 	arrayStartSlot := crypto.Keccak256Hash(common.BigToHash(big.NewInt(ConfigHistorySlot)).Bytes())
 
-	// Each MinBaseFeeConfig struct takes 3 consecutive slots
+	// Each MinBaseFeeConfig struct takes 3 consecutive slots. Defence-in-depth:
+	// reject indices whose multiplication by ConfigFieldCount would wrap uint64.
+	// In practice this is unreachable (reaching configHistory.length > 2^64/3
+	// would take ~6e18 governance cycles), but we match the rest of the reader's
+	// "reject corrupted storage" convention rather than silently producing a
+	// wrapped slot offset.
+	if index > (^uint64(0))/ConfigFieldCount {
+		return nil, fmt.Errorf("configHistory index %d overflows slot calculation", index)
+	}
 	elementOffset := index * ConfigFieldCount
 
 	config := &MinBaseFeeConfig{}
