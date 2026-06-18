@@ -17,7 +17,7 @@ Incentum implements a governance-controlled minimum base fee system through the 
 - **Activation Delay**: Changes activate after 13,000 blocks (~18 hours at 5s/block)
 - **Safety Bounds**: Values constrained between 1 gwei and 100 ETH
 - **Change Limits**: Maximum 3x increase or 1/3x decrease per proposal
-- **Emergency Controls**: Pause mechanism with fallback value
+- **Proposal Cancellation**: Governance can cancel a pending proposal before it executes
 - **Full History**: Binary search over historical configurations
 
 **Documentation:**
@@ -27,7 +27,7 @@ Incentum implements a governance-controlled minimum base fee system through the 
 
 **Monitoring:**
 - Prometheus metrics: `chain_minbasefee_*`, `chain_basefee_*`
-- Event logs: `MinBaseFeeProposed`, `ProposalExecuted`, `Paused`
+- Event logs: `MinBaseFeeProposed`, `ProposalExecuted`, `ProposalCancelled`, `MinBaseFeeScheduled`, `GovernanceTransferred`, `TimelockDelayUpdated`
 
 **Testing:**
 ```bash
