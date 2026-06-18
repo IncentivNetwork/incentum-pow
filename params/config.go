@@ -772,6 +772,9 @@ func (c *ChainConfig) Description() string {
 	if c.DPoWTime != nil {
 		banner += fmt.Sprintf(" - DPoW:                        @%-10v (%s)\n", *c.DPoWTime, formatTimestampFork(*c.DPoWTime))
 	}
+	if c.DynamicMinBaseFeeTime != nil {
+		banner += fmt.Sprintf(" - DynamicMinBaseFee:           @%-10v (%s)\n", *c.DynamicMinBaseFeeTime, formatTimestampFork(*c.DynamicMinBaseFeeTime))
+	}
 	if c.CancunTime != nil {
 		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, formatTimestampFork(*c.CancunTime))
 	}

@@ -74,16 +74,10 @@ func TestDynamicMinBaseFee_Disabled(t *testing.T) {
 	t.Logf("Block 5 base fee: %s", block5.BaseFee())
 	t.Logf("Block 15 base fee: %s", block15.BaseFee())
 
-	// Since all blocks use target gas (no transactions), base fee should equal minimum
-	// We can't check exact values because CalcBaseFee passes nil for stateDB everywhere
-	// But we verify blocks are valid and chain progresses
-}
-
-// TestDynamicMinBaseFee_StateRead tests reading min base fee from contract state
-func TestDynamicMinBaseFee_StateRead(t *testing.T) {
-	// This test will be implemented after we have proper state setup
-	// For now, we test the reader package directly
-	t.Skip("Requires simulated.Backend - will implement in next commit")
+	// Since all blocks use target gas (no transactions), base fee should equal
+	// the legacy floor. Exact-value coverage of the dynamic-fork branch lives
+	// in TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState; this test just
+	// validates that pre-fork block production continues to work end-to-end.
 }
 
 // TestMinBaseFee_Calculation tests the calculation logic remains correct
