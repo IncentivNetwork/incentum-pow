@@ -1,5 +1,9 @@
 #!/bin/bash
-# Regenerate the MinBaseFeeGovernor ABI, runtime bytecode and Go bindings.
+# Regenerate the MinBaseFeeGovernor ABI, deployment (creation) bytecode and
+# Go bindings. The `.bin` file contains the creation/init bytecode produced
+# by `forge build` (forge artifact's `.bytecode.object`), which is what
+# `abigen --bin` expects so the generated `Deploy...` helper can broadcast
+# a contract-creation transaction.
 #
 # Requirements:
 #   - foundry (forge)         - already required to build/test the contract
