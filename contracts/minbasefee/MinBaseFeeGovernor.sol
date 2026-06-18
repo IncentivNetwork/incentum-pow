@@ -256,10 +256,17 @@ contract MinBaseFeeGovernor {
             revert ActivationBlockNotSequential(_activationBlock, lastActivationBlock);
         }
 
-        // Validate change is not too large (prevent extreme changes)
+        // Validate change is not too large (prevent extreme changes).
+        // maxAllowed = currentMinBaseFee * (100 + MAX_CHANGE_PERCENT) / 100 is
+        // exact under Solidity integer math because (100 + MAX_CHANGE_PERCENT)
+        // is a multiple of 100. minAllowed needs ceiling division so that
+        // values strictly below currentMinBaseFee / (1 + MAX_CHANGE_PERCENT/100)
+        // are rejected even when the numerator is not divisible — otherwise the
+        // floor-division form would silently accept changes slightly larger
+        // than the documented "1/3x decrease" cap.
         uint256 currentMinBaseFee = getMinBaseFeeForBlock(block.number);
         uint256 maxAllowed = currentMinBaseFee * (100 + MAX_CHANGE_PERCENT) / 100;
-        uint256 minAllowed = currentMinBaseFee * 100 / (100 + MAX_CHANGE_PERCENT);
+        uint256 minAllowed = (currentMinBaseFee * 100 + (100 + MAX_CHANGE_PERCENT) - 1) / (100 + MAX_CHANGE_PERCENT);
 
         if (_minBaseFee > maxAllowed || _minBaseFee < minAllowed) {
             revert ChangeTooLarge(_minBaseFee, currentMinBaseFee, maxAllowed);
