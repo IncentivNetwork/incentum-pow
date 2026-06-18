@@ -1,15 +1,20 @@
 # MinBaseFeeGovernor Contract
 
-Smart contract for managing dynamic minimum base fee in Incentum network with timelock security.
+Smart contract for managing the dynamic minimum base fee floor in the Incentum
+network with timelock-gated governance.
 
 ## Quick Start
 
 ```solidity
-// Deploy
+// Deploy. The last two arguments are immutable per-deployment minimums for the
+// timelock delay (seconds) and the activation delay (blocks). Production uses
+// `2 days` and `13000`; devnet deployments may use shorter values.
 MinBaseFeeGovernor governor = new MinBaseFeeGovernor(
     governanceAddress,
     12600000000000,  // 12.6k gwei initial min base fee
-    0                // activation block
+    0,               // activation block of the initial config
+    2 days,          // minimum timelock delay
+    13000            // minimum activation delay (blocks)
 );
 
 // Propose change
@@ -18,7 +23,7 @@ bytes32 proposalId = governor.proposeMinBaseFee(
     block.number + 20000  // activation in ~28 hours (at 5s/block)
 );
 
-// Wait 2 days...
+// Wait `timelockDelay` (defaults to 2 days)...
 
 // Execute
 governor.executeProposal(proposalId);
@@ -29,57 +34,70 @@ uint256 currentMinFee = governor.getCurrentMinBaseFee();
 
 ## Features
 
-- **Timelock Security**: 2-day delay between proposal and execution
-- **Safety Bounds**: Changes limited to 3x/1/3x, values between 1 gwei and 100 ETH
-- **Emergency Pause**: Quick response to critical issues
-- **Binary Search**: O(log n) historical lookups
-- **Full History**: All past configurations preserved
+- **Timelock Security**: 2-day delay between proposal and execution (per-deployment minimum, immutable).
+- **Activation Delay**: 13,000-block delay before a new config takes effect on chain (per-deployment minimum, immutable).
+- **Safety Bounds**: Changes limited to ±200 % per proposal, values constrained to `[1 gwei, 100 ether]`.
+- **Proposal Cancellation**: Governance can cancel a pending proposal before it executes.
+- **Binary Search**: O(log n) historical lookups via the `consensus/minbasefee` Go reader.
+- **Full History**: All past configurations preserved in `configHistory[]`.
+
+There is no `pause` lever and no fallback floor in v1; a misbehaving floor is
+corrected through the same propose / execute cycle (or by `cancelProposal` if
+still pending).
 
 ## Documentation
 
-- [Deployment Guide](../../docs/minbasefee/deployment.md) - Complete deployment and operations guide
+- [Deployment Guide](../../docs/minbasefee/deployment.md) — full deployment and operations guide.
+- [Implementation notes](../../docs/dynamic-min-base-fee-implementation.md) — Go consensus integration.
 
 ## Testing
 
 ```bash
-# Compile contract and generate Go bindings
-cd contracts/minbasefee && go generate
+# Compile contract and regenerate Go bindings (Foundry + jq + abigen)
+bash scripts/generate-minbasefee-bindings.sh
 
-# Or compile separately:
-node scripts/compile-MinBaseFeeGovernor.js
-abigen --abi contracts/minbasefee/MinBaseFeeGovernor.abi --bin contracts/minbasefee/MinBaseFeeGovernor.bin --pkg minbasefee --type MinBaseFeeGovernor --out contracts/minbasefee/bindings.go
+# Run Foundry tests for the contract itself
+FOUNDRY_PROFILE=minbasefee forge test
 
-# Run integration tests
+# Run Go integration tests
 go test -v ./contracts/minbasefee/test
-
-# All tests should pass:
-# TestMinBaseFeeGovernorDeployment
-# TestMinBaseFeeGovernorTimelock
-# TestMinBaseFeeGovernorAccessControl
-# TestMinBaseFeeGovernorSafetyBounds
-# TestMinBaseFeeGovernorPause
-# TestMinBaseFeeGovernorCancelProposal
 ```
+
+Go integration tests:
+
+- `TestMinBaseFeeGovernorDeployment`
+- `TestMinBaseFeeGovernorTimelock`
+- `TestMinBaseFeeGovernorAccessControl`
+- `TestMinBaseFeeGovernorSafetyBounds`
+- `TestMinBaseFeeGovernorCancelProposal`
 
 ## Files
 
-- `MinBaseFeeGovernor.sol` - Main contract (source)
-- `contract.go` - Go package definition with //go:generate directives
-- `test/integration_test.go` - Comprehensive integration tests
-- `test/MinBaseFeeGovernor.t.sol` - Solidity tests (Foundry)
+- `MinBaseFeeGovernor.sol` — main contract (source).
+- `contract.go` — Go package definition with `//go:generate` directive.
+- `bindings.go` — generated Go bindings (committed to the repo).
+- `test/integration_test.go` — Go integration tests against a simulated backend.
+- `test/MinBaseFeeGovernor.t.sol` — Solidity (Foundry) tests.
 
-**Generated files (not in repo, use `go generate`):**
-- `MinBaseFeeGovernor.abi` - Contract ABI
-- `MinBaseFeeGovernor.bin` - Contract bytecode
-- `bindings.go` - Go bindings for integration
+Intermediate `MinBaseFeeGovernor.abi` and `.bin` artifacts are produced by
+`scripts/generate-minbasefee-bindings.sh` from the Foundry build and are
+gitignored.
 
 ## Go Integration
 
 ```go
 import "github.com/ethereum/go-ethereum/contracts/minbasefee"
 
-// Deploy
-address, tx, contract, err := minbasefee.DeployMinBaseFeeGovernor(...)
+// Deploy. Mirrors the Solidity constructor's 5 arguments.
+address, tx, contract, err := minbasefee.DeployMinBaseFeeGovernor(
+    auth,
+    backend,
+    governanceAddress,
+    initialMinBaseFee,
+    activationBlock,
+    big.NewInt(172800), // _minTimelockDelay (2 days)
+    big.NewInt(13000),  // _minActivationDelayBlocks
+)
 
 // Propose
 proposalId, err := contract.ProposeMinBaseFee(auth, newMinBaseFee, activationBlock)
@@ -94,22 +112,26 @@ currentMinBaseFee, err := contract.GetCurrentMinBaseFee(nil)
 ## Monitoring
 
 Prometheus metrics exported in `consensus/misc/eip1559.go`:
-- `chain_minbasefee_current` - Current min base fee
-- `chain_minbasefee_readerrors` - Contract read errors
-- `chain_basefee_beforefloor` / `afterfloor` - Floor application
+
+- `chain_minbasefee_active` — 1 if the dynamic floor was applied to the most recent block, 0 otherwise.
+- `chain_minbasefee_current_gwei` — floor used on the most recent block (gwei).
+- `chain_minbasefee_contract_gwei` — last value read from the contract (gwei).
+- `chain_minbasefee_readerrors` — count of contract read errors (any non-zero post-activation is an alert).
+- `chain_basefee_beforefloor_gwei` / `chain_basefee_afterfloor_gwei` — EIP-1559 base fee before and after the floor is applied (gwei).
 
 ## Security
 
 All changes require:
-1. Governance address authentication
-2. 2-day timelock wait period
-3. Safety bounds validation (1 gwei - 100 ETH, max 3x change)
-4. 13,000 block activation delay
 
-Emergency controls:
-- `pause()` - Halt changes, use fallback value
-- `cancelProposal()` - Cancel pending proposal
-- `setFallbackMinBaseFee()` - Update emergency fallback
+1. Governance address authentication.
+2. Timelock wait period (per-deployment minimum, defaults to 2 days).
+3. Safety bounds validation (`[1 gwei, 100 ether]`, change ≤ ±200 % per proposal).
+4. Activation delay in blocks (per-deployment minimum, defaults to 13 000).
+
+Emergency response is limited to:
+
+- `cancelProposal(proposalId)` — cancel a pending proposal before execution.
+- propose a corrective configuration through the normal cycle if a bad value has already been executed (subject to timelock + activation delay).
 
 ## License
 
