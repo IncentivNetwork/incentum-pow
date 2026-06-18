@@ -180,13 +180,21 @@ func computeMinBaseFeeFloor(config *params.ChainConfig, parent *types.Header, st
 		return minimumBaseFee, nil
 	}
 	minBaseFeeActiveGauge.Update(0)
+	// Dynamic path didn't run; reset the contract-derived gauge so dashboards
+	// don't show a stale value from an earlier active branch.
+	minBaseFeeFromContractGwei.Update(0)
 
 	if config.IsMinBaseFee(nextBlockNum) {
+		var minimumBaseFee *big.Int
 		if config.IsMinBaseFeeChange(nextBlockNum) {
-			return new(big.Int).SetUint64(params.MinBaseFeeUpdated), nil
+			minimumBaseFee = new(big.Int).SetUint64(params.MinBaseFeeUpdated)
+		} else {
+			minimumBaseFee = new(big.Int).SetUint64(params.MinimumBaseFee)
 		}
-		return new(big.Int).SetUint64(params.MinimumBaseFee), nil
+		minBaseFeeGwei.Update(weiToGweiClamped(minimumBaseFee))
+		return minimumBaseFee, nil
 	}
+	minBaseFeeGwei.Update(0)
 	return common.Big0, nil
 }
 
