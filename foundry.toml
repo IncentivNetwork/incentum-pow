@@ -1,10 +1,28 @@
 [profile.default]
-src = "contracts"
+src = "contracts/incentiv"
 out = "out"
 libs = ["lib"]
 remappings = ["forge-std/=lib/forge-std/src/", "@openzeppelin/=lib/openzeppelin-contracts/"]
 test = "tests/incentiv"
 cache_path = "cache_forge"
+solc_version = "0.8.23"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+evm_version = "paris"
+
+# Separate profile for the dynamic min base fee governor contract. The default
+# profile narrows `src` to `contracts/incentiv` so that `forge test` does not
+# try to compile `contracts/checkpointoracle/contract/oracle.sol` (pragma
+# ^0.6.0) under solc 0.8.23. Invoke this profile explicitly:
+#   FOUNDRY_PROFILE=minbasefee forge test
+[profile.minbasefee]
+src = "contracts/minbasefee"
+out = "out-minbasefee"
+libs = ["lib"]
+remappings = ["forge-std/=lib/forge-std/src/"]
+test = "contracts/minbasefee/test"
+cache_path = "cache_forge_minbasefee"
 solc_version = "0.8.23"
 optimizer = true
 optimizer_runs = 200
@@ -27,3 +45,6 @@ runs = 5000
 
 [profile.ci.invariant]
 runs = 1000
+
+[profile.minbasefee.fuzz]
+runs = 256
