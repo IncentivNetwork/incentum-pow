@@ -13,8 +13,8 @@ This project builds upon the rock-solid foundation of Geth while enabling protoc
 Incentum implements a governance-controlled minimum base fee system through the **MinBaseFeeGovernor** smart contract. This allows the network to set a floor for the EIP-1559 base fee, providing economic stability while maintaining fee market dynamics.
 
 **Key Features:**
-- **Timelock Security**: 2-day delay between proposal and execution
-- **Activation Delay**: Changes activate after 13,000 blocks (~18 hours at 5s/block)
+- **Timelock Security**: production default 2-day delay between proposal and execution (deployment-time immutable minimum; devnet may use a shorter value)
+- **Activation Delay**: production default 13,000 blocks (~18 hours at 5s/block) before changes activate (deployment-time immutable minimum; devnet may use a shorter value)
 - **Safety Bounds**: Values constrained between 1 gwei and 100 ETH
 - **Change Limits**: Maximum 3x increase or 1/3x decrease per proposal
 - **Proposal Cancellation**: Governance can cancel a pending proposal before it executes
