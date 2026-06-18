@@ -38,8 +38,11 @@ cd contracts/minbasefee && go generate
 # Run integration tests
 go test -v ./contracts/minbasefee/test
 
-# Run Foundry tests (requires WSL on Windows)
-forge test -vv
+# Run Foundry tests for the minbasefee contract (requires WSL on Windows).
+# The minbasefee profile is required: the default profile narrows `src` to
+# `contracts/incentiv`, so a bare `forge test` will not pick up the new
+# contract tests.
+FOUNDRY_PROFILE=minbasefee forge test -vv
 ```
 
 ## Building the source
