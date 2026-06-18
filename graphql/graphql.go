@@ -705,7 +705,12 @@ func (b *Block) NextBaseFeePerGas(ctx context.Context) (*hexutil.Big, error) {
 	}
 	nextBaseFee, err := misc.CalcBaseFee(chaincfg, header, nil)
 	if err != nil {
-		return nil, err
+		// Post-DynamicMinBaseFee the floor requires parent post-state; this
+		// header-only GraphQL prediction cannot provide one. Degrade to null
+		// (matching eth_feeHistory / RPC pending-tx behaviour) rather than
+		// fail the entire response — null is also more honest than returning
+		// the raw EIP-1559 number that would not respect the contract floor.
+		return nil, nil
 	}
 	return (*hexutil.Big)(nextBaseFee), nil
 }
