@@ -706,10 +706,11 @@ func (b *Block) NextBaseFeePerGas(ctx context.Context) (*hexutil.Big, error) {
 	nextBaseFee, err := misc.CalcBaseFee(chaincfg, header, nil)
 	if err != nil {
 		// Post-DynamicMinBaseFee the floor requires parent post-state; this
-		// header-only GraphQL prediction cannot provide one. Degrade to null
-		// (matching eth_feeHistory / RPC pending-tx behaviour) rather than
-		// fail the entire response — null is also more honest than returning
-		// the raw EIP-1559 number that would not respect the contract floor.
+		// header-only GraphQL prediction cannot provide one. The GraphQL
+		// schema lets this field be null, so we honestly return null instead
+		// of guessing or failing the whole response. (eth_feeHistory takes a
+		// different route - it propagates the error as an RPC error - because
+		// its `baseFeePerGas` array has no null slot to use.)
 		return nil, nil
 	}
 	return (*hexutil.Big)(nextBaseFee), nil
