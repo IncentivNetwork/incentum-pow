@@ -54,10 +54,9 @@ cache_forge/
 out/
 lib/
 
-# Compiled contract artifacts
+# Compiled contract artifacts (intermediate; bindings.go is generated and committed)
 contracts/**/*.bin
 contracts/**/*.abi
-contracts/**/bindings.go
 
 geth
 
