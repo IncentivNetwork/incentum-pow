@@ -44,14 +44,14 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
 ### Deployment Steps
 
-1. **Compile the contract and generate Go bindings:**
+1. **Compile the contract and regenerate Go bindings:**
    ```bash
-   # Recommended: use go generate (runs compilation + abigen)
+   # Recommended: go generate runs the same script under the hood.
    cd contracts/minbasefee && go generate
    
-   # Or manually:
-   node scripts/compile-MinBaseFeeGovernor.js
-   abigen --abi contracts/minbasefee/MinBaseFeeGovernor.abi --bin contracts/minbasefee/MinBaseFeeGovernor.bin --pkg minbasefee --type MinBaseFeeGovernor --out contracts/minbasefee/bindings.go
+   # Or invoke the generator directly. The script uses Foundry (forge), jq,
+   # and abigen — no Node/npm/solc-js toolchain is required.
+   bash scripts/generate-minbasefee-bindings.sh
    ```
 
 2. **Deploy using your preferred method:**
