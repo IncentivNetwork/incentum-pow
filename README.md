@@ -32,8 +32,9 @@ Incentum implements a governance-controlled minimum base fee system through the 
 **Testing:**
 ```bash
 # Generate contract artifacts (ABI, bytecode, Go bindings)
-cd contracts/minbasefee && go generate
-# Or: bash scripts/generate-minbasefee-bindings.sh
+go generate ./contracts/minbasefee
+# Or:
+bash scripts/generate-minbasefee-bindings.sh
 
 # Run integration tests
 go test -v ./contracts/minbasefee/test
