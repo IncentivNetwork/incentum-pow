@@ -17,5 +17,4 @@
 // Package minbasefee provides governance for dynamic minimum base fee.
 package minbasefee
 
-//go:generate node ../../scripts/compile-MinBaseFeeGovernor.js
-//go:generate abigen --abi MinBaseFeeGovernor.abi --bin MinBaseFeeGovernor.bin --pkg minbasefee --type MinBaseFeeGovernor --out bindings.go
+//go:generate bash ../../scripts/generate-minbasefee-bindings.sh
