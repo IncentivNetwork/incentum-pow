@@ -284,8 +284,11 @@ contract MinBaseFeeGovernor {
     function executeProposal(bytes32 proposalId) external onlyGovernance {
         Proposal storage proposal = proposals[proposalId];
 
-        // Validate proposal exists
-        if (proposal.proposedAt == 0) revert ProposalNotFound(proposalId);
+        // Validate proposal exists. minBaseFee is the safe sentinel here -
+        // proposeMinBaseFee enforces _minBaseFee >= MIN_MIN_BASE_FEE, so any
+        // real proposal has minBaseFee > 0, while proposedAt could legitimately
+        // be 0 on simulated chains where block.timestamp == 0.
+        if (proposal.minBaseFee == 0) revert ProposalNotFound(proposalId);
 
         // Validate proposal has not been executed
         if (proposal.executed) revert ProposalAlreadyExecuted(proposalId);
@@ -334,8 +337,8 @@ contract MinBaseFeeGovernor {
     function cancelProposal(bytes32 proposalId) external onlyGovernance {
         Proposal storage proposal = proposals[proposalId];
 
-        // Validate proposal exists
-        if (proposal.proposedAt == 0) revert ProposalNotFound(proposalId);
+        // Validate proposal exists - see the matching note in executeProposal.
+        if (proposal.minBaseFee == 0) revert ProposalNotFound(proposalId);
 
         // Validate proposal has not been executed
         if (proposal.executed) revert ProposalAlreadyExecuted(proposalId);
@@ -367,7 +370,7 @@ contract MinBaseFeeGovernor {
         Proposal memory proposal = proposals[proposalId];
         executeAfter = proposal.proposedAt + timelockDelay;
         canExecute = !proposal.executed &&
-                     proposal.proposedAt > 0 &&
+                     proposal.minBaseFee != 0 &&
                      block.timestamp >= executeAfter;
 
         return (
