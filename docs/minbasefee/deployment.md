@@ -8,8 +8,8 @@ The MinBaseFeeGovernor contract manages the minimum base fee threshold for the I
 
 ### Security Mechanisms
 
-1. **Timelock**: 2-day minimum delay between proposal and execution
-2. **Activation Delay**: 13,000 blocks (~18 hours at 5s/block) before changes take effect
+1. **Timelock**: per-deployment minimum delay between proposal and execution (production: 2 days; devnet: shorter; deployment-time immutable)
+2. **Activation Delay**: per-deployment minimum activation delay in blocks (production: 13,000 blocks ≈ 18 hours at 5s/block; devnet: shorter; deployment-time immutable)
 3. **Safety Bounds**:
    - Maximum min base fee: 100 ETH
    - Minimum min base fee: 1 gwei
@@ -46,18 +46,20 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
 1. **Compile the contract and regenerate Go bindings:**
    ```bash
-   # Recommended: go generate runs the same script under the hood.
-   cd contracts/minbasefee && go generate
+   # Recommended: go generate runs the same script under the hood. Run from
+   # the repo root so the script's repo-relative paths resolve correctly.
+   go generate ./contracts/minbasefee
    
-   # Or invoke the generator directly. The script uses Foundry (forge), jq,
-   # and abigen — no Node/npm/solc-js toolchain is required.
+   # Or invoke the generator directly (also from the repo root). The script
+   # uses Foundry (forge), jq, and abigen — no Node/npm/solc-js toolchain is
+   # required.
    bash scripts/generate-minbasefee-bindings.sh
    ```
 
 2. **Deploy using your preferred method:**
 
    **Option A: Using Remix/Hardhat/Truffle:**
-   - Import [MinBaseFeeGovernor.sol](contracts/minbasefee/MinBaseFeeGovernor.sol)
+   - Import [MinBaseFeeGovernor.sol](../../contracts/minbasefee/MinBaseFeeGovernor.sol)
    - Constructor parameters (5, all required):
      - `_governance`: address of the governance account
      - `_initialMinBaseFee`: initial min base fee in wei (e.g. `12600000000000` for 12.6k gwei)
