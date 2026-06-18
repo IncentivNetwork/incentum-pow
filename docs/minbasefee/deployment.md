@@ -14,8 +14,8 @@ The MinBaseFeeGovernor contract manages the minimum base fee threshold for the I
    - Maximum min base fee: 100 ETH
    - Minimum min base fee: 1 gwei
    - Maximum change per proposal: 3x (200% increase) or 1/3x (67% decrease)
-4. **Emergency Pause**: Ability to pause the contract and use fallback value
-5. **Proposal Cancellation**: Governance can cancel proposals before execution
+4. **Proposal Cancellation**: Governance can cancel a pending proposal before it executes.
+5. **Full History**: All past configurations preserved for binary-search lookups.
 
 ### Performance
 
@@ -58,17 +58,23 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
    **Option A: Using Remix/Hardhat/Truffle:**
    - Import [MinBaseFeeGovernor.sol](contracts/minbasefee/MinBaseFeeGovernor.sol)
-   - Constructor parameters:
-     - `_governance`: Address of governance account
-     - `initialMinBaseFee`: Initial min base fee in wei (e.g., 12600000000000 for 12.6k gwei)
-     - `initialActivationBlock`: Block number when initial config activates (0 for genesis)
+   - Constructor parameters (5, all required):
+     - `_governance`: address of the governance account
+     - `_initialMinBaseFee`: initial min base fee in wei (e.g. `12600000000000` for 12.6k gwei)
+     - `_activationBlock`: block number at which the initial config activates (`0` for genesis)
+     - `_minTimelockDelay`: minimum timelock delay in seconds (production: `172800` = 2 days; devnet: shorter)
+     - `_minActivationDelayBlocks`: minimum activation delay in blocks (production: `13000`; devnet: shorter)
 
    **Option B: Using Go bindings:**
    ```go
-   import "github.com/ethereum/go-ethereum/contracts/minbasefee"
+   import (
+       "math/big"
+
+       "github.com/ethereum/go-ethereum/contracts/minbasefee"
+   )
 
    initialMinBaseFee := big.NewInt(12600000000000) // 12.6k gwei
-   activationBlock := big.NewInt(0)
+   activationBlock   := big.NewInt(0)
 
    address, tx, contract, err := minbasefee.DeployMinBaseFeeGovernor(
        auth,
@@ -76,6 +82,8 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
        governanceAddress,
        initialMinBaseFee,
        activationBlock,
+       big.NewInt(172800), // _minTimelockDelay (2 days)
+       big.NewInt(13000),  // _minActivationDelayBlocks
    )
    ```
 
@@ -100,7 +108,7 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 2. **Determine activation block:**
    - Must be at least 13,000 blocks in the future (~18 hours at 5s/block)
    - Should consider network conditions and community communication time
-   - Example: Current block 1,000,000 â†’ minimum activation block 1,013,000
+   - Example: Current block 1,000,000 → minimum activation block 1,013,000
 
 3. **Submit proposal:**
    ```solidity
@@ -148,29 +156,34 @@ Note: Cannot cancel already-executed proposals.
 
 ### Emergency Procedures
 
-#### Pausing the Contract
+The contract intentionally does not provide `pause()` semantics or a fallback
+floor in v1. The only emergency levers are proposal cancellation and a
+corrective proposal through the normal cycle.
 
-If critical issue is discovered:
+#### Cancelling a Bad Pending Proposal
 
-1. **Pause the contract:**
-   ```solidity
-   contract.pause();
-   ```
-
-2. **Set appropriate fallback value:**
-   ```solidity
-   contract.setFallbackMinBaseFee(12600000000000); // 12.6k gwei
-   ```
-
-3. When paused, `getCurrentMinBaseFee()` returns the fallback value instead of reading from history.
-
-#### Resuming Operations
-
-After issue is resolved:
+If a proposal with an incorrect value is still pending (not yet executed):
 
 ```solidity
-contract.unpause();
+contract.cancelProposal(proposalId);
 ```
+
+The proposal is dropped and no change to `configHistory` is made.
+
+#### Correcting an Already-Executed Bad Value
+
+If `executeProposal` has already run and a bad config is scheduled to activate,
+governance must propose a corrective configuration through the normal cycle:
+
+```solidity
+bytes32 fix = contract.proposeMinBaseFee(correctValue, futureActivationBlock);
+// Wait `timelockDelay` (minimum: 2 days in production).
+contract.executeProposal(fix);
+```
+
+The corrective proposal is subject to the same timelock and activation delay
+as any other proposal. If the bad config has already activated on chain, the
+corrective config takes effect at its own `activationBlock`.
 
 ## Monitoring
 
@@ -178,12 +191,12 @@ contract.unpause();
 
 The following metrics are exported:
 
-- `chain_minbasefee_current`: Current minimum base fee in wei
-- `chain_minbasefee_contract`: Value read from contract
-- `chain_minbasefee_readerrors`: Count of errors reading from contract
-- `chain_minbasefee_active`: Whether dynamic min base fee is active (0 or 1)
-- `chain_basefee_beforefloor`: Base fee before applying floor
-- `chain_basefee_afterfloor`: Base fee after applying floor
+- `chain_minbasefee_active`: 1 if the dynamic floor was applied to the most recent block, 0 otherwise
+- `chain_minbasefee_current_gwei`: current minimum base fee floor (gwei)
+- `chain_minbasefee_contract_gwei`: last value read from the contract (gwei)
+- `chain_minbasefee_readerrors`: count of contract read errors; any non-zero post-activation is an alert
+- `chain_basefee_beforefloor_gwei`: EIP-1559 base fee before the floor is applied (gwei)
+- `chain_basefee_afterfloor_gwei`: EIP-1559 base fee after the floor is applied (gwei)
 
 ### Log Monitoring
 
@@ -192,8 +205,9 @@ Watch for:
 - `ProposalExecuted`: Proposal successfully executed
 - `ProposalCancelled`: Proposal cancelled
 - `MinBaseFeeScheduled`: New config added to history
-- `Paused`/`Unpaused`: Emergency state changes
-- Log errors: "Failed to read min base fee from contract"
+- `GovernanceTransferred`: governance address rotated
+- `TimelockDelayUpdated`: governance updated the live timelock delay
+- Log errors: "failed to read min base fee from contract"
 
 ### Health Checks
 
@@ -202,8 +216,8 @@ Regularly verify:
 ```solidity
 // Check current state
 uint256 current = contract.getCurrentMinBaseFee();
-bool isPaused = contract.paused();
 uint256 historyLength = contract.getConfigHistoryLength();
+address gov = contract.governance();
 
 // Verify history is accessible
 for (uint i = 0; i < historyLength; i++) {
@@ -266,13 +280,13 @@ go test -v ./contracts/minbasefee/test -run TestMinBaseFeeGovernorTimelock
 
 ## Security Considerations
 
-1. **Timelock Protection**: All changes require 2+ days notice, allowing time for community review
-2. **Bounded Changes**: Cannot make extreme changes in single proposal
-3. **Activation Delay**: Changes don't take effect immediately, even after execution
-4. **Emergency Pause**: Can quickly respond to critical issues
-5. **Governance Control**: Only governance address can propose/execute/pause
-6. **Historical Immutability**: Past configurations cannot be modified
-7. **Fallback Safety**: Pause mechanism provides fallback behavior
+1. **Timelock Protection**: All changes require a configurable minimum-2-day delay (per-deployment immutable), allowing time for community review.
+2. **Bounded Changes**: Cannot make extreme changes in a single proposal (`±200 %` cap, `[1 gwei, 100 ether]` bounds).
+3. **Activation Delay**: Changes don't take effect immediately even after execution (per-deployment minimum, immutable; production: 13 000 blocks).
+4. **Proposal Cancellation**: A bad pending proposal can be cancelled before execution; an already-executed bad value is corrected via a new proposal.
+5. **Governance Control**: Only the configured governance address can propose, execute, cancel, or rotate governance.
+6. **Historical Immutability**: Past configurations cannot be modified.
+7. **No-Fallback Policy**: There is no pause lever or fallback floor in v1; this avoids a silent-fallback split risk on the consensus path. A misbehaving floor is corrected through the same governance cycle.
 
 ## Upgrade Path
 
