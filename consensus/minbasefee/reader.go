@@ -144,7 +144,10 @@ func (r *Reader) findConfigForBlock(stateDB *state.StateDB, blockNumber *big.Int
 	)
 
 	for left <= right {
-		mid := (left + right) / 2
+		// Overflow-safe midpoint. (left + right) / 2 wraps when
+		// left + right >= 2^64; this form keeps the arithmetic inside uint64
+		// regardless of the configHistory length the contract storage reports.
+		mid := left + (right-left)/2
 
 		config, err := r.readConfigAt(stateDB, mid)
 		if err != nil {
