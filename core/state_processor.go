@@ -88,7 +88,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			return nil, nil, 0, fmt.Errorf("min base fee: block %s recompute failed: %w", block.Number().String(), err)
 		}
 		if header.BaseFee == nil || header.BaseFee.Cmp(expectedBaseFee) != 0 {
-			return nil, nil, 0, fmt.Errorf("min base fee: block %s baseFee=%v does not match contract-derived floor %v",
+			return nil, nil, 0, fmt.Errorf("min base fee: block %s baseFee=%v does not match expected baseFee %v",
 				block.Number().String(), header.BaseFee, expectedBaseFee)
 		}
 	}
