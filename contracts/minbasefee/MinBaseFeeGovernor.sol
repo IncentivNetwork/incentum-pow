@@ -48,6 +48,15 @@ contract MinBaseFeeGovernor {
     /// @notice Current timelock delay (can be updated by governance, but not below MIN_TIMELOCK_DELAY)
     uint256 public timelockDelay;
 
+    /// @notice Monotonic counter mixed into every proposalId to keep them
+    ///         unique even for two identical proposals submitted in the same
+    ///         block (otherwise the second propose would overwrite the first
+    ///         entry in `proposals` and emit a duplicate event).
+    /// @dev Declared after `timelockDelay` on purpose: appending here keeps
+    ///      storage slots 0 (governance) and 1 (configHistory.length) stable
+    ///      so the Go consensus reader stays valid.
+    uint256 public proposalNonce;
+
     /// @notice Minimum delay in blocks before activation. Set at deployment.
     /// @dev Production deployments use 13000 (~18 hours at 5-second blocks); devnet
     ///      deployments use a shorter value (typically 100 blocks). Immutable so the
@@ -254,7 +263,14 @@ contract MinBaseFeeGovernor {
         }
 
         // Create proposal
-        bytes32 proposalId = keccak256(abi.encode(_minBaseFee, _activationBlock, block.timestamp));
+        // Include proposalNonce so two identical proposals in the same block
+        // get distinct ids (and distinct entries in `proposals`).
+        bytes32 proposalId = keccak256(
+            abi.encode(_minBaseFee, _activationBlock, block.timestamp, proposalNonce)
+        );
+        unchecked {
+            proposalNonce++;
+        }
 
         uint256 executeAfter = block.timestamp + timelockDelay;
 
