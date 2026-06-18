@@ -190,10 +190,12 @@ var (
 
 	// DynamicMinBaseFeeLowerWei and DynamicMinBaseFeeUpperWei are the inclusive
 	// bounds the consensus layer accepts for any contract-derived dynamic min
-	// base fee value. They mirror MIN_MIN_BASE_FEE and MAX_MIN_BASE_FEE in
-	// MinBaseFeeGovernor.sol and are the single Go-side source of truth - the
-	// Solidity-side constants are kept in sync via a build step. Values outside
-	// these bounds are rejected by the Go reader as a hard consensus error.
+	// base fee value. They must be kept in sync with MIN_MIN_BASE_FEE and
+	// MAX_MIN_BASE_FEE in MinBaseFeeGovernor.sol; that synchronisation is the
+	// responsibility of the maintainer/reviewer when either side changes, and
+	// an automated CI parity assertion is tracked as separate build-infra
+	// work. Values outside these bounds are rejected by the Go reader as a
+	// hard consensus error.
 	DynamicMinBaseFeeLowerWei = big.NewInt(GWei)                                     // 1 gwei
 	DynamicMinBaseFeeUpperWei = new(big.Int).Mul(big.NewInt(100), big.NewInt(Ether)) // 100 ether
 )
