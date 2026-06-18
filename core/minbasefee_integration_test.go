@@ -206,8 +206,14 @@ func TestDynamicMinBaseFee_Integration_ContractUpdate(t *testing.T) {
 	if block2 == nil {
 		t.Fatal("Block 2 not found")
 	}
-	stateDB2, _ := chain.StateAt(block2.Root())
-	minBaseFee2, _ := reader.ReadMinBaseFee(stateDB2, big.NewInt(2))
+	stateDB2, err := chain.StateAt(block2.Root())
+	if err != nil {
+		t.Fatalf("Failed to get state at block 2: %v", err)
+	}
+	minBaseFee2, err := reader.ReadMinBaseFee(stateDB2, big.NewInt(2))
+	if err != nil {
+		t.Fatalf("Failed to read min base fee at block 2: %v", err)
+	}
 	t.Logf("Block 2 - min base fee: %s gwei (before update activation)", new(big.Int).Div(minBaseFee2, big.NewInt(params.GWei)))
 
 	if minBaseFee2.Cmp(initialMinBaseFee) != 0 {
@@ -218,7 +224,10 @@ func TestDynamicMinBaseFee_Integration_ContractUpdate(t *testing.T) {
 	if block3 == nil {
 		t.Fatal("Block 3 not found")
 	}
-	stateDB3, _ := chain.StateAt(block3.Root())
+	stateDB3, err := chain.StateAt(block3.Root())
+	if err != nil {
+		t.Fatalf("Failed to get state at block 3: %v", err)
+	}
 
 	configs, err := reader.ReadAllConfigs(stateDB3)
 	if err != nil {
@@ -247,8 +256,14 @@ func TestDynamicMinBaseFee_Integration_ContractUpdate(t *testing.T) {
 	if block4 == nil {
 		t.Fatal("Block 4 not found")
 	}
-	stateDB4, _ := chain.StateAt(block4.Root())
-	minBaseFee4, _ := reader.ReadMinBaseFee(stateDB4, big.NewInt(4))
+	stateDB4, err := chain.StateAt(block4.Root())
+	if err != nil {
+		t.Fatalf("Failed to get state at block 4: %v", err)
+	}
+	minBaseFee4, err := reader.ReadMinBaseFee(stateDB4, big.NewInt(4))
+	if err != nil {
+		t.Fatalf("Failed to read min base fee at block 4: %v", err)
+	}
 
 	if minBaseFee4.Cmp(updatedMinBaseFee) != 0 {
 		t.Errorf("Block 4: expected updated min base fee %s, got %s", updatedMinBaseFee, minBaseFee4)
@@ -344,7 +359,10 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 			t.Fatalf("Block %d not found", tt.blockNum)
 		}
 
-		stateDB, _ := chain.StateAt(block.Root())
+		stateDB, err := chain.StateAt(block.Root())
+		if err != nil {
+			t.Fatalf("Failed to get state at block %d: %v", tt.blockNum, err)
+		}
 
 		var minBaseFeeSource string
 		var expectedMinBaseFee *big.Int
