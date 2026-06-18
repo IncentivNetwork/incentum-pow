@@ -109,17 +109,17 @@ func (r *Reader) readConfigAt(stateDB *state.StateDB, index uint64) (*MinBaseFee
 	config := &MinBaseFeeConfig{}
 
 	// Read minBaseFee field
-	minBaseFeeSlot := new(big.Int).Add(arrayStartSlot.Big(), big.NewInt(int64(elementOffset+MinBaseFeeField)))
+	minBaseFeeSlot := new(big.Int).Add(arrayStartSlot.Big(), new(big.Int).SetUint64(elementOffset+MinBaseFeeField))
 	minBaseFeeHash := common.BigToHash(minBaseFeeSlot)
 	config.MinBaseFee = stateDB.GetState(r.contractAddress, minBaseFeeHash).Big()
 
 	// Read activationBlock field
-	activationBlockSlot := new(big.Int).Add(arrayStartSlot.Big(), big.NewInt(int64(elementOffset+ActivationBlockField)))
+	activationBlockSlot := new(big.Int).Add(arrayStartSlot.Big(), new(big.Int).SetUint64(elementOffset+ActivationBlockField))
 	activationBlockHash := common.BigToHash(activationBlockSlot)
 	config.ActivationBlock = stateDB.GetState(r.contractAddress, activationBlockHash).Big()
 
 	// Read timestamp field
-	timestampSlot := new(big.Int).Add(arrayStartSlot.Big(), big.NewInt(int64(elementOffset+TimestampField)))
+	timestampSlot := new(big.Int).Add(arrayStartSlot.Big(), new(big.Int).SetUint64(elementOffset+TimestampField))
 	timestampHash := common.BigToHash(timestampSlot)
 	config.Timestamp = stateDB.GetState(r.contractAddress, timestampHash).Big()
 
