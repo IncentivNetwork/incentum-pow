@@ -64,13 +64,14 @@ func weiToGweiClamped(wei *big.Int) int64 {
 //
 // When the dynamic min base fee fork is active for parent.Time and stateDB is
 // nil (the standard header-only verification entry from consensus engines,
-// from header-first / snap-sync, and from light-client paths), the floor
-// portion of the basefee check is deliberately skipped: contract floor reads
-// require the parent's post-state, which header-only callers do not hold.
-// The block's BaseFee will be recomputed against the same parent post-state
-// in core.StateProcessor.Process before any transaction runs and a mismatched
-// BaseFee is rejected there. Header validation still confirms gas limit and
-// that BaseFee is present, so malformed blocks are rejected up front.
+// from header-first / snap-sync, and from light-client paths), the exact
+// equality basefee check is deferred to the block-execution path because the
+// contract floor read requires parent state. In that case the header is still
+// rejected if `header.BaseFee < calcRawBaseFee(parent)` - the floor can only
+// raise the result, never lower it, so the raw EIP-1559 value is a strict
+// lower bound that holds without state. core.StateProcessor.Process later
+// reruns the full check against the parent post-state and rejects mismatched
+// BaseFee there.
 func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Header, stateDB *state.StateDB) error {
 	// Verify that the gas limit remains within allowed bounds
 	parentGasLimit := parent.GasLimit
@@ -84,9 +85,16 @@ func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Heade
 	if header.BaseFee == nil {
 		return fmt.Errorf("header is missing baseFee")
 	}
-	// Defer the floor portion of the basefee check to the block-execution path
-	// when the dynamic fork is active but no state is available here.
+	// Defer the exact-equality basefee check to the block-execution path when
+	// the dynamic fork is active but no state is available here. Still enforce
+	// the state-free lower bound so a peer cannot ship a header with an
+	// arbitrarily low BaseFee and have header-only validation accept it.
 	if config.IsDynamicMinBaseFee(parent.Time) && stateDB == nil {
+		rawBaseFee := calcRawBaseFee(config, parent)
+		if header.BaseFee.Cmp(rawBaseFee) < 0 {
+			return fmt.Errorf("invalid baseFee: have %s, below raw EIP-1559 value %s (floor check deferred)",
+				header.BaseFee, rawBaseFee)
+		}
 		return nil
 	}
 	// Verify the baseFee is correct based on the parent header.
@@ -114,34 +122,14 @@ func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Heade
 // below, at, or above target), so a governance-driven floor increase takes
 // effect on the next block regardless of which branch fires.
 func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *state.StateDB) (*big.Int, error) {
-	// If the current block is the first EIP-1559 block, return the InitialBaseFee.
-	if !config.IsLondon(parent.Number) {
-		return new(big.Int).SetUint64(params.InitialBaseFee), nil
-	}
-
-	parentGasTarget := parent.GasLimit / config.ElasticityMultiplier()
-
 	// Compute the raw EIP-1559 base fee from the parent header alone.
-	var baseFee *big.Int
-	switch {
-	case parent.GasUsed == parentGasTarget:
-		baseFee = new(big.Int).Set(parent.BaseFee)
-	case parent.GasUsed > parentGasTarget:
-		// max(1, parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator)
-		num := new(big.Int).SetUint64(parent.GasUsed - parentGasTarget)
-		denom := new(big.Int)
-		num.Mul(num, parent.BaseFee)
-		num.Div(num, denom.SetUint64(parentGasTarget))
-		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
-		baseFeeDelta := math.BigMax(num, common.Big1)
-		baseFee = new(big.Int).Add(parent.BaseFee, baseFeeDelta)
-	default:
-		num := new(big.Int).SetUint64(parentGasTarget - parent.GasUsed)
-		denom := new(big.Int)
-		num.Mul(num, parent.BaseFee)
-		num.Div(num, denom.SetUint64(parentGasTarget))
-		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
-		baseFee = new(big.Int).Sub(parent.BaseFee, num)
+	baseFee := calcRawBaseFee(config, parent)
+
+	// On the first EIP-1559 block the raw value is the initial base fee and
+	// no floor is applied (matches the pre-fork behaviour CalcBaseFee had
+	// before the dynamic floor was introduced).
+	if !config.IsLondon(parent.Number) {
+		return baseFee, nil
 	}
 
 	// Resolve the active floor. Returns common.Big0 when no floor applies.
@@ -153,6 +141,40 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *stat
 	result := math.BigMax(baseFee, floor)
 	baseFeeAfterFloorGwei.Update(weiToGweiClamped(result))
 	return result, nil
+}
+
+// calcRawBaseFee returns the EIP-1559 base fee computed from the parent header
+// alone, before any min base fee floor is applied. This is exposed so that
+// callers without parent state (header-only verification under the dynamic min
+// base fee fork) can still enforce the lower-bound invariant that the floor
+// only raises the result, never lowers it.
+func calcRawBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
+	if !config.IsLondon(parent.Number) {
+		return new(big.Int).SetUint64(params.InitialBaseFee)
+	}
+
+	parentGasTarget := parent.GasLimit / config.ElasticityMultiplier()
+
+	switch {
+	case parent.GasUsed == parentGasTarget:
+		return new(big.Int).Set(parent.BaseFee)
+	case parent.GasUsed > parentGasTarget:
+		// max(1, parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator)
+		num := new(big.Int).SetUint64(parent.GasUsed - parentGasTarget)
+		denom := new(big.Int)
+		num.Mul(num, parent.BaseFee)
+		num.Div(num, denom.SetUint64(parentGasTarget))
+		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
+		baseFeeDelta := math.BigMax(num, common.Big1)
+		return new(big.Int).Add(parent.BaseFee, baseFeeDelta)
+	default:
+		num := new(big.Int).SetUint64(parentGasTarget - parent.GasUsed)
+		denom := new(big.Int)
+		num.Mul(num, parent.BaseFee)
+		num.Div(num, denom.SetUint64(parentGasTarget))
+		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
+		return new(big.Int).Sub(parent.BaseFee, num)
+	}
 }
 
 // computeMinBaseFeeFloor returns the minimum base fee in effect for the block
