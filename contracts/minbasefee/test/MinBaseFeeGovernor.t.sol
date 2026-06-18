@@ -539,4 +539,84 @@ contract MinBaseFeeGovernorTest is Test {
         vm.prank(newGovernance);
         governor.proposeMinBaseFee(15000 gwei, block.number + 20000);
     }
+
+    // ========== Constructor Bounds Tests ==========
+
+    function test_ConstructorRevertsBelowMinBound() public {
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "MinBaseFeeOutOfBounds(uint256,uint256,uint256)",
+                uint256(1), // 1 wei (below MIN_MIN_BASE_FEE = 1 gwei)
+                uint256(1 gwei),
+                uint256(100 ether)
+            )
+        );
+        new MinBaseFeeGovernor(governance, 1, activationBlock, 2 days, 13000);
+    }
+
+    function test_ConstructorRevertsAboveMaxBound() public {
+        uint256 tooLarge = 101 ether;
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "MinBaseFeeOutOfBounds(uint256,uint256,uint256)",
+                tooLarge,
+                uint256(1 gwei),
+                uint256(100 ether)
+            )
+        );
+        new MinBaseFeeGovernor(governance, tooLarge, activationBlock, 2 days, 13000);
+    }
+
+    function test_ConstructorAcceptsMinBound() public {
+        MinBaseFeeGovernor g = new MinBaseFeeGovernor(governance, 1 gwei, activationBlock, 2 days, 13000);
+        assertEq(g.getCurrentMinBaseFee(), 1 gwei);
+    }
+
+    function test_ConstructorAcceptsMaxBound() public {
+        MinBaseFeeGovernor g = new MinBaseFeeGovernor(governance, 100 ether, activationBlock, 2 days, 13000);
+        assertEq(g.getCurrentMinBaseFee(), 100 ether);
+    }
+
+    // ========== Sortedness Re-Check Tests (executeProposal) ==========
+
+    // Two proposals A and B with activationBlock A < B are both accepted at
+    // propose time. Executing B before A leaves configHistory sorted; executing
+    // A after B would push (smaller) onto a tail that is already larger, which
+    // the re-check in executeProposal must reject so the Go reader binary
+    // search invariant is preserved.
+    function test_ExecuteProposalRejectsOutOfOrderActivation() public {
+        vm.startPrank(governance);
+
+        bytes32 idA = governor.proposeMinBaseFee(15000 gwei, block.number + 20000);
+        bytes32 idB = governor.proposeMinBaseFee(15500 gwei, block.number + 30000);
+
+        // Wait timelock so both can execute.
+        vm.warp(block.timestamp + 2 days + 1);
+
+        // Execute the LATER-activation proposal first; this pushes B onto history.
+        governor.executeProposal(idB);
+
+        // Now executing A (earlier activation) must revert with sortedness error.
+        vm.expectRevert(
+            abi.encodeWithSignature(
+                "ActivationBlockNotSequential(uint256,uint256)",
+                idAActivation(idA),
+                idBActivation(idB)
+            )
+        );
+        governor.executeProposal(idA);
+
+        vm.stopPrank();
+    }
+
+    // helpers to recover the activationBlock values used in the proposal map
+    function idAActivation(bytes32 id) internal view returns (uint256) {
+        (, uint256 activation,,) = governor.proposals(id);
+        return activation;
+    }
+
+    function idBActivation(bytes32 id) internal view returns (uint256) {
+        (, uint256 activation,,) = governor.proposals(id);
+        return activation;
+    }
 }
