@@ -10,7 +10,10 @@ pragma solidity ^0.8.0;
  * using the standard EIP-1559 formula, but cannot fall below the minimum value stored here.
  *
  * Changes to the minimum base fee are controlled by governance through a timelock mechanism.
- * New values must be proposed, wait for timelock delay (minimum 2 days), then executed.
+ * New values must be proposed, wait for the configured timelock delay, then executed. The
+ * minimum delay is fixed at deployment time via the `_minTimelockDelay` constructor argument
+ * (immutable thereafter); production deployments use 2 days while devnet may use a shorter
+ * value to make a full governance cycle exercisable within a test window.
  */
 contract MinBaseFeeGovernor {
 

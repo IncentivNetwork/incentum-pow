@@ -28,11 +28,11 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
 ### Key Parameters
 
-- `MIN_TIMELOCK_DELAY`: 2 days (172,800 seconds)
-- `MIN_ACTIVATION_DELAY_BLOCKS`: 13,000 blocks (~18 hours at 5s/block)
-- `MAX_MIN_BASE_FEE`: 100 ether
-- `MIN_MIN_BASE_FEE`: 1 gwei
-- `MAX_CHANGE_PERCENT`: 200 (allowing 3x increase or 1/3x decrease)
+- `MIN_TIMELOCK_DELAY` (deployment-time immutable): production `2 days` (172,800 seconds); devnet deployments may use a shorter value
+- `MIN_ACTIVATION_DELAY_BLOCKS` (deployment-time immutable): production `13,000` blocks (~18 hours at 5s/block); devnet deployments may use a shorter value
+- `MAX_MIN_BASE_FEE` (constant): 100 ether
+- `MIN_MIN_BASE_FEE` (constant): 1 gwei
+- `MAX_CHANGE_PERCENT` (constant): 200 (allowing 3x increase or 1/3x decrease)
 
 ## Deployment
 
