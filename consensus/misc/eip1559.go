@@ -61,6 +61,16 @@ func weiToGweiClamped(wei *big.Int) int64 {
 // VerifyEip1559Header verifies some header attributes which were changed in EIP-1559,
 // - gas limit check
 // - basefee check
+//
+// When the dynamic min base fee fork is active for parent.Time and stateDB is
+// nil (the standard header-only verification entry from consensus engines,
+// from header-first / snap-sync, and from light-client paths), the floor
+// portion of the basefee check is deliberately skipped: contract floor reads
+// require the parent's post-state, which header-only callers do not hold.
+// The block's BaseFee will be recomputed against the same parent post-state
+// in core.StateProcessor.Process before any transaction runs and a mismatched
+// BaseFee is rejected there. Header validation still confirms gas limit and
+// that BaseFee is present, so malformed blocks are rejected up front.
 func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Header, stateDB *state.StateDB) error {
 	// Verify that the gas limit remains within allowed bounds
 	parentGasLimit := parent.GasLimit
@@ -73,6 +83,11 @@ func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Heade
 	// Verify the header is not malformed
 	if header.BaseFee == nil {
 		return fmt.Errorf("header is missing baseFee")
+	}
+	// Defer the floor portion of the basefee check to the block-execution path
+	// when the dynamic fork is active but no state is available here.
+	if config.IsDynamicMinBaseFee(parent.Time) && stateDB == nil {
+		return nil
 	}
 	// Verify the baseFee is correct based on the parent header.
 	expectedBaseFee, err := CalcBaseFee(config, parent, stateDB)

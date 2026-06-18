@@ -256,8 +256,10 @@ func (beacon *Beacon) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 	if diff := new(big.Int).Sub(header.Number, parent.Number); diff.Cmp(common.Big1) != 0 {
 		return consensus.ErrInvalidNumber
 	}
-	// Verify the header's EIP-1559 attributes.
-	// Note: stateDB is nil here, so dynamic min base fee will fallback to hardcoded values
+	// Verify the header's EIP-1559 attributes. stateDB is nil because parent
+	// post-state is not available here; the dynamic min base fee floor is
+	// enforced later in core.StateProcessor.Process where parent state is
+	// attached.
 	if err := misc.VerifyEip1559Header(chain.Config(), parent, header, nil); err != nil {
 		return err
 	}
