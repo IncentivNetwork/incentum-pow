@@ -552,3 +552,102 @@ func TestMinBaseFeeContractAddrJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckMinBaseFeeConfig(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
+	zero := common.Address{}
+	cases := []struct {
+		name    string
+		cfg     *ChainConfig
+		wantErr bool
+	}{
+		{
+			name:    "fork unset accepts nil address",
+			cfg:     &ChainConfig{},
+			wantErr: false,
+		},
+		{
+			name:    "fork unset accepts set address",
+			cfg:     &ChainConfig{MinBaseFeeContractAddr: &addr},
+			wantErr: false,
+		},
+		{
+			name:    "fork set rejects nil address",
+			cfg:     &ChainConfig{DynamicMinBaseFeeTime: newUint64(100)},
+			wantErr: true,
+		},
+		{
+			name:    "fork set rejects zero address",
+			cfg:     &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &zero},
+			wantErr: true,
+		},
+		{
+			name:    "fork set accepts non-zero address",
+			cfg:     &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &addr},
+			wantErr: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.CheckMinBaseFeeConfig()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("got err=%v want=%v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckCompatibleDynamicMinBaseFee(t *testing.T) {
+	addr1 := common.HexToAddress("0x0000000000000000000000000000000000001111")
+	addr2 := common.HexToAddress("0x0000000000000000000000000000000000002222")
+	cases := []struct {
+		name     string
+		stored   *ChainConfig
+		newcfg   *ChainConfig
+		headTime uint64
+		want     string // "" means no error; substring of error otherwise
+	}{
+		{
+			name:     "same nil compat",
+			stored:   &ChainConfig{},
+			newcfg:   &ChainConfig{},
+			headTime: 100,
+			want:     "",
+		},
+		{
+			name:     "introducing future fork before activation is compatible",
+			stored:   &ChainConfig{},
+			newcfg:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(200), MinBaseFeeContractAddr: &addr1},
+			headTime: 150,
+			want:     "",
+		},
+		{
+			name:     "reschedule past activation is incompatible",
+			stored:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &addr1},
+			newcfg:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(200), MinBaseFeeContractAddr: &addr1},
+			headTime: 150,
+			want:     "DynamicMinBaseFee fork timestamp",
+		},
+		{
+			name:     "contract address rewrite after activation is incompatible",
+			stored:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &addr1},
+			newcfg:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &addr2},
+			headTime: 150,
+			want:     "DynamicMinBaseFee contract address",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.stored.CheckCompatible(tc.newcfg, 0, tc.headTime)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got=%v want substring=%q", err, tc.want)
+			}
+		})
+	}
+}

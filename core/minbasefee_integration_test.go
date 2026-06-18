@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/minbasefee"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -464,5 +465,112 @@ func TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState(t *testing.T) {
 	// this is what gates the consensus path against silent fallback.
 	if _, err := misc.CalcBaseFee(config, parent, nil); err == nil {
 		t.Fatalf("expected CalcBaseFee with nil state to error post-activation; got nil")
+	}
+}
+
+// TestDynamicMinBaseFee_E2E_ActivationBoundary pins the one-block activation
+// delay that emerges from the parent.Time predicate inside CalcBaseFee. The
+// first block whose own header.Time crosses DynamicMinBaseFeeTime is still
+// produced under the legacy floor (its parent.Time was below activation); the
+// next block's parent.Time is at-or-above activation, and only that block's
+// CalcBaseFee consults the contract.
+//
+// This boundary is intentional: keeping the activation predicate on parent.Time
+// avoids needing the new block's intended timestamp at floor-resolution time,
+// and the outer state_processor guard activates by header.Time which on the
+// boundary block still reaches the same legacy result, so miner and verifier
+// agree. The test fails immediately if anyone changes one predicate without
+// the other.
+func TestDynamicMinBaseFee_E2E_ActivationBoundary(t *testing.T) {
+	contractAddr := common.HexToAddress("0x0000000000000000000000000000000000000101")
+	governanceAddr := common.HexToAddress("0x0000000000000000000000000000000000000201")
+	floorWei := new(big.Int).Mul(big.NewInt(1500), big.NewInt(params.GWei))
+
+	// Activation timestamp is strictly after genesis but reachable by the next
+	// block (genesis.Time=10, activation=15). The genesis block sits below
+	// activation; the first child block's parent.Time (=10) is still below
+	// activation so legacy floor applies; the grandchild's parent.Time would be
+	// above 15. We test the direct call here for both windows.
+	config := &params.ChainConfig{
+		ChainID:                big.NewInt(1338),
+		HomesteadBlock:         big.NewInt(0),
+		EIP150Block:            big.NewInt(0),
+		EIP155Block:            big.NewInt(0),
+		EIP158Block:            big.NewInt(0),
+		ByzantiumBlock:         big.NewInt(0),
+		ConstantinopleBlock:    big.NewInt(0),
+		PetersburgBlock:        big.NewInt(0),
+		IstanbulBlock:          big.NewInt(0),
+		MuirGlacierBlock:       big.NewInt(0),
+		BerlinBlock:            big.NewInt(0),
+		LondonBlock:            big.NewInt(0),
+		DynamicMinBaseFeeTime:  u64(15),
+		MinBaseFeeContractAddr: &contractAddr,
+		Ethash:                 new(params.EthashConfig),
+	}
+
+	alloc := GenesisAlloc{
+		contractAddr: GenesisAccount{
+			Balance: common.Big0,
+			Storage: make(map[common.Hash]common.Hash),
+		},
+		governanceAddr: GenesisAccount{Balance: big.NewInt(1)},
+	}
+	arraySlot := crypto.Keccak256Hash(common.BigToHash(big.NewInt(1)).Bytes())
+	alloc[contractAddr].Storage[common.BigToHash(big.NewInt(0))] = common.BytesToHash(governanceAddr.Bytes())
+	alloc[contractAddr].Storage[common.BigToHash(big.NewInt(1))] = common.BigToHash(big.NewInt(1))
+	alloc[contractAddr].Storage[arraySlot] = common.BigToHash(floorWei)
+	alloc[contractAddr].Storage[common.BigToHash(new(big.Int).Add(arraySlot.Big(), big.NewInt(1)))] = common.BigToHash(big.NewInt(0))
+	alloc[contractAddr].Storage[common.BigToHash(new(big.Int).Add(arraySlot.Big(), big.NewInt(2)))] = common.BigToHash(big.NewInt(1))
+
+	genesis := &Genesis{
+		Config:     config,
+		Alloc:      alloc,
+		ExtraData:  []byte("dmbf boundary"),
+		Timestamp:  10,
+		BaseFee:    big.NewInt(100 * params.GWei),
+		Difficulty: big.NewInt(0),
+		GasLimit:   30000000,
+	}
+
+	engine := ethash.NewFaker()
+	db := rawdb.NewMemoryDatabase()
+	chain, err := NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create blockchain: %v", err)
+	}
+	defer chain.Stop()
+
+	parentState, err := chain.StateAt(chain.CurrentHeader().Root)
+	if err != nil {
+		t.Fatalf("Failed to get state: %v", err)
+	}
+
+	// Parent at genesis: Time=10 < activation=15. The first child block falls
+	// into the legacy-floor window; CalcBaseFee must not consult the contract
+	// here and must accept a nil stateDB without erroring.
+	parentAtGenesis := chain.CurrentHeader()
+	if _, err := misc.CalcBaseFee(config, parentAtGenesis, nil); err != nil {
+		t.Fatalf("CalcBaseFee at activation boundary (parent.Time<activation) must not require state: %v", err)
+	}
+
+	// Synthetic parent with Time=20 (>= activation). CalcBaseFee must consult
+	// the contract and must error on nil state, and must succeed with state.
+	postParent := &types.Header{
+		Number:   new(big.Int).Add(parentAtGenesis.Number, big.NewInt(1)),
+		Time:     20,
+		GasLimit: parentAtGenesis.GasLimit,
+		GasUsed:  parentAtGenesis.GasLimit / 4,
+		BaseFee:  big.NewInt(100 * params.GWei),
+	}
+	if _, err := misc.CalcBaseFee(config, postParent, nil); err == nil {
+		t.Fatalf("CalcBaseFee past activation boundary (parent.Time>=activation) must error on nil state")
+	}
+	got, err := misc.CalcBaseFee(config, postParent, parentState)
+	if err != nil {
+		t.Fatalf("CalcBaseFee past activation boundary failed with state: %v", err)
+	}
+	if got.Cmp(floorWei) < 0 {
+		t.Fatalf("past-boundary baseFee=%s should respect floor=%s", got, floorWei)
 	}
 }
