@@ -78,6 +78,14 @@ func TestDynamicMinBaseFee_Disabled(t *testing.T) {
 	// the legacy floor. Exact-value coverage of the dynamic-fork branch lives
 	// in TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState; this test just
 	// validates that pre-fork block production continues to work end-to-end.
+	expected5 := new(big.Int).SetUint64(params.MinimumBaseFee)
+	if block5.BaseFee() == nil || block5.BaseFee().Cmp(expected5) != 0 {
+		t.Fatalf("block 5 baseFee = %v, want legacy floor %v", block5.BaseFee(), expected5)
+	}
+	expected15 := new(big.Int).SetUint64(params.MinBaseFeeUpdated)
+	if block15.BaseFee() == nil || block15.BaseFee().Cmp(expected15) != 0 {
+		t.Fatalf("block 15 baseFee = %v, want legacy updated floor %v", block15.BaseFee(), expected15)
+	}
 }
 
 // TestMinBaseFee_Calculation tests the calculation logic remains correct
