@@ -125,11 +125,17 @@ func TestMinBaseFeeGovernorTimelock(t *testing.T) {
 	}
 
 	var proposalID [32]byte
-	for _, log := range receipt.Logs {
-		if len(log.Topics) > 0 {
-			proposalID = log.Topics[1]
+	foundProposal := false
+	for _, lg := range receipt.Logs {
+		event, parseErr := contract.ParseMinBaseFeeProposed(*lg)
+		if parseErr == nil {
+			proposalID = event.ProposalId
+			foundProposal = true
 			break
 		}
+	}
+	if !foundProposal {
+		t.Fatal("MinBaseFeeProposed event not found in receipt")
 	}
 
 	proposal, err := contract.GetProposal(nil, proposalID)
@@ -291,11 +297,17 @@ func TestMinBaseFeeGovernorCancelProposal(t *testing.T) {
 	}
 
 	var proposalID [32]byte
-	for _, log := range receipt.Logs {
-		if len(log.Topics) > 0 {
-			proposalID = log.Topics[1]
+	foundProposal := false
+	for _, lg := range receipt.Logs {
+		event, parseErr := contract.ParseMinBaseFeeProposed(*lg)
+		if parseErr == nil {
+			proposalID = event.ProposalId
+			foundProposal = true
 			break
 		}
+	}
+	if !foundProposal {
+		t.Fatal("MinBaseFeeProposed event not found in receipt")
 	}
 
 	tx, err = contract.CancelProposal(auth, proposalID)
