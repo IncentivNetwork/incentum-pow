@@ -65,6 +65,9 @@ func (r *Reader) ReadMinBaseFee(stateDB *state.StateDB, blockNumber *big.Int) (*
 	if stateDB == nil {
 		return nil, fmt.Errorf("stateDB is nil")
 	}
+	if blockNumber == nil {
+		return nil, fmt.Errorf("blockNumber is nil")
+	}
 
 	// Read the length of configHistory array
 	length, err := r.readConfigHistoryLength(stateDB)
