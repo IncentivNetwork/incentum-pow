@@ -386,6 +386,14 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 			minBaseFeeSource = "none"
 		}
 
+		if expectedMinBaseFee == nil {
+			t.Fatalf("expectedMinBaseFee not resolved for block %d (source=%s)", tt.blockNum, minBaseFeeSource)
+		}
+		if block.BaseFee() == nil || block.BaseFee().Cmp(expectedMinBaseFee) < 0 {
+			t.Fatalf("block %d baseFee=%v below expected min %v (source=%s)",
+				tt.blockNum, block.BaseFee(), expectedMinBaseFee, minBaseFeeSource)
+		}
+
 		t.Logf("Block %d: %s | base fee: %s | min source: %s | min value: %s gwei",
 			tt.blockNum,
 			tt.desc,
