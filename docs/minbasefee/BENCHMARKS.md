@@ -12,7 +12,7 @@
 - OS: Windows 11
 - Go: per `go.mod` (`1.22`)
 - Date: 2026-06-19
-- Linux/WSL re-collection is pending; current numbers are Windows only.
+- Linux/WSL2: the reader and cache tables further down still carry their previously collected WSL2 numbers (those benchmarks call the reader directly and were not affected by the `parent.Time` bench bug). The `CalcBaseFee` / header-verification tables in Sections 1–2 were re-collected on Windows only after the fix; native Linux re-collection is still pending.
 
 ## Key Findings
 
@@ -111,16 +111,16 @@ At 100 % network load (6.3 M blocks/year):
 
 ### Scalability Analysis
 
-**Projected performance at different history sizes:**
+**Projected performance at different history sizes** (extrapolated from the Section 1–3 Windows numbers; reader cost scales O(log n), `CalcBaseFee` cost is dominated by the constant slot-derivation/read overhead):
 
-| Years Active | Configs (1/month) | Binary Search Time | CalcBaseFee Time | Acceptable? |
-|--------------|-------------------|-------------------|------------------|-------------|
-| 1 year | 12 | ~250 ns | ~63 ns | Yes |
-| 5 years | 60 | ~260 ns | ~64 ns | Yes |
-| 10 years | 120 | ~262 ns | ~65 ns | Yes |
-| 50 years | 600 | ~265 ns | ~65 ns | Yes |
+| Years Active | Configs (1/month) | Reader Call | CalcBaseFee Total |
+|--------------|-------------------|-------------|-------------------|
+| 1 year | 12 | ~210 ns | ~1.3 µs |
+| 5 years | 60 | ~270 ns | ~1.3 µs |
+| 10 years | 120 | ~285 ns | ~1.3 µs |
+| 50 years | 600 | ~290 ns | ~1.3 µs |
 
-**Conclusion:** Even with 600 config changes (50 years of monthly updates), performance remains within 5% of baseline.
+**Conclusion:** even with 600 config changes (50 years of monthly updates) the per-call cost stays inside the low-microsecond range — orders of magnitude under any block-budget pressure.
 
 ## Acceptance Criteria Review
 

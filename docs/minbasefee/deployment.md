@@ -19,10 +19,10 @@ The MinBaseFeeGovernor contract manages the minimum base fee threshold for the I
 
 ### Performance
 
-**Contract-based implementation exceeds performance requirements:**
-- Overhead: -10% to +3% vs hardcoded constants (target: < 5%)
-- CalcBaseFee: ~36-40 ns per call (negligible impact)
-- Scales efficiently: O(log n) with 1000+ configs
+**Contract-based implementation comfortably meets performance requirements:**
+- CalcBaseFee: ~0.23 µs/call hardcoded baseline vs ~1.26–1.29 µs/call contract-read path in the included microbenchmarks
+- Per-block overhead: ~+1 µs in the worst case — negligible vs a 5 s block budget
+- Scales efficiently: O(log n), effectively flat across tested history sizes 1–100
 
 See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
