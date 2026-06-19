@@ -51,42 +51,50 @@ func TestDynamicMinBaseFee_Disabled(t *testing.T) {
 	}
 	defer chain.Stop()
 
-	// Generate blocks and verify base fee uses hardcoded values
-	blocks, _ := GenerateChain(config, chain.Genesis(), engine, db, 20, nil)
+	// Generate enough empty blocks that the raw EIP-1559 base fee decays
+	// strictly below the post-change legacy floor. Math (empty blocks, GasLimit
+	// 30M, target 15M, denominator 8, genesis BaseFee 1 gwei):
+	//   * blocks 1..9 sit pinned at MinimumBaseFee = 40000 gwei (raw wants 0,
+	//     floor clamps), so block 5 == 40000 gwei exactly.
+	//   * block 10 lowers the floor to MinBaseFeeUpdated = 12600 gwei; raw at
+	//     block 10 = 40000 * 7/8 = 35000 gwei, max(raw, 12600) = 35000.
+	//   * raw then decays by 7/8 each empty block: block 18 raw ≈ 12026 gwei,
+	//     first time below the new floor. From block 18 onward the floor pins
+	//     the result at 12600 gwei.
+	// 25 blocks gives a comfortable margin past the pinning boundary.
+	blocks, _ := GenerateChain(config, chain.Genesis(), engine, db, 25, nil)
 
 	// Verify blocks are valid
 	if _, err := chain.InsertChain(blocks); err != nil {
 		t.Fatalf("failed to insert blocks: %v", err)
 	}
 
-	// Block 5 should use MinimumBaseFee (before MinBaseFeeChangeHeight)
+	// Block 5 must equal the pre-change MinimumBaseFee floor exactly.
 	block5 := chain.GetBlockByNumber(5)
 	if block5 == nil {
 		t.Fatal("block 5 not found")
 	}
 
-	// Block 15 should use MinBaseFeeUpdated (after MinBaseFeeChangeHeight)
-	block15 := chain.GetBlockByNumber(15)
-	if block15 == nil {
-		t.Fatal("block 15 not found")
+	// Block 25 must equal the post-change MinBaseFeeUpdated floor exactly. By
+	// block 25 the raw EIP-1559 value has decayed well below the floor, so
+	// equality here proves that max(rawBaseFee, floor) actually pins to the
+	// floor. A weaker BaseFee >= floor invariant would always hold and prove
+	// nothing about the floor-application code path.
+	block25 := chain.GetBlockByNumber(25)
+	if block25 == nil {
+		t.Fatal("block 25 not found")
 	}
 
 	t.Logf("Block 5 base fee: %s", block5.BaseFee())
-	t.Logf("Block 15 base fee: %s", block15.BaseFee())
+	t.Logf("Block 25 base fee: %s", block25.BaseFee())
 
-	// Empty blocks have gasUsed < gasTarget, so the raw EIP-1559 update
-	// would trend the base fee downward each block. It stays pinned at the
-	// legacy minimum because the floor clamps the decreased value via
-	// max(rawBaseFee, floor). Exact-value coverage of the dynamic-fork branch
-	// lives in TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState; this test just
-	// validates that pre-fork block production continues to work end-to-end.
 	expected5 := new(big.Int).SetUint64(params.MinimumBaseFee)
 	if block5.BaseFee() == nil || block5.BaseFee().Cmp(expected5) != 0 {
 		t.Fatalf("block 5 baseFee = %v, want legacy floor %v", block5.BaseFee(), expected5)
 	}
-	expected15 := new(big.Int).SetUint64(params.MinBaseFeeUpdated)
-	if block15.BaseFee() == nil || block15.BaseFee().Cmp(expected15) != 0 {
-		t.Fatalf("block 15 baseFee = %v, want legacy updated floor %v", block15.BaseFee(), expected15)
+	expected25 := new(big.Int).SetUint64(params.MinBaseFeeUpdated)
+	if block25.BaseFee() == nil || block25.BaseFee().Cmp(expected25) != 0 {
+		t.Fatalf("block 25 baseFee = %v, want legacy updated floor %v", block25.BaseFee(), expected25)
 	}
 }
 
