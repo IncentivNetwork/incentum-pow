@@ -74,9 +74,11 @@ func TestDynamicMinBaseFee_Disabled(t *testing.T) {
 	t.Logf("Block 5 base fee: %s", block5.BaseFee())
 	t.Logf("Block 15 base fee: %s", block15.BaseFee())
 
-	// Since all blocks use target gas (no transactions), base fee should equal
-	// the legacy floor. Exact-value coverage of the dynamic-fork branch lives
-	// in TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState; this test just
+	// Empty blocks have gasUsed < gasTarget, so the raw EIP-1559 update
+	// would trend the base fee downward each block. It stays pinned at the
+	// legacy minimum because the floor clamps the decreased value via
+	// max(rawBaseFee, floor). Exact-value coverage of the dynamic-fork branch
+	// lives in TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState; this test just
 	// validates that pre-fork block production continues to work end-to-end.
 	expected5 := new(big.Int).SetUint64(params.MinimumBaseFee)
 	if block5.BaseFee() == nil || block5.BaseFee().Cmp(expected5) != 0 {
