@@ -1159,7 +1159,10 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	// from once DynamicMinBaseFeeTime has fired; once the fork is active, changing
 	// it would silently re-route the floor read to a different contract.
 	if c.IsDynamicMinBaseFee(headTimestamp) && c.GetMinBaseFeeContractAddr() != newcfg.GetMinBaseFeeContractAddr() {
-		return newTimestampCompatError("DynamicMinBaseFee contract address", c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
+		return newTimestampCompatError(
+			fmt.Sprintf("DynamicMinBaseFee contract address (have %s, want %s)",
+				c.GetMinBaseFeeContractAddr(), newcfg.GetMinBaseFeeContractAddr()),
+			c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
 	}
 	if isForkTimestampIncompatible(c.CancunTime, newcfg.CancunTime, headTimestamp) {
 		return newTimestampCompatError("Cancun fork timestamp", c.CancunTime, newcfg.CancunTime)
