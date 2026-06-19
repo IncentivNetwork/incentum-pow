@@ -186,7 +186,16 @@ func (r *Reader) ReadAllConfigs(stateDB *state.StateDB) ([]MinBaseFeeConfig, err
 		return nil, err
 	}
 
-	configs := make([]MinBaseFeeConfig, length)
+	// readConfigHistoryLength only rejects values that don't fit in uint64;
+	// values between MaxInt and MaxUint64 would still slip through and crash
+	// `make` with "len out of range" on a 64-bit platform. Convert defensively
+	// so corrupted storage produces a controlled error instead of a panic.
+	const maxInt = int(^uint(0) >> 1)
+	if length > uint64(maxInt) {
+		return nil, fmt.Errorf("configHistory length %d exceeds max slice size", length)
+	}
+
+	configs := make([]MinBaseFeeConfig, int(length))
 	for i := uint64(0); i < length; i++ {
 		config, err := r.readConfigAt(stateDB, i)
 		if err != nil {
