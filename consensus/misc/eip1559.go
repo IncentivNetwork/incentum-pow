@@ -187,15 +187,21 @@ func computeMinBaseFeeFloor(config *params.ChainConfig, parent *types.Header, st
 	nextBlockNum := new(big.Int).Add(parent.Number, common.Big1)
 
 	if config.IsDynamicMinBaseFee(parent.Time) {
-		minBaseFeeActiveGauge.Update(1)
 		if stateDB == nil {
+			// Non-consensus callers (GraphQL nextBaseFee, fee history, gas price,
+			// pending helpers) routinely pass nil stateDB and accept the error.
+			// Intentionally leave the active gauge alone here so an RPC error
+			// path cannot mask a successful import or be mistaken for a
+			// contract-read outage by dashboards.
 			return nil, fmt.Errorf("dynamic min base fee fork active at parent time %d but stateDB is nil", parent.Time)
 		}
 		minimumBaseFee, err := readMinBaseFeeFromContract(config, stateDB, nextBlockNum)
 		if err != nil {
 			minBaseFeeReadErrorsMeter.Mark(1)
+			minBaseFeeActiveGauge.Update(0)
 			return nil, fmt.Errorf("failed to read min base fee from contract for block %s: %w", nextBlockNum, err)
 		}
+		minBaseFeeActiveGauge.Update(1)
 		minBaseFeeFromContractGwei.Update(weiToGweiClamped(minimumBaseFee))
 		minBaseFeeGwei.Update(weiToGweiClamped(minimumBaseFee))
 		return minimumBaseFee, nil

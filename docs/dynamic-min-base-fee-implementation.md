@@ -158,7 +158,7 @@ All exposed under `chain/minbasefee/*` and `chain/basefee/*` internally; the Pro
 
 | Metric | Type | Meaning |
 |---|---|---|
-| `chain/minbasefee/active` | gauge | 1 when the dynamic floor was applied to the most recent block, 0 otherwise. |
+| `chain/minbasefee/active` | gauge | 1 after a state-aware `CalcBaseFee` call successfully read and applied the dynamic floor; 0 after a state-aware contract read failed or when the dynamic fork is inactive. Non-consensus callers that invoke `CalcBaseFee(..., nil)` do not update this gauge. |
 | `chain/minbasefee/current_gwei` | gauge | Floor used on the most recent block. |
 | `chain/minbasefee/contract_gwei` | gauge | Raw value most recently read from the contract. |
 | `chain/minbasefee/readerrors` | meter | Contract-read failures since process start (only counted when stateDB is available and the read itself fails or returns an out-of-bounds value). Non-consensus callers that invoke `CalcBaseFee(..., nil)` are not counted here. Any non-zero value after activation is an alert condition. |
