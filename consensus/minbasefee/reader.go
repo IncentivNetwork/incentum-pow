@@ -181,6 +181,10 @@ func (r *Reader) findConfigForBlock(stateDB *state.StateDB, blockNumber *big.Int
 
 // ReadAllConfigs reads all configurations from the contract (useful for testing)
 func (r *Reader) ReadAllConfigs(stateDB *state.StateDB) ([]MinBaseFeeConfig, error) {
+	if stateDB == nil {
+		return nil, fmt.Errorf("stateDB is nil")
+	}
+
 	length, err := r.readConfigHistoryLength(stateDB)
 	if err != nil {
 		return nil, err
