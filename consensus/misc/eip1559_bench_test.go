@@ -40,6 +40,7 @@ func BenchmarkCalcBaseFee_Hardcoded(b *testing.B) {
 
 	parent := &types.Header{
 		Number:   big.NewInt(299),
+		Time:     200,
 		GasLimit: 10000000,
 		GasUsed:  5000000,
 		BaseFee:  big.NewInt(10000000000), // 10 gwei
@@ -72,6 +73,7 @@ func BenchmarkCalcBaseFee_ContractRead(b *testing.B) {
 
 	parent := &types.Header{
 		Number:   big.NewInt(299),
+		Time:     200,
 		GasLimit: 10000000,
 		GasUsed:  5000000,
 		BaseFee:  big.NewInt(10000000000), // 10 gwei
@@ -101,6 +103,7 @@ func BenchmarkCalcBaseFee_ContractRead_History10(b *testing.B) {
 
 	parent := &types.Header{
 		Number:   big.NewInt(299),
+		Time:     200,
 		GasLimit: 10000000,
 		GasUsed:  5000000,
 		BaseFee:  big.NewInt(10000000000),
@@ -130,6 +133,7 @@ func BenchmarkCalcBaseFee_ContractRead_History100(b *testing.B) {
 
 	parent := &types.Header{
 		Number:   big.NewInt(299),
+		Time:     200,
 		GasLimit: 10000000,
 		GasUsed:  5000000,
 		BaseFee:  big.NewInt(10000000000),
@@ -159,6 +163,7 @@ func BenchmarkVerifyEip1559Header_Full(b *testing.B) {
 
 	parent := &types.Header{
 		Number:   big.NewInt(299),
+		Time:     200,
 		GasLimit: 10000000,
 		GasUsed:  5000000,
 		BaseFee:  big.NewInt(12600000000000), // 12600 gwei
