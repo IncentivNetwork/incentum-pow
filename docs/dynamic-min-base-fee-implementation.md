@@ -159,8 +159,8 @@ All exposed under `chain/minbasefee/*` and `chain/basefee/*` internally; the Pro
 | Metric | Type | Meaning |
 |---|---|---|
 | `chain/minbasefee/active` | gauge | 1 after a state-aware `CalcBaseFee` call successfully read and applied the dynamic floor; 0 after a state-aware contract read failed or when the dynamic fork is inactive. Non-consensus callers that invoke `CalcBaseFee(..., nil)` do not update this gauge. |
-| `chain/minbasefee/current_gwei` | gauge | Floor used on the most recent block. |
-| `chain/minbasefee/contract_gwei` | gauge | Raw value most recently read from the contract. |
+| `chain/minbasefee/current_gwei` | gauge | Floor from the most recent state-aware `CalcBaseFee` call (block-path). Non-consensus callers that invoke `CalcBaseFee(..., nil)` do not update this gauge. |
+| `chain/minbasefee/contract_gwei` | gauge | Raw contract floor most recently read by a state-aware dynamic-floor call. Non-consensus callers that invoke `CalcBaseFee(..., nil)` do not update this gauge. |
 | `chain/minbasefee/readerrors` | meter | Contract-read failures since process start (only counted when stateDB is available and the read itself fails or returns an out-of-bounds value). Non-consensus callers that invoke `CalcBaseFee(..., nil)` are not counted here. Any non-zero value after activation is an alert condition. |
 | `chain/basefee/beforefloor_gwei` | gauge | `rawBaseFee` (EIP-1559 result, before flooring) from state-aware `CalcBaseFee` calls. Non-consensus callers that invoke `CalcBaseFee(..., nil)` do not update this gauge. |
 | `chain/basefee/afterfloor_gwei` | gauge | `max(rawBaseFee, floor)` (header.BaseFee) from state-aware `CalcBaseFee` calls. Non-consensus callers that invoke `CalcBaseFee(..., nil)` do not update this gauge. |

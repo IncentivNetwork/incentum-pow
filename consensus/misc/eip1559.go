@@ -213,10 +213,16 @@ func computeMinBaseFeeFloor(config *params.ChainConfig, parent *types.Header, st
 		minBaseFeeGwei.Update(weiToGweiClamped(minimumBaseFee))
 		return minimumBaseFee, nil
 	}
-	minBaseFeeActiveGauge.Update(0)
-	// Dynamic path didn't run; reset the contract-derived gauge so dashboards
-	// don't show a stale value from an earlier active branch.
-	minBaseFeeFromContractGwei.Update(0)
+	// Block-path metrics only: skip nil-stateDB prediction/header-only callers
+	// (GraphQL nextBaseFee, eth_feeHistory, etc.) so a historical pre-activation
+	// prediction call cannot reset gauges that should reflect the most recent
+	// state-aware CalcBaseFee result. Same policy as readerrors / active in
+	// the dynamic-active branch above and the beforefloor/afterfloor gauges in
+	// CalcBaseFee.
+	if stateDB != nil {
+		minBaseFeeActiveGauge.Update(0)
+		minBaseFeeFromContractGwei.Update(0)
+	}
 
 	if config.IsMinBaseFee(nextBlockNum) {
 		var minimumBaseFee *big.Int
@@ -225,10 +231,14 @@ func computeMinBaseFeeFloor(config *params.ChainConfig, parent *types.Header, st
 		} else {
 			minimumBaseFee = new(big.Int).SetUint64(params.MinimumBaseFee)
 		}
-		minBaseFeeGwei.Update(weiToGweiClamped(minimumBaseFee))
+		if stateDB != nil {
+			minBaseFeeGwei.Update(weiToGweiClamped(minimumBaseFee))
+		}
 		return minimumBaseFee, nil
 	}
-	minBaseFeeGwei.Update(0)
+	if stateDB != nil {
+		minBaseFeeGwei.Update(0)
+	}
 	return common.Big0, nil
 }
 
