@@ -351,7 +351,7 @@ func TestStateProcessorErrors(t *testing.T) {
 			smallInitCode  = [320]byte{}
 		)
 		defer blockchain.Stop()
-		genesisBaseFee, err := misc.CalcBaseFee(config, genesis.Header(), nil)
+		genesisBaseFee, err := misc.CalcBaseFee(gspec.Config, genesis.Header(), nil)
 		if err != nil {
 			t.Fatalf("CalcBaseFee for genesis header: %v", err)
 		}
