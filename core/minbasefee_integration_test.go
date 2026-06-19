@@ -33,6 +33,7 @@ func TestDynamicMinBaseFee_Integration_GenesisContract(t *testing.T) {
 		MuirGlacierBlock:       big.NewInt(0),
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
+		ShanghaiTime:           u64(0),
 		DynamicMinBaseFeeTime:  u64(5),
 		MinBaseFeeContractAddr: &contractAddr,
 		Ethash:                 new(params.EthashConfig),
@@ -140,6 +141,7 @@ func TestDynamicMinBaseFee_Integration_ContractUpdate(t *testing.T) {
 		MuirGlacierBlock:       big.NewInt(0),
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
+		ShanghaiTime:           u64(0),
 		DynamicMinBaseFeeTime:  u64(1),
 		MinBaseFeeContractAddr: &contractAddr,
 		Ethash:                 new(params.EthashConfig),
@@ -290,9 +292,17 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 		MuirGlacierBlock:       big.NewInt(0),
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
+		ShanghaiTime:           u64(0),
 		MinBaseFeeBlock:        big.NewInt(2),
 		MinBaseFeeChangeHeight: big.NewInt(5),
-		DynamicMinBaseFeeTime:  u64(8),
+		// GenerateChain advances block.Time by 10s per block. With genesis
+		// Timestamp=0, parent.Time of block N is 10*(N-1); the dynamic-fork
+		// predicate (parent.Time >= DynamicMinBaseFeeTime) is satisfied
+		// starting at block 9 (parent=block 8, parent.Time=80). This walks the
+		// chain through every floor source the test enumerates below: no
+		// floor (block 1), legacy initial (block 3), legacy updated (block 6),
+		// contract (block 9).
+		DynamicMinBaseFeeTime:  u64(80),
 		MinBaseFeeContractAddr: &contractAddr,
 		Ethash:                 new(params.EthashConfig),
 	}
@@ -316,10 +326,13 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 	alloc[contractAddr].Storage[common.BigToHash(new(big.Int).Add(arraySlot.Big(), big.NewInt(2)))] = common.BigToHash(big.NewInt(1000000000))
 
 	genesis := &Genesis{
-		Config:     config,
-		Alloc:      alloc,
-		ExtraData:  []byte("test genesis"),
-		Timestamp:  9000,
+		Config:    config,
+		Alloc:     alloc,
+		ExtraData: []byte("test genesis"),
+		// Genesis Timestamp=0 places the chain below DynamicMinBaseFeeTime so
+		// the activation transition is actually exercised inside the
+		// 12-block window generated below.
+		Timestamp:  0,
 		BaseFee:    big.NewInt(params.InitialBaseFee),
 		Difficulty: big.NewInt(0),
 		GasLimit:   30000000,
@@ -367,7 +380,16 @@ func TestDynamicMinBaseFee_Integration_ForkActivation(t *testing.T) {
 		var minBaseFeeSource string
 		var expectedMinBaseFee *big.Int
 
-		if config.IsDynamicMinBaseFee(block.Time()) {
+		// Mirror the consensus activation predicate: CalcBaseFee and miner
+		// both gate the dynamic floor on parent.Time, not on the block's own
+		// timestamp. Asserting on block.Time() here would classify the
+		// boundary block off by one and could silently mask regressions in
+		// the legacy/dynamic transition.
+		parent := chain.GetBlockByNumber(tt.blockNum - 1)
+		if parent == nil {
+			t.Fatalf("Parent block %d not found", tt.blockNum-1)
+		}
+		if config.IsDynamicMinBaseFee(parent.Time()) {
 			minBaseFee, err := reader.ReadMinBaseFee(stateDB, big.NewInt(int64(tt.blockNum)))
 			if err == nil {
 				expectedMinBaseFee = minBaseFee
@@ -431,6 +453,7 @@ func TestDynamicMinBaseFee_E2E_CalcBaseFeeWithState(t *testing.T) {
 		MuirGlacierBlock:       big.NewInt(0),
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
+		ShanghaiTime:           u64(0),
 		DynamicMinBaseFeeTime:  u64(0), // active from genesis
 		MinBaseFeeContractAddr: &contractAddr,
 		Ethash:                 new(params.EthashConfig),
@@ -530,6 +553,7 @@ func TestDynamicMinBaseFee_E2E_ActivationBoundary(t *testing.T) {
 		MuirGlacierBlock:       big.NewInt(0),
 		BerlinBlock:            big.NewInt(0),
 		LondonBlock:            big.NewInt(0),
+		ShanghaiTime:           u64(0),
 		DynamicMinBaseFeeTime:  u64(15),
 		MinBaseFeeContractAddr: &contractAddr,
 		Ethash:                 new(params.EthashConfig),
