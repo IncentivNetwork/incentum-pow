@@ -101,7 +101,7 @@ uint256 public constant MAX_MIN_BASE_FEE  = 100 ether;
 uint256 public constant MAX_CHANGE_PERCENT = 200;  // ±200% per proposal
 ```
 
-`MIN_MIN_BASE_FEE` and `MAX_MIN_BASE_FEE` are the canonical bounds. The Go reader rejects any value outside `[DynamicMinBaseFeeLowerWei, DynamicMinBaseFeeUpperWei]` in `params/protocol_params.go`, which mirror the Solidity constants. Both the constructor and `proposeMinBaseFee` enforce the same `[MIN_MIN_BASE_FEE, MAX_MIN_BASE_FEE]` range.
+`MIN_MIN_BASE_FEE` and `MAX_MIN_BASE_FEE` are the canonical bounds. The consensus base-fee path (`consensus/misc/eip1559.go`, after the storage reader returns) rejects any value outside `[DynamicMinBaseFeeLowerWei, DynamicMinBaseFeeUpperWei]` in `params/protocol_params.go`, which mirror the Solidity constants. Both the constructor and `proposeMinBaseFee` enforce the same `[MIN_MIN_BASE_FEE, MAX_MIN_BASE_FEE]` range.
 
 ### Constructor
 

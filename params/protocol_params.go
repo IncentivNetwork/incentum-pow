@@ -194,8 +194,9 @@ var (
 	// MAX_MIN_BASE_FEE in MinBaseFeeGovernor.sol; that synchronisation is the
 	// responsibility of the maintainer/reviewer when either side changes, and
 	// an automated CI parity assertion is tracked as separate build-infra
-	// work. Values outside these bounds are rejected by the Go reader as a
-	// hard consensus error.
+	// work. Values outside these bounds are rejected by the consensus base-fee
+	// path after the storage reader returns the contract value, and treated as
+	// a hard consensus error.
 	DynamicMinBaseFeeLowerWei = big.NewInt(GWei)                                     // 1 gwei
 	DynamicMinBaseFeeUpperWei = new(big.Int).Mul(big.NewInt(100), big.NewInt(Ether)) // 100 ether
 )
