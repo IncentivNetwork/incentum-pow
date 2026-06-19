@@ -161,7 +161,7 @@ All exposed under `chain/minbasefee/*` and `chain/basefee/*` internally; the Pro
 | `chain/minbasefee/active` | gauge | 1 when the dynamic floor was applied to the most recent block, 0 otherwise. |
 | `chain/minbasefee/current_gwei` | gauge | Floor used on the most recent block. |
 | `chain/minbasefee/contract_gwei` | gauge | Raw value most recently read from the contract. |
-| `chain/minbasefee/readerrors` | meter | Read failures since process start. Any non-zero value after activation is an alert condition. |
+| `chain/minbasefee/readerrors` | meter | Contract-read failures since process start (only counted when stateDB is available and the read itself fails or returns an out-of-bounds value). Non-consensus callers that invoke `CalcBaseFee(..., nil)` are not counted here. Any non-zero value after activation is an alert condition. |
 | `chain/basefee/beforefloor_gwei` | gauge | `rawBaseFee` (EIP-1559 result, before flooring). |
 | `chain/basefee/afterfloor_gwei` | gauge | `max(rawBaseFee, floor)` (header.BaseFee). |
 
