@@ -137,9 +137,16 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header, stateDB *stat
 	if err != nil {
 		return nil, err
 	}
-	baseFeeBeforeFloorGwei.Update(weiToGweiClamped(baseFee))
 	result := math.BigMax(baseFee, floor)
-	baseFeeAfterFloorGwei.Update(weiToGweiClamped(result))
+	if stateDB != nil {
+		// Block-path metrics only: skip the prediction/RPC nil-stateDB callers
+		// (GraphQL nextBaseFee, eth_feeHistory, eth_gasPrice, pending-tx
+		// helpers) so dashboards reflect the most recent state-aware
+		// CalcBaseFee result rather than the last RPC prediction. Same
+		// policy as `chain/minbasefee/active` and `chain/minbasefee/readerrors`.
+		baseFeeBeforeFloorGwei.Update(weiToGweiClamped(baseFee))
+		baseFeeAfterFloorGwei.Update(weiToGweiClamped(result))
+	}
 	return result, nil
 }
 
