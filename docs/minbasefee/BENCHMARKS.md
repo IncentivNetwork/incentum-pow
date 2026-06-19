@@ -205,14 +205,15 @@ At 100% network load (6.3M blocks/year):
 ### Monitoring Recommendations
 
 Deploy with Prometheus metrics already implemented:
-- `chain_minbasefee_current` - Current min base fee value
-- `chain_minbasefee_contract` - Value read from contract
+- `chain_minbasefee_active` - 1 if the dynamic floor was applied to the most recent block, 0 otherwise
+- `chain_minbasefee_current_gwei` - Floor used on the most recent block (gwei)
+- `chain_minbasefee_contract_gwei` - Last value read from the contract (gwei)
 - `chain_minbasefee_readerrors` - Contract read errors
-- `chain_basefee_beforefloor` - Base fee before floor
-- `chain_basefee_afterfloor` - Base fee after floor
+- `chain_basefee_beforefloor_gwei` - Base fee before the floor is applied (gwei)
+- `chain_basefee_afterfloor_gwei` - Base fee after the floor is applied (gwei)
 
 **Alert Thresholds:**
-- `minbasefee_readerrors > 0` - Critical (contract read failure)
+- `chain_minbasefee_readerrors > 0` - Critical (contract read failure)
 - Response time degradation > 10% - Warning
 
 ## Conclusion
