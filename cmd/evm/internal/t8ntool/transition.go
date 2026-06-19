@@ -252,6 +252,7 @@ func Transition(ctx *cli.Context) error {
 		} else if prestate.Env.ParentBaseFee != nil && prestate.Env.Number != 0 {
 			parent := &types.Header{
 				Number:   new(big.Int).SetUint64(prestate.Env.Number - 1),
+				Time:     prestate.Env.ParentTimestamp,
 				BaseFee:  prestate.Env.ParentBaseFee,
 				GasUsed:  prestate.Env.ParentGasUsed,
 				GasLimit: prestate.Env.ParentGasLimit,
