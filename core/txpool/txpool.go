@@ -1277,9 +1277,11 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 			pendingBaseFee, err := misc.CalcBaseFee(pool.chainconfig, reset.newHead, pool.currentState)
 			if err != nil {
 				// State load already succeeded; an error here means the contract read
-				// itself failed (corrupt storage, misconfigured address). Log and skip
-				// the snapshot update for this reset rather than crash the pool.
-				log.Error("Skipping pending baseFee snapshot in txpool reset", "err", err)
+				// itself failed (corrupt storage, misconfigured address). Fall back to
+				// nil so pricedList switches to gasFeeCap-only ordering instead of
+				// sorting indefinitely against the previous (now stale) snapshot.
+				log.Error("Falling back to nil pending baseFee snapshot in txpool reset", "err", err)
+				pool.priced.SetBaseFee(nil)
 			} else {
 				pool.priced.SetBaseFee(pendingBaseFee)
 			}
