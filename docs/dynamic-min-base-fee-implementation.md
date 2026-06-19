@@ -154,7 +154,7 @@ The block number used for the lookup is `parent.Number + 1`. The fork-activation
 
 ## Metrics
 
-All exposed under `chain/minbasefee/*` and `chain/basefee/*`. Wei-denominated metrics are reported in gwei so they stay inside `int64` even at the upper bound of 100 ether; raw-wei reporting would silently overflow `int64` around 9.22 ether.
+All exposed under `chain/minbasefee/*` and `chain/basefee/*` internally; the Prometheus exporter replaces `/` with `_`, so they appear as `chain_minbasefee_*` / `chain_basefee_*` on the metrics endpoint. Wei-denominated metrics are reported in gwei so they stay inside `int64` even at the upper bound of 100 ether; raw-wei reporting would silently overflow `int64` around 9.22 ether.
 
 | Metric | Type | Meaning |
 |---|---|---|
