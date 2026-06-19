@@ -189,7 +189,6 @@ func computeMinBaseFeeFloor(config *params.ChainConfig, parent *types.Header, st
 	if config.IsDynamicMinBaseFee(parent.Time) {
 		minBaseFeeActiveGauge.Update(1)
 		if stateDB == nil {
-			minBaseFeeReadErrorsMeter.Mark(1)
 			return nil, fmt.Errorf("dynamic min base fee fork active at parent time %d but stateDB is nil", parent.Time)
 		}
 		minimumBaseFee, err := readMinBaseFeeFromContract(config, stateDB, nextBlockNum)
