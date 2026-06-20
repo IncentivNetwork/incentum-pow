@@ -642,12 +642,12 @@ contract MinBaseFeeGovernorTest is Test {
 
     // helpers to recover the activationBlock values used in the proposal map
     function idAActivation(bytes32 id) internal view returns (uint256) {
-        (, uint256 activation,,) = governor.proposals(id);
+        (, uint256 activation,,,) = governor.proposals(id);
         return activation;
     }
 
     function idBActivation(bytes32 id) internal view returns (uint256) {
-        (, uint256 activation,,) = governor.proposals(id);
+        (, uint256 activation,,,) = governor.proposals(id);
         return activation;
     }
 }
