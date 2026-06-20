@@ -703,7 +703,16 @@ func (b *Block) NextBaseFeePerGas(ctx context.Context) (*hexutil.Big, error) {
 			return nil, nil
 		}
 	}
-	nextBaseFee := misc.CalcBaseFee(chaincfg, header)
+	nextBaseFee, err := misc.CalcBaseFee(chaincfg, header, nil)
+	if err != nil {
+		// Post-DynamicMinBaseFee the floor requires parent post-state; this
+		// header-only GraphQL prediction cannot provide one. The GraphQL
+		// schema lets this field be null, so we honestly return null instead
+		// of guessing or failing the whole response. (eth_feeHistory takes a
+		// different route - it propagates the error as an RPC error - because
+		// its `baseFeePerGas` array has no null slot to use.)
+		return nil, nil
+	}
 	return (*hexutil.Big)(nextBaseFee), nil
 }
 

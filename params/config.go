@@ -607,6 +607,10 @@ type ChainConfig struct {
 
 	IrregularStateChangeHeight *big.Int `json:"irregularStateChangeHeight,omitempty"` // Irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
 
+	// MinBaseFeeContractAddr is the address of the on-chain MinBaseFeeGovernor
+	// contract. Must be set when DynamicMinBaseFeeTime is non-nil.
+	MinBaseFeeContractAddr *common.Address `json:"minBaseFeeContractAddr,omitempty"`
+
 	// Fork scheduling was switched from blocks to timestamps here
 
 	ShanghaiTime *uint64 `json:"shanghaiTime,omitempty"` // Shanghai switch time (nil = no fork, 0 = already on shanghai)
@@ -622,6 +626,16 @@ type ChainConfig struct {
 	// pre- and post-DPoW binaries during the rollout window. See post-Merge
 	// upstream pattern: ShanghaiTime, CancunTime, PragueTime.
 	DPoWTime *uint64 `json:"dpowTime,omitempty"`
+
+	// DynamicMinBaseFeeTime is the Unix timestamp at which the contract-governed
+	// minimum base fee floor takes effect. nil = never activates, 0 = already
+	// activated. The floor itself is read from MinBaseFeeGovernor contract storage
+	// at the parent block's post-state root during block execution.
+	//
+	// Timestamp-based for the same reason as DPoWTime: this is a post-Shanghai
+	// fork, so it must be expressed as a timestamp to keep forkid chronologically
+	// ordered (block forks first, then time forks).
+	DynamicMinBaseFeeTime *uint64 `json:"dynamicMinBaseFeeTime,omitempty"`
 
 	CancunTime *uint64 `json:"cancunTime,omitempty"` // Cancun switch time (nil = no fork, 0 = already on cancun)
 	PragueTime *uint64 `json:"pragueTime,omitempty"` // Prague switch time (nil = no fork, 0 = already on prague)
@@ -758,6 +772,9 @@ func (c *ChainConfig) Description() string {
 	if c.DPoWTime != nil {
 		banner += fmt.Sprintf(" - DPoW:                        @%-10v (%s)\n", *c.DPoWTime, formatTimestampFork(*c.DPoWTime))
 	}
+	if c.DynamicMinBaseFeeTime != nil {
+		banner += fmt.Sprintf(" - DynamicMinBaseFee:           @%-10v (%s)\n", *c.DynamicMinBaseFeeTime, formatTimestampFork(*c.DynamicMinBaseFeeTime))
+	}
 	if c.CancunTime != nil {
 		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, formatTimestampFork(*c.CancunTime))
 	}
@@ -849,6 +866,11 @@ func (c *ChainConfig) IsMinBaseFeeChange(num *big.Int) bool {
 	return isBlockForked(c.MinBaseFeeChangeHeight, num)
 }
 
+// IsDynamicMinBaseFee returns whether time is either equal to the Dynamic Min Base Fee fork timestamp or greater.
+func (c *ChainConfig) IsDynamicMinBaseFee(time uint64) bool {
+	return isTimestampForked(c.DynamicMinBaseFeeTime, time)
+}
+
 // IsArrowGlacier returns whether num is either equal to the Arrow Glacier (EIP-4345) fork block or greater.
 func (c *ChainConfig) IsArrowGlacier(num *big.Int) bool {
 	return isBlockForked(c.ArrowGlacierBlock, num)
@@ -903,6 +925,29 @@ func (c *ChainConfig) CheckDPoWConfig() error {
 		return nil
 	case c.MinerRegistryAddress == nil || *c.MinerRegistryAddress == (common.Address{}):
 		return fmt.Errorf("dpowTime is set to %d but minerRegistryAddress is missing or zero address", *c.DPoWTime)
+	default:
+		return nil
+	}
+}
+
+// GetMinBaseFeeContractAddr returns the configured MinBaseFeeGovernor contract
+// address, or the zero address when unset.
+func (c *ChainConfig) GetMinBaseFeeContractAddr() common.Address {
+	if c.MinBaseFeeContractAddr == nil {
+		return common.Address{}
+	}
+	return *c.MinBaseFeeContractAddr
+}
+
+// CheckMinBaseFeeConfig validates DynamicMinBaseFee-specific chain config
+// invariants. When DynamicMinBaseFeeTime is set, MinBaseFeeContractAddr must
+// also be set to a non-zero address.
+func (c *ChainConfig) CheckMinBaseFeeConfig() error {
+	switch {
+	case c.DynamicMinBaseFeeTime == nil:
+		return nil
+	case c.MinBaseFeeContractAddr == nil || *c.MinBaseFeeContractAddr == (common.Address{}):
+		return fmt.Errorf("dynamicMinBaseFeeTime is set to %d but minBaseFeeContractAddr is missing or zero address", *c.DynamicMinBaseFeeTime)
 	default:
 		return nil
 	}
@@ -992,6 +1037,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "mergeNetsplitBlock", block: c.MergeNetsplitBlock, optional: true},
 		{name: "shanghaiTime", timestamp: c.ShanghaiTime},
 		{name: "dpowTime", timestamp: c.DPoWTime, optional: true},
+		{name: "dynamicMinBaseFeeTime", timestamp: c.DynamicMinBaseFeeTime, optional: true},
 		{name: "cancunTime", timestamp: c.CancunTime, optional: true},
 		{name: "pragueTime", timestamp: c.PragueTime, optional: true},
 	} {
@@ -1105,6 +1151,18 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if c.IsDPoW(headTimestamp) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
 		return newTimestampCompatError("DPoW maturity blocks", c.DPoWTime, newcfg.DPoWTime)
+	}
+	if isForkTimestampIncompatible(c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime, headTimestamp) {
+		return newTimestampCompatError("DynamicMinBaseFee fork timestamp", c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
+	}
+	// MinBaseFeeContractAddr is the address the consensus layer reads the floor
+	// from once DynamicMinBaseFeeTime has fired; once the fork is active, changing
+	// it would silently re-route the floor read to a different contract.
+	if c.IsDynamicMinBaseFee(headTimestamp) && c.GetMinBaseFeeContractAddr() != newcfg.GetMinBaseFeeContractAddr() {
+		return newTimestampCompatError(
+			fmt.Sprintf("DynamicMinBaseFee contract address (have %s, want %s)",
+				c.GetMinBaseFeeContractAddr(), newcfg.GetMinBaseFeeContractAddr()),
+			c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
 	}
 	if isForkTimestampIncompatible(c.CancunTime, newcfg.CancunTime, headTimestamp) {
 		return newTimestampCompatError("Cancun fork timestamp", c.CancunTime, newcfg.CancunTime)

@@ -252,11 +252,16 @@ func Transition(ctx *cli.Context) error {
 		} else if prestate.Env.ParentBaseFee != nil && prestate.Env.Number != 0 {
 			parent := &types.Header{
 				Number:   new(big.Int).SetUint64(prestate.Env.Number - 1),
+				Time:     prestate.Env.ParentTimestamp,
 				BaseFee:  prestate.Env.ParentBaseFee,
 				GasUsed:  prestate.Env.ParentGasUsed,
 				GasLimit: prestate.Env.ParentGasLimit,
 			}
-			prestate.Env.BaseFee = misc.CalcBaseFee(chainConfig, parent)
+			bf, err := misc.CalcBaseFee(chainConfig, parent, nil)
+			if err != nil {
+				return NewError(ErrorConfig, fmt.Errorf("CalcBaseFee for t8n: %w", err))
+			}
+			prestate.Env.BaseFee = bf
 		} else {
 			return NewError(ErrorConfig, errors.New("EIP-1559 config but missing 'currentBaseFee' in env section"))
 		}

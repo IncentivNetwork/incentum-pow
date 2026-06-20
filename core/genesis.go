@@ -383,6 +383,9 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 	if err := newcfg.CheckDPoWConfig(); err != nil {
 		return newcfg, common.Hash{}, err
 	}
+	if err := newcfg.CheckMinBaseFeeConfig(); err != nil {
+		return newcfg, common.Hash{}, err
+	}
 	storedcfg := rawdb.ReadChainConfig(db, stored)
 	if storedcfg == nil {
 		log.Warn("Found genesis block without chain config")
@@ -402,6 +405,9 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 			return newcfg, common.Hash{}, err
 		}
 		if err := newcfg.CheckDPoWConfig(); err != nil {
+			return newcfg, common.Hash{}, err
+		}
+		if err := newcfg.CheckMinBaseFeeConfig(); err != nil {
 			return newcfg, common.Hash{}, err
 		}
 	}
@@ -531,6 +537,9 @@ func (g *Genesis) Commit(db ethdb.Database, triedb *trie.Database) (*types.Block
 		return nil, err
 	}
 	if err := config.CheckDPoWConfig(); err != nil {
+		return nil, err
+	}
+	if err := config.CheckMinBaseFeeConfig(); err != nil {
 		return nil, err
 	}
 	if config.Clique != nil && len(block.Extra()) < 32+crypto.SignatureLength {
