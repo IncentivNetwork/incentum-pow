@@ -660,6 +660,16 @@ contract MinBaseFeeGovernorTest is Test {
         assertEq(g.getCurrentMinBaseFee(), 100 ether);
     }
 
+    function test_ConstructorRejectsZeroTimelock() public {
+        vm.expectRevert(abi.encodeWithSelector(MinBaseFeeGovernor.InvalidTimelockDelay.selector, uint256(0)));
+        new MinBaseFeeGovernor(governance, initialMinBaseFee, activationBlock, 0, 13000);
+    }
+
+    function test_ConstructorRejectsZeroActivationDelayBlocks() public {
+        vm.expectRevert(abi.encodeWithSelector(MinBaseFeeGovernor.InvalidActivationDelayBlocks.selector, uint256(0)));
+        new MinBaseFeeGovernor(governance, initialMinBaseFee, activationBlock, 2 days, 0);
+    }
+
     // ========== Sortedness Re-Check Tests (executeProposal) ==========
 
     // Two proposals A and B with activationBlock A < B are both accepted at

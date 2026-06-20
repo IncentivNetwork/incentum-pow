@@ -115,7 +115,7 @@ constructor(
 )
 ```
 
-`_minTimelockDelay` and `_minActivationDelayBlocks` are deployment-time parameters (held as immutables, not settable later). Production deployments use 2 days / 13000 blocks; devnet deployments use shorter values (e.g. 10 minutes / 100 blocks) so a full governance cycle fits inside a single test window. The choice is enforced by the deployment script per chain ID, not by an on-chain absolute floor.
+`_minTimelockDelay` and `_minActivationDelayBlocks` are deployment-time parameters (held as immutables, not settable later). Production deployments use 2 days / 13000 blocks; devnet deployments use shorter values (e.g. 10 minutes / 100 blocks) so a full governance cycle fits inside a single test window. The choice is enforced by the deployment script per chain ID, not by an on-chain absolute floor. The constructor does reject the all-zero corner case for both parameters (`InvalidTimelockDelay` / `InvalidActivationDelayBlocks`): a 0 timelock would disable the timelock entirely for the lifetime of the deployment, and a 0 activation delay would allow `activationBlock == block.number` (i.e. no future-window) — both are deployment misconfigurations, not legitimate devnet tunings.
 
 ### Governance flow
 

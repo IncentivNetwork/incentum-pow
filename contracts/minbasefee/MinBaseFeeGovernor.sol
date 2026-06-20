@@ -151,6 +151,9 @@ contract MinBaseFeeGovernor {
     /// @notice Thrown when trying to set invalid timelock delay
     error InvalidTimelockDelay(uint256 delay);
 
+    /// @notice Thrown when constructor receives a zero activation delay (in blocks)
+    error InvalidActivationDelayBlocks(uint256 delayBlocks);
+
     modifier onlyGovernance() {
         if (msg.sender != governance) revert OnlyGovernance();
         _;
@@ -176,6 +179,12 @@ contract MinBaseFeeGovernor {
         if (_initialMinBaseFee < MIN_MIN_BASE_FEE || _initialMinBaseFee > MAX_MIN_BASE_FEE) {
             revert MinBaseFeeOutOfBounds(_initialMinBaseFee, MIN_MIN_BASE_FEE, MAX_MIN_BASE_FEE);
         }
+        // Both deployment-time delays are immutable, so accepting zero here would
+        // bake an effectively-disabled timelock or instant activation into the
+        // deployment forever. Reject explicitly. Devnet deployments use small but
+        // strictly positive values (per deployment script per chain ID).
+        if (_minTimelockDelay == 0) revert InvalidTimelockDelay(_minTimelockDelay);
+        if (_minActivationDelayBlocks == 0) revert InvalidActivationDelayBlocks(_minActivationDelayBlocks);
 
         governance = _governance;
         MIN_TIMELOCK_DELAY = _minTimelockDelay;
