@@ -135,6 +135,10 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
    require(canExecute, "Timelock not expired");
    ```
 
+   `executeAfter` is snapshotted at the time the proposal was created. A later
+   `setTimelockDelay` call only affects proposals created after that update —
+   existing proposals keep their original reaction window.
+
 2. **Execute the proposal:**
    ```solidity
    contract.executeProposal(proposalId);

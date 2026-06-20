@@ -364,6 +364,37 @@ contract MinBaseFeeGovernorTest is Test {
         vm.stopPrank();
     }
 
+    function test_SetTimelockDelayDoesNotShortenExistingProposal() public {
+        vm.startPrank(governance);
+
+        // Propose under a long timelock (3 days). Snapshot executeAfter.
+        governor.setTimelockDelay(3 days);
+        uint256 proposedAt = block.timestamp;
+        bytes32 proposalId = governor.proposeMinBaseFee(15000 gwei, block.number + 20000);
+
+        (, , , , uint256 storedExecuteAfter, ) = governor.getProposal(proposalId);
+        assertEq(storedExecuteAfter, proposedAt + 3 days, "executeAfter must snapshot the 3-day delay");
+
+        // Shorten timelock to the MIN (2 days). Existing proposal must still
+        // honour its original 3-day executeAfter.
+        governor.setTimelockDelay(2 days);
+
+        (, , , , uint256 afterShorten, ) = governor.getProposal(proposalId);
+        assertEq(afterShorten, proposedAt + 3 days, "shortening setTimelockDelay must not retro-shorten existing proposal");
+
+        // 2 days + 1 is past the (shortened) global delay but still inside the
+        // proposal's own snapshotted window. Execute must revert.
+        vm.warp(proposedAt + 2 days + 1);
+        vm.expectRevert();
+        governor.executeProposal(proposalId);
+
+        // 3 days + 1 crosses the original window. Execute must pass.
+        vm.warp(proposedAt + 3 days + 1);
+        governor.executeProposal(proposalId);
+
+        vm.stopPrank();
+    }
+
     // ========== Binary Search Tests ==========
 
     function test_BinarySearchWithMultipleConfigs() public {

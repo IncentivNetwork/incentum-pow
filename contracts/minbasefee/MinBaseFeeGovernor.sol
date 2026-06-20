@@ -25,10 +25,17 @@ contract MinBaseFeeGovernor {
     }
 
     /// @notice Proposal for changing minimum base fee
+    /// @dev `executeAfter` is snapshotted at proposal creation as
+    ///      `block.timestamp + timelockDelay`. Later `setTimelockDelay` calls
+    ///      do not change the executeAfter of already-created proposals - the
+    ///      timelock semantics seen at propose time stay truthful, the
+    ///      `MinBaseFeeProposed` event remains accurate, and stakeholders
+    ///      cannot have their reaction window shortened retroactively.
     struct Proposal {
         uint256 minBaseFee;      // Proposed minimum base fee in wei
         uint256 activationBlock; // Block number when it becomes active
         uint256 proposedAt;      // Timestamp when proposal was created
+        uint256 executeAfter;    // Earliest timestamp at which executeProposal will pass
         bool executed;           // Whether proposal has been executed
     }
 
@@ -288,6 +295,7 @@ contract MinBaseFeeGovernor {
             minBaseFee: _minBaseFee,
             activationBlock: _activationBlock,
             proposedAt: block.timestamp,
+            executeAfter: executeAfter,
             executed: false
         });
 
@@ -319,10 +327,11 @@ contract MinBaseFeeGovernor {
         // Validate proposal has not been executed
         if (proposal.executed) revert ProposalAlreadyExecuted(proposalId);
 
-        // Validate timelock has expired
-        uint256 executeAfter = proposal.proposedAt + timelockDelay;
-        if (block.timestamp < executeAfter) {
-            revert TimelockNotExpired(block.timestamp, executeAfter);
+        // Validate timelock has expired. `executeAfter` was snapshotted at
+        // proposal creation so a later setTimelockDelay call cannot shorten
+        // (or lengthen) this specific proposal's reaction window.
+        if (block.timestamp < proposal.executeAfter) {
+            revert TimelockNotExpired(block.timestamp, proposal.executeAfter);
         }
 
         // Re-validate sortedness against current configHistory tail. proposeMinBaseFee
@@ -394,7 +403,7 @@ contract MinBaseFeeGovernor {
         bool canExecute
     ) {
         Proposal memory proposal = proposals[proposalId];
-        executeAfter = proposal.proposedAt + timelockDelay;
+        executeAfter = proposal.executeAfter;
         canExecute = !proposal.executed &&
                      proposal.minBaseFee != 0 &&
                      block.timestamp >= executeAfter;
@@ -412,7 +421,9 @@ contract MinBaseFeeGovernor {
     /**
      * @notice Update the timelock delay
      * @param newDelay New timelock delay in seconds
-     * @dev Cannot be set below MIN_TIMELOCK_DELAY
+     * @dev Cannot be set below MIN_TIMELOCK_DELAY. Only affects proposals
+     *      created after this call - already-created proposals retain the
+     *      `executeAfter` they were stamped with at propose time.
      */
     function setTimelockDelay(uint256 newDelay) external onlyGovernance {
         if (newDelay < MIN_TIMELOCK_DELAY) {

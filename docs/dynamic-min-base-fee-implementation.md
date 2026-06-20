@@ -131,11 +131,11 @@ constructor(
 `executeProposal(proposalId)`:
 
 - callable only by `governance`;
-- requires `block.timestamp ≥ proposedAt + timelockDelay`;
+- requires `block.timestamp ≥ proposal.executeAfter`, where `executeAfter` is snapshotted at proposal creation as `block.timestamp + timelockDelay`. A later `setTimelockDelay` cannot shorten or lengthen the reaction window of an already-created proposal — the value emitted in `MinBaseFeeProposed` stays truthful;
 - **re-validates** that `proposal.activationBlock > configHistory[last].activationBlock` at execute time (two pending proposals whose `activationBlock` values were both above the tail at propose-time can still violate sortedness if executed out of activation order; the re-check rejects the out-of-order execution);
 - pushes the new config to `configHistory` and emits `ProposalExecuted` + `MinBaseFeeScheduled`.
 
-`setTimelockDelay(newDelay)`: callable only by `governance`, must be `≥ MIN_TIMELOCK_DELAY`.
+`setTimelockDelay(newDelay)`: callable only by `governance`, must be `≥ MIN_TIMELOCK_DELAY`. Only affects proposals created after the call; existing proposals retain the `executeAfter` they were stamped with at propose time.
 
 `transferGovernance(newGovernance)`: callable only by current `governance`, target must be non-zero.
 
