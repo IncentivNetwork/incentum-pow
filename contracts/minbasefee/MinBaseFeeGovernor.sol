@@ -264,6 +264,16 @@ contract MinBaseFeeGovernor {
         }
 
         // Validate change is not too large (prevent extreme changes).
+        // Reference value is the last scheduled config in configHistory, not the
+        // currently-effective floor returned by getMinBaseFeeForBlock(block.number):
+        // pre-scheduled proposals make those two values diverge, and the consensus
+        // reader applies the floor by activationBlock, so the real jump happens
+        // between adjacent configHistory entries. Checking vs the tail keeps every
+        // adjacent pair bounded by MAX_CHANGE_PERCENT. executeProposal re-runs the
+        // same check at execute time to also catch two pending proposals that each
+        // pass propose-time vs an old tail but would jump too far between adjacent
+        // entries once both are executed.
+        //
         // maxAllowed = currentMinBaseFee * (100 + MAX_CHANGE_PERCENT) / 100 is
         // exact under Solidity integer math because (100 + MAX_CHANGE_PERCENT)
         // is a multiple of 100. minAllowed needs ceiling division so that
@@ -271,7 +281,7 @@ contract MinBaseFeeGovernor {
         // are rejected even when the numerator is not divisible — otherwise the
         // floor-division form would silently accept changes slightly larger
         // than the documented "1/3x decrease" cap.
-        uint256 currentMinBaseFee = getMinBaseFeeForBlock(block.number);
+        uint256 currentMinBaseFee = configHistory[configHistory.length - 1].minBaseFee;
         uint256 maxAllowed = currentMinBaseFee * (100 + MAX_CHANGE_PERCENT) / 100;
         uint256 minAllowed = (currentMinBaseFee * 100 + (100 + MAX_CHANGE_PERCENT) - 1) / (100 + MAX_CHANGE_PERCENT);
 
@@ -344,6 +354,20 @@ contract MinBaseFeeGovernor {
         uint256 lastActivationBlock = configHistory[configHistory.length - 1].activationBlock;
         if (proposal.activationBlock <= lastActivationBlock) {
             revert ActivationBlockNotSequential(proposal.activationBlock, lastActivationBlock);
+        }
+
+        // Re-validate the change cap against the current configHistory tail at
+        // execute time, mirroring the sortedness re-check above. proposeMinBaseFee
+        // capped against the tail at propose time, but two pending proposals can
+        // both pass that check while their resulting consecutive floors jump by
+        // more than MAX_CHANGE_PERCENT once both are executed. Re-checking here
+        // closes the multi-pending-proposal bypass and ensures every adjacent
+        // pair of configHistory entries is bounded by MAX_CHANGE_PERCENT.
+        uint256 lastMinBaseFee = configHistory[configHistory.length - 1].minBaseFee;
+        uint256 maxAllowedAtExecute = lastMinBaseFee * (100 + MAX_CHANGE_PERCENT) / 100;
+        uint256 minAllowedAtExecute = (lastMinBaseFee * 100 + (100 + MAX_CHANGE_PERCENT) - 1) / (100 + MAX_CHANGE_PERCENT);
+        if (proposal.minBaseFee > maxAllowedAtExecute || proposal.minBaseFee < minAllowedAtExecute) {
+            revert ChangeTooLarge(proposal.minBaseFee, lastMinBaseFee, maxAllowedAtExecute);
         }
 
         // Execute: add configuration to history

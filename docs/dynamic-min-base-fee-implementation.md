@@ -123,7 +123,7 @@ constructor(
 
 - callable only by `governance`;
 - `newMinBaseFee` must be inside `[MIN_MIN_BASE_FEE, MAX_MIN_BASE_FEE]`;
-- `newMinBaseFee` must be within `±MAX_CHANGE_PERCENT` of the current effective floor;
+- `newMinBaseFee` must be within `±MAX_CHANGE_PERCENT` of `configHistory[last].minBaseFee` (the most recently scheduled floor, not the currently-effective floor — pre-scheduled future activations make those two diverge, and the consensus reader applies each floor by its `activationBlock`, so the real per-step jump happens between adjacent `configHistory` entries);
 - `activationBlock` must be `≥ block.number + MIN_ACTIVATION_DELAY_BLOCKS`;
 - `activationBlock` must be strictly greater than the current `configHistory[last].activationBlock`;
 - returns a `proposalId`; emits `MinBaseFeeProposed`.
@@ -133,6 +133,7 @@ constructor(
 - callable only by `governance`;
 - requires `block.timestamp ≥ proposal.executeAfter`, where `executeAfter` is snapshotted at proposal creation as `block.timestamp + timelockDelay`. A later `setTimelockDelay` cannot shorten or lengthen the reaction window of an already-created proposal — the value emitted in `MinBaseFeeProposed` stays truthful;
 - **re-validates** that `proposal.activationBlock > configHistory[last].activationBlock` at execute time (two pending proposals whose `activationBlock` values were both above the tail at propose-time can still violate sortedness if executed out of activation order; the re-check rejects the out-of-order execution);
+- **re-validates** the `MAX_CHANGE_PERCENT` cap against `configHistory[last].minBaseFee` at execute time (two pending proposals can each pass propose-time cap vs the same old tail; the re-check rejects the second execute if it would push the adjacent-pair jump over the cap);
 - pushes the new config to `configHistory` and emits `ProposalExecuted` + `MinBaseFeeScheduled`.
 
 `setTimelockDelay(newDelay)`: callable only by `governance`, must be `≥ MIN_TIMELOCK_DELAY`. Only affects proposals created after the call; existing proposals retain the `executeAfter` they were stamped with at propose time.

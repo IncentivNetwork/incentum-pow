@@ -395,6 +395,58 @@ contract MinBaseFeeGovernorTest is Test {
         vm.stopPrank();
     }
 
+    // ========== Change cap (MAX_CHANGE_PERCENT) re-check ==========
+
+    function test_ChangeCap_ProposeIsAgainstScheduledTail() public {
+        // After A is executed and becomes the new tail, a second proposal must
+        // be capped relative to that new tail, not the previously-effective
+        // floor that getMinBaseFeeForBlock(block.number) would return before A
+        // activates.
+        vm.startPrank(governance);
+
+        // Tail = 12600 gwei. Schedule A = 4200 gwei (exactly 3x decrease).
+        bytes32 idA = governor.proposeMinBaseFee(4200 gwei, block.number + 20000);
+        vm.warp(block.timestamp + 2 days + 1);
+        governor.executeProposal(idA);
+
+        // Tail is now A (4200 gwei). The currently-effective floor at
+        // block.number is still 12600 gwei (A activates at block.number+20000).
+        // A second proposal at 12700 gwei would be a +3x jump vs A, and pass
+        // the old "vs effective floor" check, but must now fail vs tail.
+        vm.expectRevert();
+        governor.proposeMinBaseFee(12700 gwei, block.number + 40000);
+
+        // 12600 gwei (exactly 3x increase vs tail=4200) is the documented cap
+        // and must pass.
+        governor.proposeMinBaseFee(12600 gwei, block.number + 40000);
+
+        vm.stopPrank();
+    }
+
+    function test_ChangeCap_ExecuteRejectsMultiPendingBypass() public {
+        // Two pending proposals can each pass propose-time cap against the same
+        // old tail. Without an execute-time re-check, executing them in order
+        // would create an adjacent configHistory jump exceeding MAX_CHANGE_PERCENT.
+        // The execute-time re-check must reject the second execute.
+        vm.startPrank(governance);
+
+        // Tail = 12600 gwei. Propose A = 4200 gwei (3x decrease vs tail) and
+        // B = 37800 gwei (3x increase vs tail). Both pass propose-time cap.
+        bytes32 idA = governor.proposeMinBaseFee(4200 gwei, block.number + 20000);
+        bytes32 idB = governor.proposeMinBaseFee(37800 gwei, block.number + 40000);
+
+        // Execute A. Tail becomes A = 4200 gwei.
+        vm.warp(block.timestamp + 2 days + 1);
+        governor.executeProposal(idA);
+
+        // Executing B would jump 4200 → 37800 = 9x. Execute-time re-check
+        // must revert.
+        vm.expectRevert();
+        governor.executeProposal(idB);
+
+        vm.stopPrank();
+    }
+
     // ========== Binary Search Tests ==========
 
     function test_BinarySearchWithMultipleConfigs() public {
