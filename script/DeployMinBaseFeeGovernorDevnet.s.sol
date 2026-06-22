@@ -80,26 +80,41 @@ contract DeployMinBaseFeeGovernorDevnet is Script {
 
         console.log("MinBaseFeeGovernor deployed at:", address(governor));
 
-        // Deploy-time verification: read every public state field the deploy
-        // arguments set and assert each matches. This satisfies the DMBF-4
-        // "deploy-time verification step" AC without a separate post-deploy
-        // operator query, and the broadcast log captures the values.
+        // Deploy-time verification: read every value the deploy arguments
+        // determined - public state fields, both constructor-set immutables,
+        // and the seeded configHistory[0] - and assert each matches. This
+        // satisfies the DMBF-4 "deploy-time verification step" AC without a
+        // separate post-deploy operator query, and the broadcast log captures
+        // the values. Catches accidental constructor-argument swaps (e.g.
+        // _minTimelockDelay and _minActivationDelayBlocks transposed) that
+        // would otherwise survive into the deployed bytecode unchecked.
         uint256 currentFloor = governor.getCurrentMinBaseFee();
         uint256 configCount = governor.getConfigHistoryLength();
         address recordedGovernance = governor.governance();
         uint256 recordedTimelock = governor.timelockDelay();
+        uint256 minTimelockImmutable = governor.MIN_TIMELOCK_DELAY();
+        uint256 minActivationImmutable = governor.MIN_ACTIVATION_DELAY_BLOCKS();
+        (uint256 initialMinBaseFee, uint256 initialActivationBlock,) = governor.configHistory(0);
 
         require(currentFloor == INITIAL_MIN_BASE_FEE, "deploy verify: currentMinBaseFee mismatch");
         require(configCount == 1, "deploy verify: configHistory length mismatch");
         require(recordedGovernance == governance, "deploy verify: governance mismatch");
         require(recordedTimelock == TIMELOCK_DELAY, "deploy verify: timelockDelay mismatch");
+        require(minTimelockImmutable == TIMELOCK_DELAY, "deploy verify: MIN_TIMELOCK_DELAY mismatch");
+        require(minActivationImmutable == ACTIVATION_DELAY_BLOCKS, "deploy verify: MIN_ACTIVATION_DELAY_BLOCKS mismatch");
+        require(initialMinBaseFee == INITIAL_MIN_BASE_FEE, "deploy verify: configHistory[0].minBaseFee mismatch");
+        require(initialActivationBlock == INITIAL_ACTIVATION_BLOCK, "deploy verify: configHistory[0].activationBlock mismatch");
 
         console.log("");
         console.log("=== Deploy-time verification (read-back) ===");
-        console.log("getCurrentMinBaseFee():     ", currentFloor);
-        console.log("getConfigHistoryLength():   ", configCount);
-        console.log("governance():               ", recordedGovernance);
-        console.log("timelockDelay():            ", recordedTimelock);
+        console.log("getCurrentMinBaseFee():       ", currentFloor);
+        console.log("getConfigHistoryLength():     ", configCount);
+        console.log("governance():                 ", recordedGovernance);
+        console.log("timelockDelay():              ", recordedTimelock);
+        console.log("MIN_TIMELOCK_DELAY():         ", minTimelockImmutable);
+        console.log("MIN_ACTIVATION_DELAY_BLOCKS():", minActivationImmutable);
+        console.log("configHistory[0].minBaseFee: ", initialMinBaseFee);
+        console.log("configHistory[0].activate:   ", initialActivationBlock);
 
         console.log("");
         console.log("=== NEXT STEPS ===");
