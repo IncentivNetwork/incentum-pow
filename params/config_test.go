@@ -356,7 +356,7 @@ func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
 //
 // State at this revision:
 //   - mainnet  ships with DynamicMinBaseFee dormant
-//   - devnet   activates at 2026-06-22 14:47:04 UTC against the deployed
+//   - devnet   activates at 2026-06-22 15:40:00 UTC against the deployed
 //              MinBaseFeeGovernor at 0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D
 //   - testnet  ships with DynamicMinBaseFee dormant
 func TestIncentivNetworkDynamicMinBaseFeeValues(t *testing.T) {
@@ -369,11 +369,11 @@ func TestIncentivNetworkDynamicMinBaseFeeValues(t *testing.T) {
 	if IncentivDevnetChainConfig.DynamicMinBaseFeeTime == nil {
 		t.Fatalf("IncentivDevnetChainConfig.DynamicMinBaseFeeTime must not be nil after devnet arming")
 	}
-	wantDevnetTime := uint64(time.Date(2026, 6, 22, 14, 47, 4, 0, time.UTC).Unix())
+	wantDevnetTime := uint64(time.Date(2026, 6, 22, 15, 40, 0, 0, time.UTC).Unix())
 	if got := *IncentivDevnetChainConfig.DynamicMinBaseFeeTime; got != wantDevnetTime {
 		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
 		wantWall := time.Unix(int64(wantDevnetTime), 0).UTC().Format(time.RFC3339)
-		t.Fatalf("IncentivDevnetChainConfig.DynamicMinBaseFeeTime = %d (%s), want %d (%s) — 2026-06-22 14:47:04 UTC", got, gotWall, wantDevnetTime, wantWall)
+		t.Fatalf("IncentivDevnetChainConfig.DynamicMinBaseFeeTime = %d (%s), want %d (%s) — 2026-06-22 15:40:00 UTC", got, gotWall, wantDevnetTime, wantWall)
 	}
 	if IncentivDevnetChainConfig.MinBaseFeeContractAddr == nil {
 		t.Fatalf("IncentivDevnetChainConfig.MinBaseFeeContractAddr must not be nil after devnet arming")

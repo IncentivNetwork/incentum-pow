@@ -365,8 +365,8 @@ var (
 		ShanghaiTime:               newUint64(1755203160),
 		// DynamicMinBaseFeeTime arms the contract-governed EIP-1559 floor on
 		// devnet. Set to a near-future timestamp picked at param-PR prep time
-		// (+30 minutes from then) so every devnet node has time to upgrade and
-		// restart before head.Time reaches activation. Same compat-safety
+		// so every devnet node has time to upgrade and restart before head.Time
+		// reaches activation. Same compat-safety
 		// rationale as DPoWTime above: a future activation timestamp keeps
 		// isForkTimestampIncompatible(nil, &future, headTime) returning false
 		// on every restart, so the existing devnet chain DB is accepted as-is
@@ -376,7 +376,7 @@ var (
 		// at block 966206 with initial floor 12600 gwei (= legacy
 		// MinBaseFeeUpdated), 10-minute timelock, 100-block activation delay,
 		// governance = deployer EOA 0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b.
-		DynamicMinBaseFeeTime:         newUint64(1782139624), // 2026-06-22 14:47:04 UTC
+		DynamicMinBaseFeeTime:         newUint64(1782142800), // 2026-06-22 15:40:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,

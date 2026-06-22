@@ -11,9 +11,10 @@ import "../contracts/minbasefee/MinBaseFeeGovernor.sol";
  *         propose -> wait timelock -> execute -> activation cycle fits inside
  *         a single test window.
  *
- * Production deploys must use script/DeployMinBaseFeeGovernorMainnet.s.sol (TBD),
- * which is the only place the production minima (2 days / 13000 blocks) are
- * baked in. This script intentionally cannot be used for mainnet (chainId 24101).
+ * This script intentionally cannot be used for mainnet (chainId 24101).
+ * Production deployment tooling for MinBaseFeeGovernor lives in a separate
+ * mainnet-focused script (TBD) that enforces the production minima
+ * (2 days / 13000 blocks).
  *
  * Usage (from incentum-pow/ directory):
  *
