@@ -347,6 +347,49 @@ func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
 	}
 }
 
+// TestIncentivNetworkDynamicMinBaseFeeValues pins the activation timestamp and
+// contract address that arm the contract-governed EIP-1559 floor on devnet,
+// keeping the numeric constants honest against the wall-time comment that
+// `params/config.go` carries. Same rationale as TestIncentivNetworkDPoWTimeValues:
+// derive the expectation through time.Date so a typo surfaces with a
+// human-readable mismatch rather than as two opaque integers.
+//
+// State at this revision:
+//   - mainnet  ships with DynamicMinBaseFee dormant
+//   - devnet   activates at 2026-06-22 15:40:00 UTC against the deployed
+//              MinBaseFeeGovernor at 0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D
+//   - testnet  ships with DynamicMinBaseFee dormant
+func TestIncentivNetworkDynamicMinBaseFeeValues(t *testing.T) {
+	if IncentivMainnetChainConfig.DynamicMinBaseFeeTime != nil {
+		t.Fatalf("IncentivMainnetChainConfig.DynamicMinBaseFeeTime = %d, want nil (mainnet ships dormant)", *IncentivMainnetChainConfig.DynamicMinBaseFeeTime)
+	}
+	if IncentivMainnetChainConfig.MinBaseFeeContractAddr != nil {
+		t.Fatalf("IncentivMainnetChainConfig.MinBaseFeeContractAddr = %s, want nil (mainnet ships dormant)", IncentivMainnetChainConfig.MinBaseFeeContractAddr.Hex())
+	}
+	if IncentivDevnetChainConfig.DynamicMinBaseFeeTime == nil {
+		t.Fatalf("IncentivDevnetChainConfig.DynamicMinBaseFeeTime must not be nil after devnet arming")
+	}
+	wantDevnetTime := uint64(time.Date(2026, 6, 22, 15, 40, 0, 0, time.UTC).Unix())
+	if got := *IncentivDevnetChainConfig.DynamicMinBaseFeeTime; got != wantDevnetTime {
+		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
+		wantWall := time.Unix(int64(wantDevnetTime), 0).UTC().Format(time.RFC3339)
+		t.Fatalf("IncentivDevnetChainConfig.DynamicMinBaseFeeTime = %d (%s), want %d (%s) — 2026-06-22 15:40:00 UTC", got, gotWall, wantDevnetTime, wantWall)
+	}
+	if IncentivDevnetChainConfig.MinBaseFeeContractAddr == nil {
+		t.Fatalf("IncentivDevnetChainConfig.MinBaseFeeContractAddr must not be nil after devnet arming")
+	}
+	wantDevnetAddr := common.HexToAddress("0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D")
+	if got := *IncentivDevnetChainConfig.MinBaseFeeContractAddr; got != wantDevnetAddr {
+		t.Fatalf("IncentivDevnetChainConfig.MinBaseFeeContractAddr = %s, want %s", got.Hex(), wantDevnetAddr.Hex())
+	}
+	if IncentivTestnetChainConfig.DynamicMinBaseFeeTime != nil {
+		t.Fatalf("IncentivTestnetChainConfig.DynamicMinBaseFeeTime = %d, want nil (testnet ships dormant)", *IncentivTestnetChainConfig.DynamicMinBaseFeeTime)
+	}
+	if IncentivTestnetChainConfig.MinBaseFeeContractAddr != nil {
+		t.Fatalf("IncentivTestnetChainConfig.MinBaseFeeContractAddr = %s, want nil (testnet ships dormant)", IncentivTestnetChainConfig.MinBaseFeeContractAddr.Hex())
+	}
+}
+
 func TestIsDPoWImmediateActivation(t *testing.T) {
 	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
 

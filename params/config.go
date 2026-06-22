@@ -356,12 +356,27 @@ var (
 		// activation is acceptable because the devnet fleet is small, fully
 		// operator-controlled, and has no rogue miner that could exploit it.
 		// See DPOW-008-9 (#95) for the full rationale.
-		DPoWTime:                      newUint64(1781614800), // 2026-06-16 13:00:00 UTC
-		MinerRegistryAddress:          newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
-		DPoWMaturityTime:              300,
-		DPoWMaturityBlocks:            60,
-		IrregularStateChangeHeight:    nil,
-		ShanghaiTime:                  newUint64(1755203160),
+		DPoWTime:                   newUint64(1781614800), // 2026-06-16 13:00:00 UTC
+		MinerRegistryAddress:       newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
+		DPoWMaturityTime:           300,
+		DPoWMaturityBlocks:         60,
+		IrregularStateChangeHeight: nil,
+		MinBaseFeeContractAddr:     newAddress(common.HexToAddress("0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D")),
+		ShanghaiTime:               newUint64(1755203160),
+		// DynamicMinBaseFeeTime arms the contract-governed EIP-1559 floor on
+		// devnet. Set to a near-future timestamp picked at param-PR prep time
+		// so every devnet node has time to upgrade and restart before head.Time
+		// reaches activation. Same compat-safety
+		// rationale as DPoWTime above: a future activation timestamp keeps
+		// isForkTimestampIncompatible(nil, &future, headTime) returning false
+		// on every restart, so the existing devnet chain DB is accepted as-is
+		// and the contract floor engages at block.Time >= DynamicMinBaseFeeTime.
+		// Contract deployed in tx
+		// 0xae84c70b02c2dc3da02ab9d1dc85d73f91b6deb04153cd44cb3a407a569dccd7
+		// at block 966206 with initial floor 12600 gwei (= legacy
+		// MinBaseFeeUpdated), 10-minute timelock, 100-block activation delay,
+		// governance = deployer EOA 0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b.
+		DynamicMinBaseFeeTime:         newUint64(1782142800), // 2026-06-22 15:40:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
