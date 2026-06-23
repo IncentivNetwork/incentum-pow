@@ -1,6 +1,7 @@
 package minbasefee_test
 
 import (
+	"context"
 	"math/big"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestMinBaseFeeGovernorDeployment(t *testing.T) {
 
 	sim.Commit()
 
-	receipt, err := sim.TransactionReceipt(nil, tx.Hash())
+	receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
 		t.Fatalf("Failed to get receipt: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestMinBaseFeeGovernorTimelock(t *testing.T) {
 	}
 	sim.Commit()
 
-	receipt, err := sim.TransactionReceipt(nil, tx.Hash())
+	receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
 		t.Fatalf("Failed to get receipt: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestMinBaseFeeGovernorTimelock(t *testing.T) {
 	}
 	sim.Commit()
 
-	receipt, err = sim.TransactionReceipt(nil, tx.Hash())
+	receipt, err = sim.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
 		t.Fatalf("Failed to get receipt: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestMinBaseFeeGovernorCancelProposal(t *testing.T) {
 	}
 	sim.Commit()
 
-	receipt, err := sim.TransactionReceipt(nil, tx.Hash())
+	receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
 		t.Fatalf("Failed to get receipt: %v", err)
 	}
@@ -316,7 +317,7 @@ func TestMinBaseFeeGovernorCancelProposal(t *testing.T) {
 	}
 	sim.Commit()
 
-	receipt, err = sim.TransactionReceipt(nil, tx.Hash())
+	receipt, err = sim.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
 		t.Fatalf("Failed to get receipt: %v", err)
 	}

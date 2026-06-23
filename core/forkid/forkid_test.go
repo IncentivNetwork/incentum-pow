@@ -505,11 +505,15 @@ func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
 	// on operator nodes today: no DPoW code at all, so none of the DPoW-related
 	// fields are present in the embedded ChainConfig. The maturity values are
 	// also zeroed (despite not affecting forkid) to keep the simulation honest.
+	// The dynamic-min-base-fee fork added later is zeroed too, because the
+	// v1.11.6-stable binary predates that feature as well.
 	preDPoW := *cfg
 	preDPoW.DPoWTime = nil
 	preDPoW.MinerRegistryAddress = nil
 	preDPoW.DPoWMaturityTime = 0
 	preDPoW.DPoWMaturityBlocks = 0
+	preDPoW.DynamicMinBaseFeeTime = nil
+	preDPoW.MinBaseFeeContractAddr = nil
 
 	preDPoWID := NewID(&preDPoW, genesis, preHead, preTime)
 	newBinaryID := NewID(cfg, genesis, preHead, preTime)
@@ -527,13 +531,19 @@ func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
 		t.Fatalf("new binary Next mismatch: have=%d want=%d", newBinaryID.Next, dpowTime)
 	}
 
-	// New binary at DPoW activation: Next jumps to the next time fork (cancunTime, which is nil, so 0).
+	// New binary at DPoW activation: Next jumps to the next time fork after
+	// DPoW. With DynamicMinBaseFee armed for mainnet, that is dmbfTime;
+	// cancunTime is still nil so it doesn't enter the picture.
 	atDPoW := NewID(cfg, genesis, preHead, dpowTime)
 	if atDPoW.Hash == newBinaryID.Hash {
 		t.Fatalf("forkid Hash did not change at DPoW activation: pre=%#v at=%#v", newBinaryID, atDPoW)
 	}
-	if atDPoW.Next != 0 {
-		t.Fatalf("forkid Next after DPoW activation: have=%d want=0", atDPoW.Next)
+	if cfg.DynamicMinBaseFeeTime == nil {
+		t.Fatalf("test precondition broken: IncentivMainnetChainConfig.DynamicMinBaseFeeTime must be set")
+	}
+	dmbfTime := *cfg.DynamicMinBaseFeeTime
+	if atDPoW.Next != dmbfTime {
+		t.Fatalf("forkid Next after DPoW activation: have=%d want=%d (DynamicMinBaseFeeTime)", atDPoW.Next, dmbfTime)
 	}
 
 	// NewFilter on the new binary MUST accept the pre-DPoW binary's forkid
