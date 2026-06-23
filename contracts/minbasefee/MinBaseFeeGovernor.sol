@@ -165,7 +165,7 @@ contract MinBaseFeeGovernor {
      * @param _initialMinBaseFee Initial minimum base fee in wei
      * @param _activationBlock Block number when initial config becomes active (typically 0 for genesis)
      * @param _minTimelockDelay Minimum timelock delay in seconds (mainnet: 24 hours; devnet: shorter)
-     * @param _minActivationDelayBlocks Minimum activation delay in blocks (production: 13000; devnet: shorter)
+     * @param _minActivationDelayBlocks Minimum activation delay in blocks (mainnet: 13000; devnet: shorter)
      */
     constructor(
         address _governance,
