@@ -1269,8 +1269,22 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 	if reset != nil {
 		pool.demoteUnexecutables()
 		if reset.newHead != nil && pool.chainconfig.IsLondon(new(big.Int).Add(reset.newHead.Number, big.NewInt(1))) {
-			pendingBaseFee := misc.CalcBaseFee(pool.chainconfig, reset.newHead)
-			pool.priced.SetBaseFee(pendingBaseFee)
+			// pool.reset above set pool.currentState to the state at reset.newHead.Root,
+			// so we can pass it to CalcBaseFee and the dynamic min base fee contract
+			// floor read will succeed once the fork is active. The pending-baseFee
+			// snapshot stays accurate across activation; without this, the snapshot
+			// would freeze at the legacy floor and tx ordering / acceptance would drift.
+			pendingBaseFee, err := misc.CalcBaseFee(pool.chainconfig, reset.newHead, pool.currentState)
+			if err != nil {
+				// State load already succeeded; an error here means the contract read
+				// itself failed (corrupt storage, misconfigured address). Fall back to
+				// nil so pricedList switches to gasFeeCap-only ordering instead of
+				// sorting indefinitely against the previous (now stale) snapshot.
+				log.Error("Falling back to nil pending baseFee snapshot in txpool reset", "err", err)
+				pool.priced.SetBaseFee(nil)
+			} else {
+				pool.priced.SetBaseFee(pendingBaseFee)
+			}
 		}
 		// Update all accounts to the latest known pending nonce
 		nonces := make(map[common.Address]uint64, len(pool.pending))

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -314,14 +315,14 @@ func TestFormatTimestampFork(t *testing.T) {
 }
 
 // TestIncentivNetworkDPoWTimeValues pins the DPoW activation moment embedded
-// in the three Incentiv chain configs. This is the acceptance criterion for
-// DPOW-008-7: mainnet activates at 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv);
-// devnet and testnet ship without DPoW enabled (see the inline rationale on
-// each config).
+// in the three Incentiv chain configs:
+//   - mainnet activates at 2026-06-11 13:00:00 UTC (DPOW-008-7)
+//   - devnet  activates at 2026-06-16 13:00:00 UTC (DPOW-008-9 reactivation)
+//   - testnet ships with DPoW dormant
 //
-// The expectation is derived through time.Date so a numeric typo in
-// IncentivMainnetChainConfig.DPoWTime fails with the human-readable wall time
-// the issue / PR / banner refers to, not with two opaque integers.
+// Expectations are derived through time.Date so a numeric typo in either
+// embedded value fails with the human-readable wall time the issue / PR /
+// banner refers to, not with two opaque integers.
 func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
 	if IncentivMainnetChainConfig.DPoWTime == nil {
 		t.Fatalf("IncentivMainnetChainConfig.DPoWTime must not be nil for the DPOW-008-7 activation")
@@ -330,13 +331,74 @@ func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
 	if got := *IncentivMainnetChainConfig.DPoWTime; got != wantMainnet {
 		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
 		wantWall := time.Unix(int64(wantMainnet), 0).UTC().Format(time.RFC3339)
-		t.Fatalf("IncentivMainnetChainConfig.DPoWTime = %d (%s), want %d (%s) — 2026-06-11 16:00 EEST Kyiv", got, gotWall, wantMainnet, wantWall)
+		t.Fatalf("IncentivMainnetChainConfig.DPoWTime = %d (%s), want %d (%s) — 2026-06-11 13:00 UTC", got, gotWall, wantMainnet, wantWall)
 	}
-	if IncentivDevnetChainConfig.DPoWTime != nil {
-		t.Fatalf("IncentivDevnetChainConfig.DPoWTime = %d, want nil (DPoW intentionally disabled on devnet, see config comment)", *IncentivDevnetChainConfig.DPoWTime)
+	if IncentivDevnetChainConfig.DPoWTime == nil {
+		t.Fatalf("IncentivDevnetChainConfig.DPoWTime must not be nil for the DPOW-008-9 reactivation")
+	}
+	wantDevnet := uint64(time.Date(2026, 6, 16, 13, 0, 0, 0, time.UTC).Unix())
+	if got := *IncentivDevnetChainConfig.DPoWTime; got != wantDevnet {
+		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
+		wantWall := time.Unix(int64(wantDevnet), 0).UTC().Format(time.RFC3339)
+		t.Fatalf("IncentivDevnetChainConfig.DPoWTime = %d (%s), want %d (%s) — 2026-06-16 13:00 UTC", got, gotWall, wantDevnet, wantWall)
 	}
 	if IncentivTestnetChainConfig.DPoWTime != nil {
 		t.Fatalf("IncentivTestnetChainConfig.DPoWTime = %d, want nil (testnet ships with DPoW dormant)", *IncentivTestnetChainConfig.DPoWTime)
+	}
+}
+
+// TestIncentivNetworkDynamicMinBaseFeeValues pins the activation timestamp and
+// contract address that arm the contract-governed EIP-1559 floor on every
+// Incentiv chain config (mainnet, devnet, testnet), keeping the numeric
+// constants honest against the wall-time comment that `params/config.go`
+// carries. Same rationale as TestIncentivNetworkDPoWTimeValues: derive the
+// expectation through time.Date so a typo surfaces with a human-readable
+// mismatch rather than as two opaque integers.
+//
+// State at this revision:
+//   - mainnet  activates at 2026-06-24 00:00:00 UTC against the deployed
+//     MinBaseFeeGovernor at 0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF
+//   - devnet   activates at 2026-06-22 15:40:00 UTC against the deployed
+//     MinBaseFeeGovernor at 0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D
+//   - testnet  ships with DynamicMinBaseFee dormant
+func TestIncentivNetworkDynamicMinBaseFeeValues(t *testing.T) {
+	if IncentivMainnetChainConfig.DynamicMinBaseFeeTime == nil {
+		t.Fatalf("IncentivMainnetChainConfig.DynamicMinBaseFeeTime must not be nil after mainnet arming")
+	}
+	wantMainnetTime := uint64(time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC).Unix())
+	if got := *IncentivMainnetChainConfig.DynamicMinBaseFeeTime; got != wantMainnetTime {
+		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
+		wantWall := time.Unix(int64(wantMainnetTime), 0).UTC().Format(time.RFC3339)
+		t.Fatalf("IncentivMainnetChainConfig.DynamicMinBaseFeeTime = %d (%s), want %d (%s) — 2026-06-24 00:00:00 UTC", got, gotWall, wantMainnetTime, wantWall)
+	}
+	if IncentivMainnetChainConfig.MinBaseFeeContractAddr == nil {
+		t.Fatalf("IncentivMainnetChainConfig.MinBaseFeeContractAddr must not be nil after mainnet arming")
+	}
+	wantMainnetAddr := common.HexToAddress("0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF")
+	if got := *IncentivMainnetChainConfig.MinBaseFeeContractAddr; got != wantMainnetAddr {
+		t.Fatalf("IncentivMainnetChainConfig.MinBaseFeeContractAddr = %s, want %s", got.Hex(), wantMainnetAddr.Hex())
+	}
+	if IncentivDevnetChainConfig.DynamicMinBaseFeeTime == nil {
+		t.Fatalf("IncentivDevnetChainConfig.DynamicMinBaseFeeTime must not be nil after devnet arming")
+	}
+	wantDevnetTime := uint64(time.Date(2026, 6, 22, 15, 40, 0, 0, time.UTC).Unix())
+	if got := *IncentivDevnetChainConfig.DynamicMinBaseFeeTime; got != wantDevnetTime {
+		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
+		wantWall := time.Unix(int64(wantDevnetTime), 0).UTC().Format(time.RFC3339)
+		t.Fatalf("IncentivDevnetChainConfig.DynamicMinBaseFeeTime = %d (%s), want %d (%s) — 2026-06-22 15:40:00 UTC", got, gotWall, wantDevnetTime, wantWall)
+	}
+	if IncentivDevnetChainConfig.MinBaseFeeContractAddr == nil {
+		t.Fatalf("IncentivDevnetChainConfig.MinBaseFeeContractAddr must not be nil after devnet arming")
+	}
+	wantDevnetAddr := common.HexToAddress("0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D")
+	if got := *IncentivDevnetChainConfig.MinBaseFeeContractAddr; got != wantDevnetAddr {
+		t.Fatalf("IncentivDevnetChainConfig.MinBaseFeeContractAddr = %s, want %s", got.Hex(), wantDevnetAddr.Hex())
+	}
+	if IncentivTestnetChainConfig.DynamicMinBaseFeeTime != nil {
+		t.Fatalf("IncentivTestnetChainConfig.DynamicMinBaseFeeTime = %d, want nil (testnet ships dormant)", *IncentivTestnetChainConfig.DynamicMinBaseFeeTime)
+	}
+	if IncentivTestnetChainConfig.MinBaseFeeContractAddr != nil {
+		t.Fatalf("IncentivTestnetChainConfig.MinBaseFeeContractAddr = %s, want nil (testnet ships dormant)", IncentivTestnetChainConfig.MinBaseFeeContractAddr.Hex())
 	}
 }
 
@@ -378,6 +440,16 @@ func TestCheckCompatibleDPoW(t *testing.T) {
 				NewTime:      newUint64(0),
 				RewindToTime: 0,
 			},
+		},
+		{
+			name:   "dpow time introduced as future before head reaches it is compatible",
+			stored: &ChainConfig{},
+			new: &ChainConfig{
+				DPoWTime:             newUint64(200),
+				MinerRegistryAddress: &addr1,
+			},
+			headTime: 150,
+			wantErr:  nil,
 		},
 		{
 			name: "dpow time mismatch before activation is allowed",
@@ -490,5 +562,147 @@ func TestCheckCompatibleDPoW(t *testing.T) {
 		if !reflect.DeepEqual(err, tt.wantErr) {
 			t.Fatalf("%s: unexpected compatibility error: got=%v want=%v", tt.name, err, tt.wantErr)
 		}
+	}
+}
+
+// TestMinBaseFeeContractAddrJSON guards the JSON round-trip of the optional
+// MinBaseFeeContractAddr field for both unset (nil) and set states.
+func TestMinBaseFeeContractAddrJSON(t *testing.T) {
+	addr := common.HexToAddress("0x000000000000000000000000000000000000beef")
+	cases := []struct {
+		name    string
+		in      *ChainConfig
+		jsonHas bool
+	}{
+		{
+			name:    "nil omits field",
+			in:      &ChainConfig{ChainID: big.NewInt(1)},
+			jsonHas: false,
+		},
+		{
+			name:    "set address round-trips",
+			in:      &ChainConfig{ChainID: big.NewInt(1), MinBaseFeeContractAddr: &addr},
+			jsonHas: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.in)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if has := strings.Contains(string(data), "minBaseFeeContractAddr"); has != tc.jsonHas {
+				t.Fatalf("json field presence: got=%v want=%v (json=%s)", has, tc.jsonHas, data)
+			}
+			var out ChainConfig
+			if err := json.Unmarshal(data, &out); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if (out.MinBaseFeeContractAddr == nil) != (tc.in.MinBaseFeeContractAddr == nil) {
+				t.Fatalf("nil mismatch: got=%v want=%v", out.MinBaseFeeContractAddr, tc.in.MinBaseFeeContractAddr)
+			}
+			if out.MinBaseFeeContractAddr != nil && *out.MinBaseFeeContractAddr != *tc.in.MinBaseFeeContractAddr {
+				t.Fatalf("value mismatch: got=%v want=%v", *out.MinBaseFeeContractAddr, *tc.in.MinBaseFeeContractAddr)
+			}
+		})
+	}
+}
+
+func TestCheckMinBaseFeeConfig(t *testing.T) {
+	addr := common.HexToAddress("0x0000000000000000000000000000000000001234")
+	zero := common.Address{}
+	cases := []struct {
+		name    string
+		cfg     *ChainConfig
+		wantErr bool
+	}{
+		{
+			name:    "fork unset accepts nil address",
+			cfg:     &ChainConfig{},
+			wantErr: false,
+		},
+		{
+			name:    "fork unset accepts set address",
+			cfg:     &ChainConfig{MinBaseFeeContractAddr: &addr},
+			wantErr: false,
+		},
+		{
+			name:    "fork set rejects nil address",
+			cfg:     &ChainConfig{DynamicMinBaseFeeTime: newUint64(100)},
+			wantErr: true,
+		},
+		{
+			name:    "fork set rejects zero address",
+			cfg:     &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &zero},
+			wantErr: true,
+		},
+		{
+			name:    "fork set accepts non-zero address",
+			cfg:     &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &addr},
+			wantErr: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.CheckMinBaseFeeConfig()
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("got err=%v want=%v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckCompatibleDynamicMinBaseFee(t *testing.T) {
+	addr1 := common.HexToAddress("0x0000000000000000000000000000000000001111")
+	addr2 := common.HexToAddress("0x0000000000000000000000000000000000002222")
+	cases := []struct {
+		name     string
+		stored   *ChainConfig
+		newcfg   *ChainConfig
+		headTime uint64
+		want     string // "" means no error; substring of error otherwise
+	}{
+		{
+			name:     "same nil compat",
+			stored:   &ChainConfig{},
+			newcfg:   &ChainConfig{},
+			headTime: 100,
+			want:     "",
+		},
+		{
+			name:     "introducing future fork before activation is compatible",
+			stored:   &ChainConfig{},
+			newcfg:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(200), MinBaseFeeContractAddr: &addr1},
+			headTime: 150,
+			want:     "",
+		},
+		{
+			name:     "reschedule past activation is incompatible",
+			stored:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &addr1},
+			newcfg:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(200), MinBaseFeeContractAddr: &addr1},
+			headTime: 150,
+			want:     "DynamicMinBaseFee fork timestamp",
+		},
+		{
+			name:     "contract address rewrite after activation is incompatible",
+			stored:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &addr1},
+			newcfg:   &ChainConfig{DynamicMinBaseFeeTime: newUint64(100), MinBaseFeeContractAddr: &addr2},
+			headTime: 150,
+			want:     "DynamicMinBaseFee contract address",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.stored.CheckCompatible(tc.newcfg, 0, tc.headTime)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got=%v want substring=%q", err, tc.want)
+			}
+		})
 	}
 }

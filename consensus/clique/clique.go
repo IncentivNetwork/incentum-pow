@@ -340,8 +340,11 @@ func (c *Clique) verifyCascadingFields(chain consensus.ChainHeaderReader, header
 		if err := misc.VerifyGaslimit(parent.GasLimit, header.GasLimit); err != nil {
 			return err
 		}
-	} else if err := misc.VerifyEip1559Header(chain.Config(), parent, header); err != nil {
-		// Verify the header's EIP-1559 attributes.
+	} else if err := misc.VerifyEip1559Header(chain.Config(), parent, header, nil); err != nil {
+		// Verify the header's EIP-1559 attributes. stateDB is nil because
+		// parent post-state is not available here; the dynamic min base fee
+		// floor is enforced later in core.StateProcessor.Process where parent
+		// state is attached.
 		return err
 	}
 	// Retrieve the snapshot needed to verify this header and cache it

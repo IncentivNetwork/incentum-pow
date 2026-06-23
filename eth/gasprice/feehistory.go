@@ -94,7 +94,17 @@ func (oracle *Oracle) processBlock(bf *blockFees, percentiles []float64) {
 		bf.results.baseFee = new(big.Int)
 	}
 	if chainconfig.IsLondon(big.NewInt(int64(bf.blockNumber + 1))) {
-		bf.results.nextBaseFee = misc.CalcBaseFee(chainconfig, bf.header)
+		nextBaseFee, err := misc.CalcBaseFee(chainconfig, bf.header, nil)
+		if err != nil {
+			// Post-DynamicMinBaseFee activation the floor needs parent post-state,
+			// which this prediction path does not hold. Propagate via bf.err so
+			// the surrounding FeeHistory call returns a clean RPC error - the
+			// `baseFeePerGas` array has no null slot, and returning 0 here would
+			// look like a real "next baseFee = 0 wei" prediction.
+			bf.err = err
+			return
+		}
+		bf.results.nextBaseFee = nextBaseFee
 	} else {
 		bf.results.nextBaseFee = new(big.Int)
 	}

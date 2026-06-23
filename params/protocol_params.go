@@ -188,4 +188,15 @@ var (
 	MinimumDifficulty      = big.NewInt(131072) // The minimum that the difficulty may ever be.
 	DurationLimit          = big.NewInt(13)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
 
+	// DynamicMinBaseFeeLowerWei and DynamicMinBaseFeeUpperWei are the inclusive
+	// bounds the consensus layer accepts for any contract-derived dynamic min
+	// base fee value. They must be kept in sync with MIN_MIN_BASE_FEE and
+	// MAX_MIN_BASE_FEE in MinBaseFeeGovernor.sol; that synchronisation is the
+	// responsibility of the maintainer/reviewer when either side changes, and
+	// an automated CI parity assertion is tracked as separate build-infra
+	// work. Values outside these bounds are rejected by the consensus base-fee
+	// path after the storage reader returns the contract value, and treated as
+	// a hard consensus error.
+	DynamicMinBaseFeeLowerWei = big.NewInt(GWei)                                     // 1 gwei
+	DynamicMinBaseFeeUpperWei = new(big.Int).Mul(big.NewInt(100), big.NewInt(Ether)) // 100 ether
 )

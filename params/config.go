@@ -281,34 +281,53 @@ var (
 
 	// IncentivMainnetChainConfig contains the chain parameters to run a node on the Incentiv main network.
 	IncentivMainnetChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(24101),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              nil,
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0),
-		MinBaseFeeBlock:               big.NewInt(1295000),
-		MinBaseFeeChangeHeight:        big.NewInt(1582500),
-		ArrowGlacierBlock:             nil,
-		GrayGlacierBlock:              nil,
-		FastBlock:                     big.NewInt(0),
-		ZeroRewardBlock:               big.NewInt(0),
-		MergeNetsplitBlock:            nil,
-		DPoWTime:                      newUint64(1781182800), // 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv)
-		MinerRegistryAddress:          newAddress(common.HexToAddress("0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E")),
-		DPoWMaturityTime:              86400,
-		DPoWMaturityBlocks:            17280,
-		IrregularStateChangeHeight:    big.NewInt(2429000),
-		ShanghaiTime:                  newUint64(1755203160),
+		ChainID:                    big.NewInt(24101),
+		HomesteadBlock:             big.NewInt(0),
+		DAOForkBlock:               nil,
+		DAOForkSupport:             false,
+		EIP150Block:                big.NewInt(0),
+		EIP155Block:                big.NewInt(0),
+		EIP158Block:                big.NewInt(0),
+		ByzantiumBlock:             big.NewInt(0),
+		ConstantinopleBlock:        big.NewInt(0),
+		PetersburgBlock:            big.NewInt(0),
+		IstanbulBlock:              big.NewInt(0),
+		MuirGlacierBlock:           nil,
+		BerlinBlock:                big.NewInt(0),
+		LondonBlock:                big.NewInt(0),
+		FeePoolBlock:               big.NewInt(0),
+		MinBaseFeeBlock:            big.NewInt(1295000),
+		MinBaseFeeChangeHeight:     big.NewInt(1582500),
+		ArrowGlacierBlock:          nil,
+		GrayGlacierBlock:           nil,
+		FastBlock:                  big.NewInt(0),
+		ZeroRewardBlock:            big.NewInt(0),
+		MergeNetsplitBlock:         nil,
+		DPoWTime:                   newUint64(1781182800), // 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv)
+		MinerRegistryAddress:       newAddress(common.HexToAddress("0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E")),
+		DPoWMaturityTime:           86400,
+		DPoWMaturityBlocks:         17280,
+		IrregularStateChangeHeight: big.NewInt(2429000),
+		MinBaseFeeContractAddr:     newAddress(common.HexToAddress("0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF")),
+		ShanghaiTime:               newUint64(1755203160),
+		// DynamicMinBaseFeeTime arms the contract-governed EIP-1559 floor on
+		// mainnet. Set to a near-future timestamp picked at param-PR prep time
+		// so every mainnet node has time to upgrade and restart before head.Time
+		// reaches activation. Same compat-safety rationale as DPoWTime above: a
+		// future activation timestamp keeps isForkTimestampIncompatible(nil,
+		// &future, headTime) returning false on every restart, so the existing
+		// mainnet chain DB is accepted as-is and the contract floor engages
+		// starting from the first block whose parent.Time >= DynamicMinBaseFeeTime
+		// (the activation predicate is parent-time gated — see
+		// consensus/misc/eip1559.go and miner/worker.go — which introduces a
+		// one-block delay between the timestamp boundary and the first
+		// contract-floored block). Contract deployed via
+		// script/DeployMinBaseFeeGovernorMainnet.s.sol at address
+		// 0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF with initial floor
+		// 12 600 gwei (= legacy MinBaseFeeUpdated, zero fee-market jump),
+		// 24-hour timelock, 13 000-block activation delay, governance =
+		// existing DPoW Governance Safe 0x10D9dEEb09bA23b2bD9739F698b3dFa9D8F95Ad4.
+		DynamicMinBaseFeeTime:         newUint64(1782259200), // 2026-06-24 00:00:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
@@ -340,22 +359,43 @@ var (
 		FastBlock:           big.NewInt(0),
 		ZeroRewardBlock:     big.NewInt(0),
 		MergeNetsplitBlock:  nil,
-		// DPoWTime intentionally nil for devnet. Existing devnet datadirs were
-		// initialised under the old DPoWBlock=274000 binary, so the stored
-		// ChainConfig has storedcfg.DPoWTime == nil (the old field name is just
-		// silently dropped on JSON unmarshal — no block→timestamp migration is
-		// performed). Setting any past timestamp here would make
-		// isForkTimestampIncompatible(nil, &past, headTime) return true and
-		// fail CheckCompatible on every devnet node restart. DPoW is disabled
-		// on this network until a fresh genesis with an explicit DPoWTime is
-		// deployed; the embedded MinerRegistry address is retained for that
-		// future redeploy.
-		DPoWTime:                      nil,
-		MinerRegistryAddress:          newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
-		DPoWMaturityTime:              300,
-		DPoWMaturityBlocks:            60,
-		IrregularStateChangeHeight:    nil,
-		ShanghaiTime:                  newUint64(1755203160),
+		// DPoWTime is set to a near-future timestamp to re-enable DPoW on devnet
+		// without rewinding the chain or redeploying contracts. Picking a *past*
+		// timestamp (e.g. when the original devnet DPoWBlock=274000 was mined)
+		// would trip CheckCompatible at every node restart, because stored
+		// ChainConfig has storedcfg.DPoWTime == nil — the old field name is
+		// silently dropped on JSON unmarshal, no block→timestamp migration is
+		// performed — and isForkTimestampIncompatible(nil, &past, headTime)
+		// would force a RewindToTime to before any deployed-contract block.
+		// Picking a *future* timestamp instead makes both sides of the compat
+		// check return false (not forked yet) as long as each node restarts
+		// before head.Time reaches DPoWTime; the existing devnet chain DB is
+		// accepted as-is, and DPoW enforcement re-engages at block.Time >=
+		// DPoWTime. The brief "DPoW off" window between binary upgrade and
+		// activation is acceptable because the devnet fleet is small, fully
+		// operator-controlled, and has no rogue miner that could exploit it.
+		// See DPOW-008-9 (#95) for the full rationale.
+		DPoWTime:                   newUint64(1781614800), // 2026-06-16 13:00:00 UTC
+		MinerRegistryAddress:       newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
+		DPoWMaturityTime:           300,
+		DPoWMaturityBlocks:         60,
+		IrregularStateChangeHeight: nil,
+		MinBaseFeeContractAddr:     newAddress(common.HexToAddress("0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D")),
+		ShanghaiTime:               newUint64(1755203160),
+		// DynamicMinBaseFeeTime arms the contract-governed EIP-1559 floor on
+		// devnet. Set to a near-future timestamp picked at param-PR prep time
+		// so every devnet node has time to upgrade and restart before head.Time
+		// reaches activation. Same compat-safety
+		// rationale as DPoWTime above: a future activation timestamp keeps
+		// isForkTimestampIncompatible(nil, &future, headTime) returning false
+		// on every restart, so the existing devnet chain DB is accepted as-is
+		// and the contract floor engages at block.Time >= DynamicMinBaseFeeTime.
+		// Contract deployed in tx
+		// 0xae84c70b02c2dc3da02ab9d1dc85d73f91b6deb04153cd44cb3a407a569dccd7
+		// at block 966206 with initial floor 12600 gwei (= legacy
+		// MinBaseFeeUpdated), 10-minute timelock, 100-block activation delay,
+		// governance = deployer EOA 0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b.
+		DynamicMinBaseFeeTime:         newUint64(1782142800), // 2026-06-22 15:40:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
@@ -601,6 +641,10 @@ type ChainConfig struct {
 
 	IrregularStateChangeHeight *big.Int `json:"irregularStateChangeHeight,omitempty"` // Irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
 
+	// MinBaseFeeContractAddr is the address of the on-chain MinBaseFeeGovernor
+	// contract. Must be set when DynamicMinBaseFeeTime is non-nil.
+	MinBaseFeeContractAddr *common.Address `json:"minBaseFeeContractAddr,omitempty"`
+
 	// Fork scheduling was switched from blocks to timestamps here
 
 	ShanghaiTime *uint64 `json:"shanghaiTime,omitempty"` // Shanghai switch time (nil = no fork, 0 = already on shanghai)
@@ -616,6 +660,16 @@ type ChainConfig struct {
 	// pre- and post-DPoW binaries during the rollout window. See post-Merge
 	// upstream pattern: ShanghaiTime, CancunTime, PragueTime.
 	DPoWTime *uint64 `json:"dpowTime,omitempty"`
+
+	// DynamicMinBaseFeeTime is the Unix timestamp at which the contract-governed
+	// minimum base fee floor takes effect. nil = never activates, 0 = already
+	// activated. The floor itself is read from MinBaseFeeGovernor contract storage
+	// at the parent block's post-state root during block execution.
+	//
+	// Timestamp-based for the same reason as DPoWTime: this is a post-Shanghai
+	// fork, so it must be expressed as a timestamp to keep forkid chronologically
+	// ordered (block forks first, then time forks).
+	DynamicMinBaseFeeTime *uint64 `json:"dynamicMinBaseFeeTime,omitempty"`
 
 	CancunTime *uint64 `json:"cancunTime,omitempty"` // Cancun switch time (nil = no fork, 0 = already on cancun)
 	PragueTime *uint64 `json:"pragueTime,omitempty"` // Prague switch time (nil = no fork, 0 = already on prague)
@@ -752,6 +806,9 @@ func (c *ChainConfig) Description() string {
 	if c.DPoWTime != nil {
 		banner += fmt.Sprintf(" - DPoW:                        @%-10v (%s)\n", *c.DPoWTime, formatTimestampFork(*c.DPoWTime))
 	}
+	if c.DynamicMinBaseFeeTime != nil {
+		banner += fmt.Sprintf(" - DynamicMinBaseFee:           @%-10v (%s)\n", *c.DynamicMinBaseFeeTime, formatTimestampFork(*c.DynamicMinBaseFeeTime))
+	}
 	if c.CancunTime != nil {
 		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, formatTimestampFork(*c.CancunTime))
 	}
@@ -843,6 +900,11 @@ func (c *ChainConfig) IsMinBaseFeeChange(num *big.Int) bool {
 	return isBlockForked(c.MinBaseFeeChangeHeight, num)
 }
 
+// IsDynamicMinBaseFee returns whether time is either equal to the Dynamic Min Base Fee fork timestamp or greater.
+func (c *ChainConfig) IsDynamicMinBaseFee(time uint64) bool {
+	return isTimestampForked(c.DynamicMinBaseFeeTime, time)
+}
+
 // IsArrowGlacier returns whether num is either equal to the Arrow Glacier (EIP-4345) fork block or greater.
 func (c *ChainConfig) IsArrowGlacier(num *big.Int) bool {
 	return isBlockForked(c.ArrowGlacierBlock, num)
@@ -897,6 +959,29 @@ func (c *ChainConfig) CheckDPoWConfig() error {
 		return nil
 	case c.MinerRegistryAddress == nil || *c.MinerRegistryAddress == (common.Address{}):
 		return fmt.Errorf("dpowTime is set to %d but minerRegistryAddress is missing or zero address", *c.DPoWTime)
+	default:
+		return nil
+	}
+}
+
+// GetMinBaseFeeContractAddr returns the configured MinBaseFeeGovernor contract
+// address, or the zero address when unset.
+func (c *ChainConfig) GetMinBaseFeeContractAddr() common.Address {
+	if c.MinBaseFeeContractAddr == nil {
+		return common.Address{}
+	}
+	return *c.MinBaseFeeContractAddr
+}
+
+// CheckMinBaseFeeConfig validates DynamicMinBaseFee-specific chain config
+// invariants. When DynamicMinBaseFeeTime is set, MinBaseFeeContractAddr must
+// also be set to a non-zero address.
+func (c *ChainConfig) CheckMinBaseFeeConfig() error {
+	switch {
+	case c.DynamicMinBaseFeeTime == nil:
+		return nil
+	case c.MinBaseFeeContractAddr == nil || *c.MinBaseFeeContractAddr == (common.Address{}):
+		return fmt.Errorf("dynamicMinBaseFeeTime is set to %d but minBaseFeeContractAddr is missing or zero address", *c.DynamicMinBaseFeeTime)
 	default:
 		return nil
 	}
@@ -986,6 +1071,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "mergeNetsplitBlock", block: c.MergeNetsplitBlock, optional: true},
 		{name: "shanghaiTime", timestamp: c.ShanghaiTime},
 		{name: "dpowTime", timestamp: c.DPoWTime, optional: true},
+		{name: "dynamicMinBaseFeeTime", timestamp: c.DynamicMinBaseFeeTime, optional: true},
 		{name: "cancunTime", timestamp: c.CancunTime, optional: true},
 		{name: "pragueTime", timestamp: c.PragueTime, optional: true},
 	} {
@@ -1099,6 +1185,18 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if c.IsDPoW(headTimestamp) && c.GetDPoWMaturityBlocks().Cmp(newcfg.GetDPoWMaturityBlocks()) != 0 {
 		return newTimestampCompatError("DPoW maturity blocks", c.DPoWTime, newcfg.DPoWTime)
+	}
+	if isForkTimestampIncompatible(c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime, headTimestamp) {
+		return newTimestampCompatError("DynamicMinBaseFee fork timestamp", c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
+	}
+	// MinBaseFeeContractAddr is the address the consensus layer reads the floor
+	// from once DynamicMinBaseFeeTime has fired; once the fork is active, changing
+	// it would silently re-route the floor read to a different contract.
+	if c.IsDynamicMinBaseFee(headTimestamp) && c.GetMinBaseFeeContractAddr() != newcfg.GetMinBaseFeeContractAddr() {
+		return newTimestampCompatError(
+			fmt.Sprintf("DynamicMinBaseFee contract address (have %s, want %s)",
+				c.GetMinBaseFeeContractAddr(), newcfg.GetMinBaseFeeContractAddr()),
+			c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
 	}
 	if isForkTimestampIncompatible(c.CancunTime, newcfg.CancunTime, headTimestamp) {
 		return newTimestampCompatError("Cancun fork timestamp", c.CancunTime, newcfg.CancunTime)

@@ -1361,7 +1361,12 @@ func NewRPCPendingTransaction(tx *types.Transaction, current *types.Header, conf
 	var baseFee *big.Int
 	blockNumber := uint64(0)
 	if current != nil {
-		baseFee = misc.CalcBaseFee(config, current)
+		// CalcBaseFee error here is non-fatal: the RPC pending-tx view degrades to
+		// nil baseFee rather than failing the response. State-aware (post-dynamic-fork)
+		// callers go through the consensus path, not this prediction helper.
+		if bf, err := misc.CalcBaseFee(config, current, nil); err == nil {
+			baseFee = bf
+		}
 		blockNumber = current.Number.Uint64()
 	}
 	return newRPCTransaction(tx, common.Hash{}, blockNumber, 0, baseFee, config)
