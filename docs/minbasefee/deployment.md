@@ -286,9 +286,9 @@ go test -v ./contracts/minbasefee/test -run TestMinBaseFeeGovernorTimelock
 
 ## Security Considerations
 
-1. **Timelock Protection**: All changes require the deployment's configured minimum delay (24 hours on mainnet, per-deployment immutable), allowing time for community review.
+1. **Timelock Protection**: All changes require waiting the deployment's configured `timelockDelay` (>= `MIN_TIMELOCK_DELAY`; 24 hours minimum on mainnet), allowing time for community review.
 2. **Bounded Changes**: Cannot make extreme changes in a single proposal (`±200 %` cap, `[1 gwei, 100 ether]` bounds).
-3. **Activation Delay**: Changes don't take effect immediately even after execution (per-deployment minimum, immutable; production: 13 000 blocks).
+3. **Activation Delay**: Changes don't take effect immediately even after execution (per-deployment minimum, immutable; mainnet: 13,000 blocks).
 4. **Proposal Cancellation**: A bad pending proposal can be cancelled before execution; an already-executed bad value is corrected via a new proposal.
 5. **Governance Control**: Only the configured governance address can propose, execute, cancel, or rotate governance.
 6. **Historical Immutability**: Past configurations cannot be modified.
