@@ -348,11 +348,12 @@ func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
 }
 
 // TestIncentivNetworkDynamicMinBaseFeeValues pins the activation timestamp and
-// contract address that arm the contract-governed EIP-1559 floor on devnet,
-// keeping the numeric constants honest against the wall-time comment that
-// `params/config.go` carries. Same rationale as TestIncentivNetworkDPoWTimeValues:
-// derive the expectation through time.Date so a typo surfaces with a
-// human-readable mismatch rather than as two opaque integers.
+// contract address that arm the contract-governed EIP-1559 floor on every
+// Incentiv chain config (mainnet, devnet, testnet), keeping the numeric
+// constants honest against the wall-time comment that `params/config.go`
+// carries. Same rationale as TestIncentivNetworkDPoWTimeValues: derive the
+// expectation through time.Date so a typo surfaces with a human-readable
+// mismatch rather than as two opaque integers.
 //
 // State at this revision:
 //   - mainnet  activates at 2026-06-23 22:00:00 UTC against the deployed
