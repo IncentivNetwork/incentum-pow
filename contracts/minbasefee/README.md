@@ -35,7 +35,7 @@ uint256 currentMinFee = governor.getCurrentMinBaseFee();
 
 ## Features
 
-- **Timelock Security**: 24-hour delay between proposal and execution on the Incentiv mainnet deployment (per-deployment minimum, immutable).
+- **Timelock Security**: Minimum 24-hour delay between proposal and execution on the Incentiv mainnet deployment (per-deployment minimum, immutable; governance can increase `timelockDelay`).
 - **Activation Delay**: 13,000-block delay before a new config takes effect on chain (per-deployment minimum, immutable).
 - **Safety Bounds**: Changes limited to ±200 % per proposal, values constrained to `[1 gwei, 100 ether]`.
 - **Proposal Cancellation**: Governance can cancel a pending proposal before it executes.
