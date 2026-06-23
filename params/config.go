@@ -327,7 +327,7 @@ var (
 		// 12 600 gwei (= legacy MinBaseFeeUpdated, zero fee-market jump),
 		// 24-hour timelock, 13 000-block activation delay, governance =
 		// existing DPoW Governance Safe 0x10D9dEEb09bA23b2bD9739F698b3dFa9D8F95Ad4.
-		DynamicMinBaseFeeTime:         newUint64(1782252000), // 2026-06-23 22:00:00 UTC
+		DynamicMinBaseFeeTime:         newUint64(1782259200), // 2026-06-24 00:00:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
