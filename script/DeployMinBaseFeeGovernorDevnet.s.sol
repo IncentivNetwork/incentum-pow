@@ -12,9 +12,9 @@ import "../contracts/minbasefee/MinBaseFeeGovernor.sol";
  *         a single test window.
  *
  * This script intentionally cannot be used for mainnet (chainId 24101).
- * Production deployment tooling for MinBaseFeeGovernor lives in a separate
- * mainnet-focused script (TBD) that enforces the production minima
- * (2 days / 13000 blocks).
+ * Production deployment tooling for MinBaseFeeGovernor lives in the separate
+ * script/DeployMinBaseFeeGovernorMainnet.s.sol script, which enforces the
+ * mainnet parameters (24 hours / 13 000 blocks).
  *
  * Usage (from incentum-pow/ directory):
  *

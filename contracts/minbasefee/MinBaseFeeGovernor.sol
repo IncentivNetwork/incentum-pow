@@ -12,8 +12,8 @@ pragma solidity ^0.8.0;
  * Changes to the minimum base fee are controlled by governance through a timelock mechanism.
  * New values must be proposed, wait for the configured timelock delay, then executed. The
  * minimum delay is fixed at deployment time via the `_minTimelockDelay` constructor argument
- * (immutable thereafter); production deployments use 2 days while devnet may use a shorter
- * value to make a full governance cycle exercisable within a test window.
+ * (immutable thereafter); the Incentiv mainnet deployment uses 24 hours while devnet may use a
+ * shorter value to make a full governance cycle exercisable within a test window.
  */
 contract MinBaseFeeGovernor {
 
@@ -50,8 +50,8 @@ contract MinBaseFeeGovernor {
     mapping(bytes32 => Proposal) public proposals;
 
     /// @notice Minimum timelock delay in seconds. Set at deployment.
-    /// @dev Production deployments use 2 days; devnet deployments use a shorter value
-    ///      (typically 10 minutes) so a full governance cycle can be exercised within
+    /// @dev The Incentiv mainnet deployment uses 24 hours; devnet deployments use a shorter
+    ///      value (typically 10 minutes) so a full governance cycle can be exercised within
     ///      a single test window. Immutable so the deployed value cannot be lowered later.
     uint256 public immutable MIN_TIMELOCK_DELAY;
 
@@ -164,8 +164,8 @@ contract MinBaseFeeGovernor {
      * @param _governance Address of governance/timelock contract
      * @param _initialMinBaseFee Initial minimum base fee in wei
      * @param _activationBlock Block number when initial config becomes active (typically 0 for genesis)
-     * @param _minTimelockDelay Minimum timelock delay in seconds (production: 2 days; devnet: shorter)
-     * @param _minActivationDelayBlocks Minimum activation delay in blocks (production: 13000; devnet: shorter)
+     * @param _minTimelockDelay Minimum timelock delay in seconds (mainnet: 24 hours; devnet: shorter)
+     * @param _minActivationDelayBlocks Minimum activation delay in blocks (mainnet: 13000; devnet: shorter)
      */
     constructor(
         address _governance,

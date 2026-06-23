@@ -316,14 +316,18 @@ var (
 		// reaches activation. Same compat-safety rationale as DPoWTime above: a
 		// future activation timestamp keeps isForkTimestampIncompatible(nil,
 		// &future, headTime) returning false on every restart, so the existing
-		// mainnet chain DB is accepted as-is and the contract floor engages at
-		// block.Time >= DynamicMinBaseFeeTime. Contract deployed via
+		// mainnet chain DB is accepted as-is and the contract floor engages
+		// starting from the first block whose parent.Time >= DynamicMinBaseFeeTime
+		// (the activation predicate is parent-time gated — see
+		// consensus/misc/eip1559.go and miner/worker.go — which introduces a
+		// one-block delay between the timestamp boundary and the first
+		// contract-floored block). Contract deployed via
 		// script/DeployMinBaseFeeGovernorMainnet.s.sol at address
 		// 0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF with initial floor
 		// 12 600 gwei (= legacy MinBaseFeeUpdated, zero fee-market jump),
 		// 24-hour timelock, 13 000-block activation delay, governance =
 		// existing DPoW Governance Safe 0x10D9dEEb09bA23b2bD9739F698b3dFa9D8F95Ad4.
-		DynamicMinBaseFeeTime:         newUint64(1782252000), // 2026-06-23 22:00:00 UTC
+		DynamicMinBaseFeeTime:         newUint64(1782259200), // 2026-06-24 00:00:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
