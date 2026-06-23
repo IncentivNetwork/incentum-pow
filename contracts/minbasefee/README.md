@@ -7,13 +7,14 @@ network with timelock-gated governance.
 
 ```solidity
 // Deploy. The last two arguments are immutable per-deployment minimums for the
-// timelock delay (seconds) and the activation delay (blocks). Production uses
-// `2 days` and `13000`; devnet deployments may use shorter values.
+// timelock delay (seconds) and the activation delay (blocks). The Incentiv
+// mainnet deployment uses `24 hours` and `13000`; devnet deployments may use
+// shorter values.
 MinBaseFeeGovernor governor = new MinBaseFeeGovernor(
     governanceAddress,
     12600000000000,  // 12.6k gwei initial min base fee
     0,               // activation block of the initial config
-    2 days,          // minimum timelock delay
+    24 hours,        // minimum timelock delay
     13000            // minimum activation delay (blocks)
 );
 
@@ -23,7 +24,7 @@ bytes32 proposalId = governor.proposeMinBaseFee(
     block.number + 20000  // activation in ~28 hours (at 5s/block)
 );
 
-// Wait `timelockDelay` (defaults to 2 days)...
+// Wait `timelockDelay` (mainnet deployment defaults to 24 hours)...
 
 // Execute
 governor.executeProposal(proposalId);
@@ -34,7 +35,7 @@ uint256 currentMinFee = governor.getCurrentMinBaseFee();
 
 ## Features
 
-- **Timelock Security**: 2-day delay between proposal and execution (per-deployment minimum, immutable).
+- **Timelock Security**: 24-hour delay between proposal and execution on the Incentiv mainnet deployment (per-deployment minimum, immutable).
 - **Activation Delay**: 13,000-block delay before a new config takes effect on chain (per-deployment minimum, immutable).
 - **Safety Bounds**: Changes limited to ±200 % per proposal, values constrained to `[1 gwei, 100 ether]`.
 - **Proposal Cancellation**: Governance can cancel a pending proposal before it executes.
@@ -95,7 +96,7 @@ address, tx, contract, err := minbasefee.DeployMinBaseFeeGovernor(
     governanceAddress,
     initialMinBaseFee,
     activationBlock,
-    big.NewInt(172800), // _minTimelockDelay (2 days)
+    big.NewInt(86400),  // _minTimelockDelay (24 hours on the Incentiv mainnet deployment)
     big.NewInt(13000),  // _minActivationDelayBlocks
 )
 
