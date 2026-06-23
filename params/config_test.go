@@ -355,16 +355,27 @@ func TestIncentivNetworkDPoWTimeValues(t *testing.T) {
 // human-readable mismatch rather than as two opaque integers.
 //
 // State at this revision:
-//   - mainnet  ships with DynamicMinBaseFee dormant
+//   - mainnet  activates at 2026-06-23 22:00:00 UTC against the deployed
+//     MinBaseFeeGovernor at 0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF
 //   - devnet   activates at 2026-06-22 15:40:00 UTC against the deployed
-//              MinBaseFeeGovernor at 0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D
+//     MinBaseFeeGovernor at 0xaB438B8501f8B9a1EB49DA7C52Ee8c3Bd904934D
 //   - testnet  ships with DynamicMinBaseFee dormant
 func TestIncentivNetworkDynamicMinBaseFeeValues(t *testing.T) {
-	if IncentivMainnetChainConfig.DynamicMinBaseFeeTime != nil {
-		t.Fatalf("IncentivMainnetChainConfig.DynamicMinBaseFeeTime = %d, want nil (mainnet ships dormant)", *IncentivMainnetChainConfig.DynamicMinBaseFeeTime)
+	if IncentivMainnetChainConfig.DynamicMinBaseFeeTime == nil {
+		t.Fatalf("IncentivMainnetChainConfig.DynamicMinBaseFeeTime must not be nil after mainnet arming")
 	}
-	if IncentivMainnetChainConfig.MinBaseFeeContractAddr != nil {
-		t.Fatalf("IncentivMainnetChainConfig.MinBaseFeeContractAddr = %s, want nil (mainnet ships dormant)", IncentivMainnetChainConfig.MinBaseFeeContractAddr.Hex())
+	wantMainnetTime := uint64(time.Date(2026, 6, 23, 22, 0, 0, 0, time.UTC).Unix())
+	if got := *IncentivMainnetChainConfig.DynamicMinBaseFeeTime; got != wantMainnetTime {
+		gotWall := time.Unix(int64(got), 0).UTC().Format(time.RFC3339)
+		wantWall := time.Unix(int64(wantMainnetTime), 0).UTC().Format(time.RFC3339)
+		t.Fatalf("IncentivMainnetChainConfig.DynamicMinBaseFeeTime = %d (%s), want %d (%s) — 2026-06-23 22:00:00 UTC", got, gotWall, wantMainnetTime, wantWall)
+	}
+	if IncentivMainnetChainConfig.MinBaseFeeContractAddr == nil {
+		t.Fatalf("IncentivMainnetChainConfig.MinBaseFeeContractAddr must not be nil after mainnet arming")
+	}
+	wantMainnetAddr := common.HexToAddress("0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF")
+	if got := *IncentivMainnetChainConfig.MinBaseFeeContractAddr; got != wantMainnetAddr {
+		t.Fatalf("IncentivMainnetChainConfig.MinBaseFeeContractAddr = %s, want %s", got.Hex(), wantMainnetAddr.Hex())
 	}
 	if IncentivDevnetChainConfig.DynamicMinBaseFeeTime == nil {
 		t.Fatalf("IncentivDevnetChainConfig.DynamicMinBaseFeeTime must not be nil after devnet arming")

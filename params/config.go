@@ -281,34 +281,49 @@ var (
 
 	// IncentivMainnetChainConfig contains the chain parameters to run a node on the Incentiv main network.
 	IncentivMainnetChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(24101),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP155Block:                   big.NewInt(0),
-		EIP158Block:                   big.NewInt(0),
-		ByzantiumBlock:                big.NewInt(0),
-		ConstantinopleBlock:           big.NewInt(0),
-		PetersburgBlock:               big.NewInt(0),
-		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              nil,
-		BerlinBlock:                   big.NewInt(0),
-		LondonBlock:                   big.NewInt(0),
-		FeePoolBlock:                  big.NewInt(0),
-		MinBaseFeeBlock:               big.NewInt(1295000),
-		MinBaseFeeChangeHeight:        big.NewInt(1582500),
-		ArrowGlacierBlock:             nil,
-		GrayGlacierBlock:              nil,
-		FastBlock:                     big.NewInt(0),
-		ZeroRewardBlock:               big.NewInt(0),
-		MergeNetsplitBlock:            nil,
-		DPoWTime:                      newUint64(1781182800), // 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv)
-		MinerRegistryAddress:          newAddress(common.HexToAddress("0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E")),
-		DPoWMaturityTime:              86400,
-		DPoWMaturityBlocks:            17280,
-		IrregularStateChangeHeight:    big.NewInt(2429000),
-		ShanghaiTime:                  newUint64(1755203160),
+		ChainID:                    big.NewInt(24101),
+		HomesteadBlock:             big.NewInt(0),
+		DAOForkBlock:               nil,
+		DAOForkSupport:             false,
+		EIP150Block:                big.NewInt(0),
+		EIP155Block:                big.NewInt(0),
+		EIP158Block:                big.NewInt(0),
+		ByzantiumBlock:             big.NewInt(0),
+		ConstantinopleBlock:        big.NewInt(0),
+		PetersburgBlock:            big.NewInt(0),
+		IstanbulBlock:              big.NewInt(0),
+		MuirGlacierBlock:           nil,
+		BerlinBlock:                big.NewInt(0),
+		LondonBlock:                big.NewInt(0),
+		FeePoolBlock:               big.NewInt(0),
+		MinBaseFeeBlock:            big.NewInt(1295000),
+		MinBaseFeeChangeHeight:     big.NewInt(1582500),
+		ArrowGlacierBlock:          nil,
+		GrayGlacierBlock:           nil,
+		FastBlock:                  big.NewInt(0),
+		ZeroRewardBlock:            big.NewInt(0),
+		MergeNetsplitBlock:         nil,
+		DPoWTime:                   newUint64(1781182800), // 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv)
+		MinerRegistryAddress:       newAddress(common.HexToAddress("0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E")),
+		DPoWMaturityTime:           86400,
+		DPoWMaturityBlocks:         17280,
+		IrregularStateChangeHeight: big.NewInt(2429000),
+		MinBaseFeeContractAddr:     newAddress(common.HexToAddress("0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF")),
+		ShanghaiTime:               newUint64(1755203160),
+		// DynamicMinBaseFeeTime arms the contract-governed EIP-1559 floor on
+		// mainnet. Set to a near-future timestamp picked at param-PR prep time
+		// so every mainnet node has time to upgrade and restart before head.Time
+		// reaches activation. Same compat-safety rationale as DPoWTime above: a
+		// future activation timestamp keeps isForkTimestampIncompatible(nil,
+		// &future, headTime) returning false on every restart, so the existing
+		// mainnet chain DB is accepted as-is and the contract floor engages at
+		// block.Time >= DynamicMinBaseFeeTime. Contract deployed via
+		// script/DeployMinBaseFeeGovernorMainnet.s.sol at address
+		// 0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF with initial floor
+		// 12 600 gwei (= legacy MinBaseFeeUpdated, zero fee-market jump),
+		// 24-hour timelock, 13 000-block activation delay, governance =
+		// existing DPoW Governance Safe 0x10D9dEEb09bA23b2bD9739F698b3dFa9D8F95Ad4.
+		DynamicMinBaseFeeTime:         newUint64(1782252000), // 2026-06-23 22:00:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
