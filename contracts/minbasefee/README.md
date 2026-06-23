@@ -125,7 +125,7 @@ Prometheus metrics exported in `consensus/misc/eip1559.go`:
 All changes require:
 
 1. Governance address authentication.
-2. Timelock wait period (per-deployment minimum, defaults to 2 days).
+2. Timelock wait period (per-deployment minimum, 24 hours on the Incentiv mainnet deployment).
 3. Safety bounds validation (`[1 gwei, 100 ether]`, change ≤ ±200 % per proposal).
 4. Activation delay in blocks (per-deployment minimum, defaults to 13 000).
 

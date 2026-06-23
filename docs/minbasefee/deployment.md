@@ -8,8 +8,8 @@ The MinBaseFeeGovernor contract manages the minimum base fee threshold for the I
 
 ### Security Mechanisms
 
-1. **Timelock**: per-deployment minimum delay between proposal and execution (production: 2 days; devnet: shorter; deployment-time immutable)
-2. **Activation Delay**: per-deployment minimum activation delay in blocks (production: 13,000 blocks ≈ 18 hours at 5s/block; devnet: shorter; deployment-time immutable)
+1. **Timelock**: per-deployment minimum delay between proposal and execution (mainnet: 24 hours; devnet: shorter; deployment-time immutable)
+2. **Activation Delay**: per-deployment minimum activation delay in blocks (mainnet: 13,000 blocks ≈ 18 hours at 5s/block; devnet: shorter; deployment-time immutable)
 3. **Safety Bounds**:
    - Maximum min base fee: 100 ETH
    - Minimum min base fee: 1 gwei
@@ -28,8 +28,8 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
 
 ### Key Parameters
 
-- `MIN_TIMELOCK_DELAY` (deployment-time immutable): production `2 days` (172,800 seconds); devnet deployments may use a shorter value
-- `MIN_ACTIVATION_DELAY_BLOCKS` (deployment-time immutable): production `13,000` blocks (~18 hours at 5s/block); devnet deployments may use a shorter value
+- `MIN_TIMELOCK_DELAY` (deployment-time immutable): mainnet `24 hours` (86,400 seconds); devnet deployments may use a shorter value
+- `MIN_ACTIVATION_DELAY_BLOCKS` (deployment-time immutable): mainnet `13,000` blocks (~18 hours at 5s/block); devnet deployments may use a shorter value
 - `MAX_MIN_BASE_FEE` (constant): 100 ether
 - `MIN_MIN_BASE_FEE` (constant): 1 gwei
 - `MAX_CHANGE_PERCENT` (constant): 200 (allowing 3x increase or 1/3x decrease)
@@ -64,8 +64,8 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
      - `_governance`: address of the governance account
      - `_initialMinBaseFee`: initial min base fee in wei (e.g. `12600000000000` for 12.6k gwei)
      - `_activationBlock`: block number at which the initial config activates (`0` for genesis)
-     - `_minTimelockDelay`: minimum timelock delay in seconds (production: `172800` = 2 days; devnet: shorter)
-     - `_minActivationDelayBlocks`: minimum activation delay in blocks (production: `13000`; devnet: shorter)
+     - `_minTimelockDelay`: minimum timelock delay in seconds (mainnet: `86400` = 24 hours; devnet: shorter)
+     - `_minActivationDelayBlocks`: minimum activation delay in blocks (mainnet: `13000`; devnet: shorter)
 
    **Option B: Using Go bindings:**
    ```go
@@ -84,7 +84,7 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
        governanceAddress,
        initialMinBaseFee,
        activationBlock,
-       big.NewInt(172800), // _minTimelockDelay (2 days)
+       big.NewInt(86400), // _minTimelockDelay (24 hours on mainnet)
        big.NewInt(13000),  // _minActivationDelayBlocks
    )
    ```
@@ -121,7 +121,7 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
    ```
 
 4. **Wait for timelock:**
-   - Proposal must wait minimum 2 days before execution
+   - Proposal must wait the deployment's configured minimum (24 hours on mainnet) before execution
    - During this time, proposal can be cancelled if needed
 
 ### Executing a Proposal
@@ -183,7 +183,7 @@ governance must propose a corrective configuration through the normal cycle:
 
 ```solidity
 bytes32 fix = contract.proposeMinBaseFee(correctValue, futureActivationBlock);
-// Wait `timelockDelay` (minimum: 2 days in production).
+// Wait `timelockDelay` (minimum: 24 hours on the Incentiv mainnet deployment).
 contract.executeProposal(fix);
 ```
 
@@ -286,7 +286,7 @@ go test -v ./contracts/minbasefee/test -run TestMinBaseFeeGovernorTimelock
 
 ## Security Considerations
 
-1. **Timelock Protection**: All changes require a configurable minimum-2-day delay (per-deployment immutable), allowing time for community review.
+1. **Timelock Protection**: All changes require the deployment's configured minimum delay (24 hours on mainnet, per-deployment immutable), allowing time for community review.
 2. **Bounded Changes**: Cannot make extreme changes in a single proposal (`±200 %` cap, `[1 gwei, 100 ether]` bounds).
 3. **Activation Delay**: Changes don't take effect immediately even after execution (per-deployment minimum, immutable; production: 13 000 blocks).
 4. **Proposal Cancellation**: A bad pending proposal can be cancelled before execution; an already-executed bad value is corrected via a new proposal.
@@ -310,8 +310,8 @@ The contract does not have upgrade functionality. To upgrade:
 - Proposal ID generated and stored
 - Community notified
 
-**Day 2 - Execution Window Opens**
-- Block ~1,034,560: Timelock expires (2 days = 172,800s = ~34,560 blocks at 5s/block)
+**Next Day - Execution Window Opens**
+- Block ~1,017,280: Timelock expires (24 hours on the mainnet deployment = 86,400s = ~17,280 blocks at 5s/block)
 - Proposal can now be executed
 - `canExecute` returns true
 
