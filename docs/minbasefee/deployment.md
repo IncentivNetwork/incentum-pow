@@ -121,7 +121,7 @@ See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance analysis.
    ```
 
 4. **Wait for timelock:**
-   - Proposal must wait the deployment's configured minimum (24 hours on mainnet) before execution
+   - Proposal must wait the deployment's configured `timelockDelay` (>= `MIN_TIMELOCK_DELAY`; 24 hours on mainnet) before execution
    - During this time, proposal can be cancelled if needed
 
 ### Executing a Proposal
