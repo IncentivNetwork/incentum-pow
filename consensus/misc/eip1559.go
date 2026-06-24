@@ -17,6 +17,7 @@
 package misc
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -28,6 +29,14 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 )
+
+// ErrDynamicMinBaseFeeNilStateDB is returned by CalcBaseFee when the dynamic
+// min base fee fork is active for the parent but the caller did not provide a
+// stateDB. Non-consensus callers (GraphQL nextBaseFee, eth_feeHistory, gas
+// price helpers) that legitimately cannot hold parent state should match this
+// sentinel with errors.Is and degrade gracefully; any other error returned
+// from CalcBaseFee indicates a genuine fault and must not be swallowed.
+var ErrDynamicMinBaseFeeNilStateDB = errors.New("dynamic min base fee fork active but stateDB is nil")
 
 // Metrics for monitoring minimum base fee. Values that are wei-denominated are
 // reported in gwei (wei / 1e9) so they stay representable as int64 even at the
@@ -200,7 +209,7 @@ func computeMinBaseFeeFloor(config *params.ChainConfig, parent *types.Header, st
 			// Intentionally leave the active gauge alone here so an RPC error
 			// path cannot mask a successful import or be mistaken for a
 			// contract-read outage by dashboards.
-			return nil, fmt.Errorf("dynamic min base fee fork active at parent time %d but stateDB is nil", parent.Time)
+			return nil, fmt.Errorf("%w (parent time %d)", ErrDynamicMinBaseFeeNilStateDB, parent.Time)
 		}
 		minimumBaseFee, err := readMinBaseFeeFromContract(config, stateDB, nextBlockNum)
 		if err != nil {

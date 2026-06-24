@@ -22,8 +22,95 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus/misc"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 )
+
+// stubFeeHistoryBackend implements the minimal OracleBackend subset that the
+// processBlock unit tests below exercise. processBlock only reads
+// ChainConfig(); the remaining methods are unused stubs so the stub stays
+// small and obviously side-effect-free.
+type stubFeeHistoryBackend struct {
+	config *params.ChainConfig
+}
+
+func (b *stubFeeHistoryBackend) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
+	return nil, nil
+}
+func (b *stubFeeHistoryBackend) BlockByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Block, error) {
+	return nil, nil
+}
+func (b *stubFeeHistoryBackend) GetReceipts(ctx context.Context, hash common.Hash) (types.Receipts, error) {
+	return nil, nil
+}
+func (b *stubFeeHistoryBackend) PendingBlockAndReceipts() (*types.Block, types.Receipts) {
+	return nil, nil
+}
+func (b *stubFeeHistoryBackend) ChainConfig() *params.ChainConfig { return b.config }
+func (b *stubFeeHistoryBackend) SubscribeChainHeadEvent(ch chan<- core.ChainHeadEvent) event.Subscription {
+	return nil
+}
+
+// TestProcessBlockDynamicMinBaseFeeFallback covers the regression that broke
+// the ERC-4337 bundler stack after DynamicMinBaseFeeTime activation: with no
+// stateDB available, misc.CalcBaseFee returns ErrDynamicMinBaseFeeNilStateDB,
+// and processBlock must degrade to a parent.BaseFee approximation rather than
+// surfacing a -32000 RPC error. It also asserts the defensive-copy property
+// so a future mutation of bf.results.nextBaseFee cannot reach the underlying
+// header.BaseFee, and re-asserts that misc.CalcBaseFee itself still returns
+// the sentinel (so the two sides cannot silently drift apart).
+func TestProcessBlockDynamicMinBaseFeeFallback(t *testing.T) {
+	dmbfActivation := uint64(1000)
+	contractAddr := common.HexToAddress("0x2Ca84D9e3CCC362FfFE5B669174dC86b98F362AF")
+	config := &params.ChainConfig{
+		ChainID:                big.NewInt(1337),
+		LondonBlock:            big.NewInt(0),
+		DynamicMinBaseFeeTime:  &dmbfActivation,
+		MinBaseFeeContractAddr: &contractAddr,
+	}
+
+	parentBaseFee := big.NewInt(12_600_000_000_000)
+	header := &types.Header{
+		Number:   big.NewInt(100),
+		Time:     dmbfActivation + 100, // post-activation: contract floor needs state
+		GasLimit: 30_000_000,
+		GasUsed:  15_000_000,
+		BaseFee:  parentBaseFee,
+	}
+	bf := &blockFees{
+		blockNumber: header.Number.Uint64(),
+		header:      header,
+	}
+	oracle := &Oracle{backend: &stubFeeHistoryBackend{config: config}}
+
+	oracle.processBlock(bf, nil)
+
+	if bf.err != nil {
+		t.Fatalf("processBlock surfaced an error instead of falling back: %v", bf.err)
+	}
+	if bf.results.nextBaseFee == nil {
+		t.Fatal("expected non-nil nextBaseFee after the DMBF nil-stateDB fallback")
+	}
+	if bf.results.nextBaseFee.Cmp(parentBaseFee) != 0 {
+		t.Fatalf("expected nextBaseFee == parent.BaseFee (%s), got %s", parentBaseFee, bf.results.nextBaseFee)
+	}
+	if bf.results.nextBaseFee == parentBaseFee {
+		t.Fatal("fallback aliased parent.BaseFee directly; expected a defensive copy")
+	}
+
+	// Independent sanity: the sentinel returned by misc.CalcBaseFee must
+	// stay matchable with errors.Is. If a future refactor stops wrapping
+	// ErrDynamicMinBaseFeeNilStateDB the fallback above silently turns into
+	// the old error-propagation behaviour, so guard the contract here.
+	if _, err := misc.CalcBaseFee(config, header, nil); !errors.Is(err, misc.ErrDynamicMinBaseFeeNilStateDB) {
+		t.Fatalf("misc.CalcBaseFee(nil stateDB) under active DMBF must return ErrDynamicMinBaseFeeNilStateDB, got %v", err)
+	}
+}
 
 func TestFeeHistory(t *testing.T) {
 	var cases = []struct {
