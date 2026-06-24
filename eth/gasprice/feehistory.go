@@ -96,13 +96,25 @@ func (oracle *Oracle) processBlock(bf *blockFees, percentiles []float64) {
 	if chainconfig.IsLondon(big.NewInt(int64(bf.blockNumber + 1))) {
 		nextBaseFee, err := misc.CalcBaseFee(chainconfig, bf.header, nil)
 		if err != nil {
-			// Post-DynamicMinBaseFee activation the floor needs parent post-state,
-			// which this prediction path does not hold. Propagate via bf.err so
-			// the surrounding FeeHistory call returns a clean RPC error - the
-			// `baseFeePerGas` array has no null slot, and returning 0 here would
-			// look like a real "next baseFee = 0 wei" prediction.
-			bf.err = err
-			return
+			if !errors.Is(err, misc.ErrDynamicMinBaseFeeNilStateDB) {
+				// Any non-DMBF-nil-state error here is a genuine fault and must
+				// surface to the RPC caller rather than be hidden by a fallback.
+				bf.err = err
+				return
+			}
+			// Post-DynamicMinBaseFee activation the contract floor needs parent
+			// post-state, which this prediction path does not hold. Returning an
+			// RPC error breaks bundlers and wallets that call eth_feeHistory to
+			// estimate gas prices (the bundler stack was observed unable to submit
+			// UserOperations against an upgraded RPC node). Fall back to a copy of
+			// `parent.BaseFee` as a conservative tight approximation: it was set
+			// at consensus time with the contract floor applied, so it is already
+			// >= floor(parent.Time). The real next base fee differs by at most
+			// BaseFeeChangeDenominator (12.5 % per block in EIP-1559), within the
+			// safety margin clients add on top of fee history results. The
+			// FeeHistory assembly only consumes this approximated value for the
+			// lastBlock+1 slot to keep historical entries authoritative.
+			nextBaseFee = new(big.Int).Set(bf.header.BaseFee)
 		}
 		bf.results.nextBaseFee = nextBaseFee
 	} else {
@@ -326,7 +338,23 @@ func (oracle *Oracle) FeeHistory(ctx context.Context, blocks uint64, unresolvedL
 		}
 		i := fees.blockNumber - oldestBlock
 		if fees.results.baseFee != nil {
-			reward[i], baseFee[i], baseFee[i+1], gasUsedRatio[i] = fees.results.reward, fees.results.baseFee, fees.results.nextBaseFee, fees.results.gasUsedRatio
+			reward[i], baseFee[i], gasUsedRatio[i] = fees.results.reward, fees.results.baseFee, fees.results.gasUsedRatio
+			// Only let block i's predicted nextBaseFee land in baseFee[i+1] when
+			// no authoritative header has filled that slot. The header write a
+			// few lines up (`baseFee[i] = fees.results.baseFee`) is unconditional
+			// and runs for index i+1 when block i+1 is processed, so once block
+			// i+1 has arrived this guard fails and i's prediction is discarded.
+			// Conversely, when block i+1 is missing (request beyond head or a
+			// reorg trimmed the requested range via firstMissing), block i is
+			// still the authority for the trailing slot - dropping it would leave
+			// the truncated baseFee[firstMissing] returned to the caller as nil.
+			// Pre-DynamicMinBaseFee the prediction was exact and the previous
+			// unconditional write was idempotent; post-activation the fallback
+			// path in processBlock approximates within 12.5 % and an unguarded
+			// out-of-order arrival would corrupt the returned baseFeePerGas.
+			if baseFee[i+1] == nil {
+				baseFee[i+1] = fees.results.nextBaseFee
+			}
 		} else {
 			// getting no block and no error means we are requesting into the future (might happen because of a reorg)
 			if i < firstMissing {
