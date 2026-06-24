@@ -339,14 +339,20 @@ func (oracle *Oracle) FeeHistory(ctx context.Context, blocks uint64, unresolvedL
 		i := fees.blockNumber - oldestBlock
 		if fees.results.baseFee != nil {
 			reward[i], baseFee[i], gasUsedRatio[i] = fees.results.reward, fees.results.baseFee, fees.results.gasUsedRatio
-			// Only consume the predicted nextBaseFee for the trailing lastBlock+1
-			// slot. Writing it for every block would let an arbitrary-order channel
-			// arrival from block i overwrite block i+1's authoritative baseFee[i+1]
-			// with i's prediction. Pre-DynamicMinBaseFee the prediction was exact
-			// and the overwrite was idempotent; post-activation the fallback path
-			// in processBlock approximates next base fee within 12.5 %, so a stale
-			// arrival would corrupt the returned baseFeePerGas history.
-			if fees.blockNumber == lastBlock {
+			// Only let block i's predicted nextBaseFee land in baseFee[i+1] when
+			// no authoritative header has filled that slot. The header write a
+			// few lines up (`baseFee[i] = fees.results.baseFee`) is unconditional
+			// and runs for index i+1 when block i+1 is processed, so once block
+			// i+1 has arrived this guard fails and i's prediction is discarded.
+			// Conversely, when block i+1 is missing (request beyond head or a
+			// reorg trimmed the requested range via firstMissing), block i is
+			// still the authority for the trailing slot - dropping it would leave
+			// the truncated baseFee[firstMissing] returned to the caller as nil.
+			// Pre-DynamicMinBaseFee the prediction was exact and the previous
+			// unconditional write was idempotent; post-activation the fallback
+			// path in processBlock approximates within 12.5 % and an unguarded
+			// out-of-order arrival would corrupt the returned baseFeePerGas.
+			if baseFee[i+1] == nil {
 				baseFee[i+1] = fees.results.nextBaseFee
 			}
 		} else {
