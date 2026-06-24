@@ -96,13 +96,18 @@ func (oracle *Oracle) processBlock(bf *blockFees, percentiles []float64) {
 	if chainconfig.IsLondon(big.NewInt(int64(bf.blockNumber + 1))) {
 		nextBaseFee, err := misc.CalcBaseFee(chainconfig, bf.header, nil)
 		if err != nil {
-			// Post-DynamicMinBaseFee activation the floor needs parent post-state,
-			// which this prediction path does not hold. Propagate via bf.err so
-			// the surrounding FeeHistory call returns a clean RPC error - the
-			// `baseFeePerGas` array has no null slot, and returning 0 here would
-			// look like a real "next baseFee = 0 wei" prediction.
-			bf.err = err
-			return
+			// Post-DynamicMinBaseFee activation the contract floor needs parent
+			// post-state, which this prediction path does not hold. Returning an
+			// RPC error here breaks bundlers and wallets that call eth_feeHistory
+			// to estimate gas prices (the bundler stack was observed unable to
+			// submit UserOperations against an upgraded RPC node). Fall back to
+			// `parent.BaseFee` as a conservative tight approximation: it was
+			// computed at consensus time with proper floor applied, so it is
+			// already >= the contract floor at parent.Time. The real next base
+			// fee differs from parent.BaseFee by at most BaseFeeChangeDenominator
+			// (12.5 % per block in EIP-1559), which is well within the safety
+			// margin clients add on top of fee history results.
+			nextBaseFee = bf.header.BaseFee
 		}
 		bf.results.nextBaseFee = nextBaseFee
 	} else {
