@@ -96,18 +96,25 @@ func (oracle *Oracle) processBlock(bf *blockFees, percentiles []float64) {
 	if chainconfig.IsLondon(big.NewInt(int64(bf.blockNumber + 1))) {
 		nextBaseFee, err := misc.CalcBaseFee(chainconfig, bf.header, nil)
 		if err != nil {
+			if !errors.Is(err, misc.ErrDynamicMinBaseFeeNilStateDB) {
+				// Any non-DMBF-nil-state error here is a genuine fault and must
+				// surface to the RPC caller rather than be hidden by a fallback.
+				bf.err = err
+				return
+			}
 			// Post-DynamicMinBaseFee activation the contract floor needs parent
 			// post-state, which this prediction path does not hold. Returning an
-			// RPC error here breaks bundlers and wallets that call eth_feeHistory
-			// to estimate gas prices (the bundler stack was observed unable to
-			// submit UserOperations against an upgraded RPC node). Fall back to
-			// `parent.BaseFee` as a conservative tight approximation: it was
-			// computed at consensus time with proper floor applied, so it is
-			// already >= the contract floor at parent.Time. The real next base
-			// fee differs from parent.BaseFee by at most BaseFeeChangeDenominator
-			// (12.5 % per block in EIP-1559), which is well within the safety
-			// margin clients add on top of fee history results.
-			nextBaseFee = bf.header.BaseFee
+			// RPC error breaks bundlers and wallets that call eth_feeHistory to
+			// estimate gas prices (the bundler stack was observed unable to submit
+			// UserOperations against an upgraded RPC node). Fall back to a copy of
+			// `parent.BaseFee` as a conservative tight approximation: it was set
+			// at consensus time with the contract floor applied, so it is already
+			// >= floor(parent.Time). The real next base fee differs by at most
+			// BaseFeeChangeDenominator (12.5 % per block in EIP-1559), within the
+			// safety margin clients add on top of fee history results. The
+			// FeeHistory assembly only consumes this approximated value for the
+			// lastBlock+1 slot to keep historical entries authoritative.
+			nextBaseFee = new(big.Int).Set(bf.header.BaseFee)
 		}
 		bf.results.nextBaseFee = nextBaseFee
 	} else {
@@ -331,7 +338,17 @@ func (oracle *Oracle) FeeHistory(ctx context.Context, blocks uint64, unresolvedL
 		}
 		i := fees.blockNumber - oldestBlock
 		if fees.results.baseFee != nil {
-			reward[i], baseFee[i], baseFee[i+1], gasUsedRatio[i] = fees.results.reward, fees.results.baseFee, fees.results.nextBaseFee, fees.results.gasUsedRatio
+			reward[i], baseFee[i], gasUsedRatio[i] = fees.results.reward, fees.results.baseFee, fees.results.gasUsedRatio
+			// Only consume the predicted nextBaseFee for the trailing lastBlock+1
+			// slot. Writing it for every block would let an arbitrary-order channel
+			// arrival from block i overwrite block i+1's authoritative baseFee[i+1]
+			// with i's prediction. Pre-DynamicMinBaseFee the prediction was exact
+			// and the overwrite was idempotent; post-activation the fallback path
+			// in processBlock approximates next base fee within 12.5 %, so a stale
+			// arrival would corrupt the returned baseFeePerGas history.
+			if fees.blockNumber == lastBlock {
+				baseFee[i+1] = fees.results.nextBaseFee
+			}
 		} else {
 			// getting no block and no error means we are requesting into the future (might happen because of a reorg)
 			if i < firstMissing {
