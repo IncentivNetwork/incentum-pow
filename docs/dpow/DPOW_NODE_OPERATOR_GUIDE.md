@@ -7,9 +7,9 @@
 
 ## 1. What is changing
 
-DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to consensus. From the activation block `DPoWBlock` onward, a block is valid only if its coinbase is a staked, matured miner in the `MinerRegistry` contract.
+DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to consensus. From the activation timestamp `DPoWTime` onward (i.e. every block whose `block.Time ≥ DPoWTime`), a block is valid only if its coinbase is a staked, matured miner in the `MinerRegistry` contract.
 
-**This is a consensus-breaking hard fork.** Every node — whether it mines or not — must run the DPoW-enabled binary before `DPoWBlock`. A node still running old software will accept unauthorized blocks and **fork off the canonical chain**.
+**This is a consensus-breaking hard fork.** Every node — whether it mines or not — must run the DPoW-enabled binary before `DPoWTime`. A node still running old software will accept unauthorized blocks and **fork off the canonical chain**.
 
 | Node type | Must upgrade? | Must stake? |
 |---|---|---|
@@ -23,7 +23,7 @@ DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to co
 
 - Know your `systemd` unit name (e.g. `incentum.service`).
 - Have the published SHA-256 checksum of the new binary release.
-- Schedule the upgrade well before `DPoWBlock` — do not wait for activation day.
+- Schedule the upgrade well before `DPoWTime` — do not wait for activation day.
 
 Install paths differ between nodes. The shell commands in this guide reference the geth binary and data directory through two variables — set them to your node's actual paths before running any command:
 
@@ -117,17 +117,17 @@ Two paths: installing the pre-built release artifact (recommended) or building f
 CI publishes a GitHub Release for each `v*-dpow-mainnet` tag containing a static `linux/amd64` tarball and its SHA-256 checksum file. Download both, verify, extract, and install:
 
 ```bash
-RELEASE_TAG=<the-actual-release-tag>   # e.g. v1.11.7-dpow-mainnet
-RELEASE_URL=https://github.com/IncentivNetwork/incentum-pow/releases/download/${RELEASE_TAG}
+RELEASE_TAG="<the-actual-release-tag>"   # e.g. v1.11.7-dpow-mainnet
+RELEASE_URL="https://github.com/IncentivNetwork/incentum-pow/releases/download/${RELEASE_TAG}"
 
-curl -L -O ${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz
-curl -L -O ${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256
+curl -L -O "${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz"
+curl -L -O "${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256"
 
 # Verify the tarball BEFORE extracting — must succeed:
-sha256sum -c geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256
+sha256sum -c "geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256"
 
 # Extract (the tarball contains `geth` and `COPYING`):
-tar -xzf geth-linux-amd64-${RELEASE_TAG}.tar.gz
+tar -xzf "geth-linux-amd64-${RELEASE_TAG}.tar.gz"
 
 # Confirm the embedded version and Git commit match the released tag:
 ./geth version
@@ -167,8 +167,8 @@ At startup geth logs a one-line consensus banner:
 ```bash
 sudo journalctl -u incentum.service | grep -i "Consensus:"
 # DPoW-enabled binary with activation set:
-#   Consensus: Ethash + DPoW (authorized mining, activates at block #<DPoWBlock>)
-# DPoW code present but inactive (DPoWBlock = nil):
+#   Consensus: Ethash + DPoW (authorized mining, activates at timestamp <DPoWTime> / <RFC3339 UTC>)
+# DPoW code present but inactive (DPoWTime = nil):
 #   Consensus: Ethash (proof-of-work)
 ```
 
@@ -179,16 +179,16 @@ For the full active chain config, attach over IPC:
 ```
 
 ```javascript
-admin.nodeInfo.protocols.eth.config   // shows dpowBlock, minerRegistryAddress,
+admin.nodeInfo.protocols.eth.config   // shows dpowTime, minerRegistryAddress,
                                       // dpowMaturityTime, dpowMaturityBlocks
 ```
 
 > The `admin` namespace is intentionally excluded from the hardened `--http.api` / `--ws.api` set (§3.1), so run this command over the local IPC socket. `admin` is not inherently IPC-only — it can be served over HTTP/WS if added to those flags, which the hardening checklist deliberately avoids.
 
-- Before the activation release: `dpowBlock` is absent/`null` — DPoW code is present but inert.
-- For the activation release: `dpowBlock` is set and `minerRegistryAddress` is the real deployed contract.
+- Before the activation release: `dpowTime` is absent/`null` — DPoW code is present but inert.
+- For the activation release: `dpowTime` is set (Unix seconds) and `minerRegistryAddress` is the real deployed contract.
 
-A node configured with `DPoWBlock` set but no registry address **refuses to start** (`CheckDPoWConfig` invariant) — this is intentional.
+A node configured with `DPoWTime` set but no registry address **refuses to start** (`CheckDPoWConfig` invariant) — this is intentional.
 
 ### 4.6 Start and verify
 
@@ -213,7 +213,7 @@ eth.syncing          // false once caught up
 
 ## 5. Activation day
 
-At the first block with `number ≥ DPoWBlock`:
+At the first block with `block.Time ≥ DPoWTime`:
 
 - A correctly upgraded node enforces DPoW and follows the canonical chain produced by authorized miners.
 - A node still on old software accepts an unauthorized block and **forks off** — it will appear "stuck" on a minority chain.
@@ -221,9 +221,11 @@ At the first block with `number ≥ DPoWBlock`:
 ### 5.1 Health checks
 
 ```bash
-# latest block + miner
+# latest block, miner, and timestamp — `timestamp` is the activation predicate input,
+# compare it against the binary's embedded `DPoWTime` (§4.5) to confirm the chain has
+# crossed activation.
 "$GETH" attach --exec \
-  'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner})' \
+  'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner, timestamp: eth.getBlock("latest").timestamp})' \
   "$DATADIR/geth.ipc"
 
 # consensus errors in the last 15 minutes
@@ -238,7 +240,7 @@ Expected after activation: the latest block's `miner` is always a staked, author
 Symptoms: your `eth.blockNumber` diverges from public explorers; logs show repeated `DPoW: unauthorized coinbase …` or `Synchronisation failed, dropping peer …`.
 
 1. Confirm you are running the DPoW-enabled binary (`geth version` → expected release commit).
-2. Confirm the embedded config has the correct `DPoWBlock` and `MinerRegistryAddress` (§4.5).
+2. Confirm the embedded config has the correct `DPoWTime` and `MinerRegistryAddress` (§4.5).
 3. Restart the node. It will re-evaluate peers and re-sync onto the canonical chain.
 4. If it still does not converge, stop the node, remove the diverged chain segment by resyncing (`geth removedb` of chaindata or a fresh datadir), and let it re-sync from peers.
 

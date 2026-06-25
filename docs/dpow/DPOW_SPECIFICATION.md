@@ -71,7 +71,7 @@ L1 Security = Economic Security (staked $CENT)
 | `MATURITY_BLOCKS` | 17,280 (~24 h at 5 s/block) | Block-based maturity — deterministic, resistant to timestamp manipulation |
 | `UNSTAKE_DELAY` | 604,800 s (7 days) | Stake stays locked after `requestUnstake()` — prevents instant hit-and-run withdrawal (see §8.1 for the interaction with `TIMELOCK_DELAY`) |
 | `TIMELOCK_DELAY` | 604,800 s (7 days) | Every governance action is visible on-chain for 7 days before it can execute |
-| `DPoWBlock` | TBD | `ChainConfig` activation height; set once contracts are deployed |
+| `DPoWTime` | TBD | `ChainConfig` activation timestamp (Unix seconds); set once contracts are deployed |
 
 > `MATURITY_TIME` / `MATURITY_BLOCKS` / `UNSTAKE_DELAY` are `immutable` constructor parameters rather than compile-time `constant`s. The **same contract bytecode** is deployed to devnet and mainnet with different values — see §3.1 and §5.
 
@@ -315,7 +315,7 @@ slot(key) = keccak256(abi.encode(key, S))
 `ChainConfig` DPoW fields:
 
 ```go
-DPoWBlock            *big.Int        `json:"dpowBlock,omitempty"`
+DPoWTime             *uint64         `json:"dpowTime,omitempty"`
 MinerRegistryAddress *common.Address `json:"minerRegistryAddress,omitempty"`
 DPoWMaturityTime     uint64          `json:"dpowMaturityTime,omitempty"`
 DPoWMaturityBlocks   uint64          `json:"dpowMaturityBlocks,omitempty"`
@@ -324,14 +324,16 @@ DPoWMaturityBlocks   uint64          `json:"dpowMaturityBlocks,omitempty"`
 Accessors:
 
 ```go
-func (c *ChainConfig) IsDPoW(num *big.Int) bool          // isBlockForked(DPoWBlock, num)
+func (c *ChainConfig) IsDPoW(time uint64) bool           // isTimestampForked(DPoWTime, time)
 func (c *ChainConfig) GetMinerRegistryAddress() common.Address
 func (c *ChainConfig) GetDPoWMaturityTime()  uint64      // default 86400  if unset
 func (c *ChainConfig) GetDPoWMaturityBlocks() *big.Int   // default 17280  if unset
 func (c *ChainConfig) CheckDPoWConfig() error            // invariant validation
 ```
 
-`CheckDPoWConfig()` enforces: if `DPoWBlock != nil`, then `MinerRegistryAddress` must be non-nil and non-zero, and `DPoWBlock` must be a non-negative `uint64`-range value. A node started with `DPoWBlock` set but no registry address refuses to start.
+`CheckDPoWConfig()` enforces: if `DPoWTime != nil`, then `MinerRegistryAddress` must be non-nil and non-zero. A node started with `DPoWTime` set but no registry address refuses to start.
+
+> **Why a timestamp, not a block number.** DPoW activates after Shanghai, and the EIP-2124 `forkid` algorithm distinguishes block-numbered forks from time-stamped forks and assumes every block fork chronologically precedes every time fork. Introducing a block-numbered fork after Shanghai violates that ordering and triggers a forkid hash mismatch across upgraded and pre-upgrade peers, blocking peering. DPoW activation is therefore expressed as a Unix timestamp (`DPoWTime`) so it sits cleanly in the post-Shanghai time-fork chain. See #92 for the full diagnosis and the DPOW-008-7 hotfix that switched the activation field from a block-numbered to a timestamp-based form.
 
 > The `ChainConfig.DPoWMaturityTime` / `DPoWMaturityBlocks` values **must match** the `immutable` values of the deployed `MinerRegistry`. Geth reads maturity thresholds from `ChainConfig`; the contract's `isAuthorizedMiner()` reads them from its own immutables. If they disagree, monitoring tools and consensus disagree.
 
@@ -381,7 +383,7 @@ Three call sites, by design (defense-in-depth):
 2. **Deploy `TimelockController`** — OZ contract; `minDelay`, `proposers`, `executors`, `admin` per environment (see §11).
 3. **Deploy `MinerRegistry(wcent, timelock, maturityTime, maturityBlocks, unstakeDelay)`** — five constructor arguments.
 4. **Record addresses** — set `ChainConfig.MinerRegistryAddress` (and `DPoWMaturityTime` / `DPoWMaturityBlocks` if overriding defaults).
-5. **Coordinate the hard fork** — distribute the DPoW-enabled binary; set `DPoWBlock`; all nodes upgrade (see §7 and `DPOW_NODE_OPERATOR_GUIDE.md`).
+5. **Coordinate the hard fork** — distribute the DPoW-enabled binary; set `DPoWTime`; all nodes upgrade (see §7 and `DPOW_NODE_OPERATOR_GUIDE.md`).
 
 The Foundry script `script/DeployDevnet.s.sol` performs steps 1–3 for devnet (chain ID 12730) and additionally funds the initial miner. A mainnet equivalent must use a multisig as `GOVERNANCE_ADDRESS` and a 7-day `TimelockController` delay.
 
@@ -397,13 +399,13 @@ The Foundry script `script/DeployDevnet.s.sol` performs steps 1–3 for devnet (
 `ChainConfig` example (devnet, currently deployed):
 
 ```go
-DPoWBlock:            big.NewInt(274000),
+DPoWTime:             newUint64(1781614800), // 2026-06-16 13:00:00 UTC
 MinerRegistryAddress: newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
 DPoWMaturityTime:     300,
 DPoWMaturityBlocks:   60,
 ```
 
-> **Testnet**: `IncentivTestnetChainConfig` ships with `DPoWBlock = nil` and `MinerRegistryAddress = nil` — DPoW disabled. A future testnet activation will set these in a separate PR, following the same procedure used for mainnet in DPOW-008-4.
+> **Testnet**: `IncentivTestnetChainConfig` ships with `DPoWTime = nil` and `MinerRegistryAddress = nil` — DPoW disabled. A future testnet activation will set these in a separate PR, following the same procedure used for mainnet in DPOW-008-4.
 
 ### 5.3 Devnet deployed addresses (chain ID 12730)
 
@@ -413,7 +415,7 @@ DPoWMaturityBlocks:   60,
 | TimelockController | `0xB23dbCdB1DF4e03dd3A201aEb0cF5B7cc8855fC5` |
 | MinerRegistry | `0xdb6EEC53d173554730e342d6703c4AD3fD78604b` |
 
-> These addresses and the devnet `DPoWBlock` are accurate as of writing and may change on redeployment. Treat the live `ChainConfig` and on-chain contract state as authoritative.
+> These addresses and the devnet `DPoWTime` are accurate as of writing and may change on redeployment. Treat the live `ChainConfig` and on-chain contract state as authoritative.
 
 ### 5.4 Mainnet deployed addresses (chain ID 24101)
 
@@ -451,12 +453,12 @@ DPoW activation is a **consensus-breaking hard fork**. The full operational plan
 - `DPOW_MINER_ONBOARDING.md` — staking and maturity timing for miners.
 - `DPOW_GOVERNANCE_RUNBOOK.md` — Timelock operation and incident response.
 
-**Activation invariant**: the first block with `number ≥ DPoWBlock` must have an authorized coinbase. Any node still running pre-DPoW software will accept unauthorized blocks and fork off the canonical chain — therefore *all* nodes must upgrade before `DPoWBlock`.
+**Activation invariant**: the first block with `block.Time ≥ DPoWTime` must have an authorized coinbase. Any node still running pre-DPoW software will accept unauthorized blocks and fork off the canonical chain — therefore *all* nodes must upgrade before `DPoWTime`.
 
 **Two-step rollout (recommended)**:
 
-1. Release a binary that contains the DPoW code but with `DPoWBlock = nil` for the target network — behavior is unchanged; operators upgrade at their own pace.
-2. Once contracts are deployed and an activation block is announced, release a second binary that only changes `DPoWBlock` / `MinerRegistryAddress`. Because every node already runs DPoW-capable code, the activation itself carries no coordination spike.
+1. Release a binary that contains the DPoW code but with `DPoWTime = nil` for the target network — behavior is unchanged; operators upgrade at their own pace.
+2. Once contracts are deployed and an activation timestamp is announced, release a second binary that only changes `DPoWTime` / `MinerRegistryAddress`. Because every node already runs DPoW-capable code, the activation itself carries no coordination spike.
 
 ---
 
@@ -514,13 +516,13 @@ where `B = header.Number`, `T = header.Time`.
 ### 10.3 Block validity rule
 
 ```
-∀ block b with b.number ≥ DPoWBlock:
+∀ block b with b.timestamp ≥ DPoWTime:
     Valid(b) ⟹ Authorized(b.coinbase, b.number, b.timestamp)
 ```
 
 ### 10.4 Chain-level invariants
 
-- **INV-1 — no mining before maturity**: every valid block `b ≥ DPoWBlock` has a coinbase whose stake transaction was included far enough in the past to satisfy both maturity thresholds.
+- **INV-1 — no mining before maturity**: every valid block with `b.timestamp ≥ DPoWTime` has a coinbase whose stake transaction was included far enough in the past to satisfy both maturity thresholds.
 - **INV-2 — storage slot stability**: `slot(miners)=0`, `slot(stakeTime)=1`, `slot(stakeBlock)=2`, `slot(unstakeRequestTime)=3` for all contract versions.
 - **INV-3 — immediate unstake**: after `requestUnstake()`, `miners[m]=false` in the same transaction; there is no grace period.
 
@@ -585,7 +587,7 @@ A fully compromised governance multisig can, each action subject to the 7-day de
 
 **Blast radius is bounded to the DPoW subsystem.** Governance controls only `MinerRegistry`. It cannot touch ordinary user balances, cannot mint `WCENT` (which is a 1:1 `deposit`/`withdraw` wrapper with no governance mint), and cannot alter transaction processing. The worst case is loss of miner stakes plus a halted chain.
 
-Recovery is a coordinated social hard fork, **not** a simple binary swap. The client's config-compatibility check in `params/config.go` treats any change to `DPoWBlock`, `MinerRegistryAddress`, `DPoWMaturityTime`, or `DPoWMaturityBlocks` *after* DPoW activation as incompatible, with the rewind target set to the pre-DPoW boundary. A recovery release therefore requires every node to rewind to before `DPoWBlock` and re-sync under the new configuration — see `DPOW_GOVERNANCE_RUNBOOK.md` §8.
+Recovery is a coordinated social hard fork, **not** a simple binary swap. The client's config-compatibility check in `params/config.go` treats any change to `DPoWTime`, `MinerRegistryAddress`, `DPoWMaturityTime`, or `DPoWMaturityBlocks` *after* DPoW activation as incompatible, with the rewind target set to the pre-DPoW boundary. A recovery release therefore requires every node to rewind to before `DPoWTime` and re-sync under the new configuration — see `DPOW_GOVERNANCE_RUNBOOK.md` §8.
 
 ### 11.5 Node hardening (mandatory)
 
