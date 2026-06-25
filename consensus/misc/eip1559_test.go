@@ -105,6 +105,113 @@ func TestBlockGasLimits(t *testing.T) {
 	}
 }
 
+// TestVerifyEip1559HeaderStatelessDMBFBounds covers the lower- and upper-bound
+// rejection logic in VerifyEip1559Header when the dynamic min base fee fork is
+// active for the parent and the caller did not provide a stateDB (header-only
+// path used by headers-first / snap sync). The exact contract floor cannot be
+// read without state, but the consensus layer still enforces:
+//   - lower bound: BaseFee >= rawBaseFee (the floor can only raise, never lower)
+//   - upper bound: BaseFee <= max(rawBaseFee, DynamicMinBaseFeeUpperWei),
+//     because the contract floor is itself bounded by MAX_MIN_BASE_FEE
+//
+// Both edges and one over-edge case are asserted on each side.
+func TestVerifyEip1559HeaderStatelessDMBFBounds(t *testing.T) {
+	cfg := config()
+	dmbfActivation := uint64(1000)
+	cfg.DynamicMinBaseFeeTime = &dmbfActivation
+	contractAddr := common.HexToAddress("0x000000000000000000000000000000000000dEaD")
+	cfg.MinBaseFeeContractAddr = &contractAddr
+
+	parentBaseFee := new(big.Int).SetUint64(params.InitialBaseFee)
+	parent := &types.Header{
+		Number:   big.NewInt(10),
+		Time:     dmbfActivation + 1, // parent.Time >= activation: DMBF gating fires
+		GasLimit: 20_000_000,
+		GasUsed:  10_000_000, // exactly at target -> rawBaseFee == parent.BaseFee
+		BaseFee:  parentBaseFee,
+	}
+	// With GasUsed == target the EIP-1559 raw next base fee equals the parent's
+	// BaseFee, which keeps the bound arithmetic explicit and independent of the
+	// 1/8th change rules tested elsewhere.
+	rawBaseFee := new(big.Int).Set(parentBaseFee)
+	upperBound := new(big.Int).Set(params.DynamicMinBaseFeeUpperWei)
+	if rawBaseFee.Cmp(upperBound) > 0 {
+		t.Fatalf("test precondition broken: rawBaseFee (%s) should not exceed DynamicMinBaseFeeUpperWei (%s)", rawBaseFee, upperBound)
+	}
+
+	makeHeader := func(baseFee *big.Int) *types.Header {
+		return &types.Header{
+			Number:   new(big.Int).Add(parent.Number, common.Big1),
+			Time:     parent.Time + 1,
+			GasLimit: parent.GasLimit,
+			GasUsed:  parent.GasLimit / 2,
+			BaseFee:  baseFee,
+		}
+	}
+
+	cases := []struct {
+		name     string
+		baseFee  *big.Int
+		wantErr  bool
+		wantText string
+	}{
+		{
+			name:    "accepted at lower bound (== rawBaseFee)",
+			baseFee: new(big.Int).Set(rawBaseFee),
+			wantErr: false,
+		},
+		{
+			name:    "accepted at upper bound (== DynamicMinBaseFeeUpperWei)",
+			baseFee: new(big.Int).Set(upperBound),
+			wantErr: false,
+		},
+		{
+			name:     "rejected one wei below rawBaseFee",
+			baseFee:  new(big.Int).Sub(rawBaseFee, common.Big1),
+			wantErr:  true,
+			wantText: "below raw EIP-1559 value",
+		},
+		{
+			name:     "rejected one wei above DynamicMinBaseFeeUpperWei",
+			baseFee:  new(big.Int).Add(upperBound, common.Big1),
+			wantErr:  true,
+			wantText: "above max stateless allowed",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := VerifyEip1559Header(cfg, parent, makeHeader(tc.baseFee), nil)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected rejection for BaseFee=%s, got no error", tc.baseFee)
+				}
+				if tc.wantText != "" && !contains(err.Error(), tc.wantText) {
+					t.Fatalf("error text mismatch: got %q, want substring %q", err.Error(), tc.wantText)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected acceptance for BaseFee=%s, got error: %v", tc.baseFee, err)
+			}
+		})
+	}
+}
+
+// contains is a tiny dependency-free substring check used only by the test
+// above so that adding the bound-edge coverage does not pull in `strings`
+// into this file's imports.
+func contains(haystack, needle string) bool {
+	if len(needle) == 0 {
+		return true
+	}
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
+}
+
 // TestCalcBaseFee assumes all blocks are 1559-blocks
 func TestCalcBaseFee(t *testing.T) {
 	tests := []struct {
