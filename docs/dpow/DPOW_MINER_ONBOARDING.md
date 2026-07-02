@@ -138,7 +138,7 @@ latest acceptable stake block = estimated_DPoWTime_block_height - MATURITY_BLOCK
 
 The **time** deadline is deterministic — `DPoWTime` is an exact Unix timestamp embedded in the binary. The **block** deadline is only an estimate: the block height that will hold a given future timestamp depends on the actual block-production rate and is not knowable ahead of time, so derive `estimated_DPoWTime_block_height` from the current head height and time, and treat it as approximate.
 
-Stake early enough to satisfy **both**. If blocks are produced faster than 5 s, the block condition binds; if slower, the time condition binds. Do not rely on a fixed "24 h" rule — compute against both and add the buffer.
+Stake early enough to satisfy **both**. If blocks are produced faster than 5 s, the time condition binds (MATURITY_BLOCKS is reached sooner, so the wall-clock threshold is the last to fall); if slower, the block condition binds. Do not rely on a fixed "24 h" rule — compute against both and add the buffer.
 
 Obtain the activation `DPoWTime` from the team and stake well ahead of it — do not assume any particular advance-notice window. Treat the staking deadline as a hard cut-off: a miner not authorized at `DPoWTime` cannot produce valid blocks until it stakes and matures afterwards.
 
