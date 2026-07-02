@@ -7,7 +7,7 @@
 
 ## 1. Overview
 
-After the DPoW activation timestamp `DPoWTime` (i.e. every block whose `block.Time ≥ DPoWTime`), a block is valid only if its coinbase (etherbase) is a **staked, matured** miner registered in the `MinerRegistry` contract. To keep mining, you must:
+After the DPoW activation timestamp `DPoWTime` (i.e. every block whose `block.timestamp ≥ DPoWTime`), a block is valid only if its coinbase (etherbase) is a **staked, matured** miner registered in the `MinerRegistry` contract. To keep mining, you must:
 
 1. Acquire `STAKE_AMOUNT` of `CENT` and wrap it into `WCENT`.
 2. `approve` and `stake()` it into `MinerRegistry`.

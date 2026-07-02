@@ -7,7 +7,7 @@
 
 ## 1. What is changing
 
-DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to consensus. From the activation timestamp `DPoWTime` onward (i.e. every block whose `block.Time ≥ DPoWTime`), a block is valid only if its coinbase is a staked, matured miner in the `MinerRegistry` contract.
+DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to consensus. From the activation timestamp `DPoWTime` onward (i.e. every block whose `block.timestamp ≥ DPoWTime`), a block is valid only if its coinbase is a staked, matured miner in the `MinerRegistry` contract.
 
 **This is a consensus-breaking hard fork.** Every node — whether it mines or not — must run the DPoW-enabled binary before `DPoWTime`. A node still running old software will accept unauthorized blocks and **fork off the canonical chain**.
 
@@ -213,7 +213,7 @@ eth.syncing          // false once caught up
 
 ## 5. Activation day
 
-At the first block with `block.Time ≥ DPoWTime`:
+At the first block with `block.timestamp ≥ DPoWTime`:
 
 - A correctly upgraded node enforces DPoW and follows the canonical chain produced by authorized miners.
 - A node still on old software accepts an unauthorized block and **forks off** — it will appear "stuck" on a minority chain.

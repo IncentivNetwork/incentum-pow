@@ -453,7 +453,7 @@ DPoW activation is a **consensus-breaking hard fork**. The full operational plan
 - `DPOW_MINER_ONBOARDING.md` — staking and maturity timing for miners.
 - `DPOW_GOVERNANCE_RUNBOOK.md` — Timelock operation and incident response.
 
-**Activation invariant**: the first block with `block.Time ≥ DPoWTime` must have an authorized coinbase. Any node still running pre-DPoW software will accept unauthorized blocks and fork off the canonical chain — therefore *all* nodes must upgrade before `DPoWTime`.
+**Activation invariant**: the first block with `block.timestamp ≥ DPoWTime` must have an authorized coinbase. Any node still running pre-DPoW software will accept unauthorized blocks and fork off the canonical chain — therefore *all* nodes must upgrade before `DPoWTime`.
 
 **Two-step rollout (recommended)**:
 
