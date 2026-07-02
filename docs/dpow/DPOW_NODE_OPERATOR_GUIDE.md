@@ -223,9 +223,10 @@ At the first block with `block.timestamp ≥ DPoWTime`:
 ```bash
 # latest block, miner, and timestamp — `timestamp` is the activation predicate input,
 # compare it against the binary's embedded `DPoWTime` (§4.5) to confirm the chain has
-# crossed activation.
+# crossed activation. The block is fetched once so `block`, `miner`, and `timestamp`
+# come from the same header even if a new block is mined mid-check.
 "$GETH" attach --exec \
-  'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner, timestamp: eth.getBlock("latest").timestamp})' \
+  'var b = eth.getBlock("latest"); JSON.stringify({block: b.number, miner: b.miner, timestamp: b.timestamp})' \
   "$DATADIR/geth.ipc"
 
 # consensus errors in the last 15 minutes
