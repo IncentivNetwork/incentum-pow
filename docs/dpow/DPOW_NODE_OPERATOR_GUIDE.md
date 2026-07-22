@@ -117,7 +117,7 @@ Two paths: installing the pre-built release artifact (recommended) or building f
 CI publishes a GitHub Release for each `v*-dpow-mainnet` tag containing a static `linux/amd64` tarball and its SHA-256 checksum file. Download both, verify, extract, and install:
 
 ```bash
-RELEASE_TAG="<the-actual-release-tag>"   # e.g. v1.11.7-dpow-mainnet
+RELEASE_TAG="<the-actual-release-tag>"   # e.g. v1.11.8-dpow-mainnet
 RELEASE_URL="https://github.com/IncentivNetwork/incentum-pow/releases/download/${RELEASE_TAG}"
 
 curl -L -O "${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz"
