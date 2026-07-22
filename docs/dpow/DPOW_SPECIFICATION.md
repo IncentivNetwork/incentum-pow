@@ -71,7 +71,7 @@ L1 Security = Economic Security (staked $CENT)
 | `MATURITY_BLOCKS` | 17,280 (~24 h at 5 s/block) | Block-based maturity — deterministic, resistant to timestamp manipulation |
 | `UNSTAKE_DELAY` | 604,800 s (7 days) | Stake stays locked after `requestUnstake()` — prevents instant hit-and-run withdrawal (see §8.1 for the interaction with `TIMELOCK_DELAY`) |
 | `TIMELOCK_DELAY` | 604,800 s (7 days) | Every governance action is visible on-chain for 7 days before it can execute |
-| `DPoWTime` | 1781182800 (2026-06-11 13:00:00 UTC) | `ChainConfig` activation timestamp (Unix seconds); pinned in the released mainnet binary from DPOW-008-4. |
+| `DPoWTime` | 1781182800 (2026-06-11 13:00:00 UTC) | `ChainConfig` activation timestamp (Unix seconds); pinned in the released mainnet binary from DPOW-008-7 (timestamp switch hotfix). |
 
 > `MATURITY_TIME` / `MATURITY_BLOCKS` / `UNSTAKE_DELAY` are `immutable` constructor parameters rather than compile-time `constant`s. The **same contract bytecode** is deployed to devnet and mainnet with different values — see §3.1 and §5.
 
