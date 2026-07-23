@@ -7,14 +7,14 @@
 
 ## 1. Overview
 
-After the DPoW activation block `DPoWBlock`, a block is valid only if its coinbase (etherbase) is a **staked, matured** miner registered in the `MinerRegistry` contract. To keep mining, you must:
+After the DPoW activation timestamp `DPoWTime` (i.e. every block whose `block.timestamp ≥ DPoWTime`), a block is valid only if its coinbase (etherbase) is a **staked, matured** miner registered in the `MinerRegistry` contract. To keep mining, you must:
 
 1. Acquire `STAKE_AMOUNT` of `CENT` and wrap it into `WCENT`.
 2. `approve` and `stake()` it into `MinerRegistry`.
 3. Wait for **both** maturity thresholds to elapse.
-4. Confirm `isAuthorizedMiner(<your coinbase>) == true` before `DPoWBlock`.
+4. Confirm `isAuthorizedMiner(<your coinbase>) == true` before `DPoWTime`.
 
-If your coinbase is not authorized at `DPoWBlock`, your blocks are rejected by the network.
+If your coinbase is not authorized at `DPoWTime`, your blocks are rejected by the network.
 
 ---
 
@@ -129,18 +129,18 @@ echo "AUTHORIZED"
 
 ## 5. Staking deadline
 
-You must be **authorized before `DPoWBlock`**, with a safety buffer for block-rate variance.
+You must be **authorized before `DPoWTime`**, with a safety buffer for block-rate variance.
 
 ```
-latest acceptable stake time  = estimated_DPoWBlock_time - MATURITY_TIME   - 3600   (1 h safety buffer)
-latest acceptable stake block = DPoWBlock                - MATURITY_BLOCKS - 720    (~1 h safety buffer at 5 s/block)
+latest acceptable stake time  = DPoWTime                       - MATURITY_TIME   - 3600   (1 h safety buffer)
+latest acceptable stake block = estimated_DPoWTime_block_height - MATURITY_BLOCKS - 720    (~1 h safety buffer at 5 s/block)
 ```
 
-The **block** deadline is deterministic — `DPoWBlock` is an exact block number. The **time** deadline is only an estimate: the wall-clock timestamp of a future block depends on the actual block-production rate and is not knowable ahead of time, so derive `estimated_DPoWBlock_time` from the current block height and time, and treat it as approximate.
+The **time** deadline is deterministic — `DPoWTime` is an exact Unix timestamp embedded in the binary. The **block** deadline is only an estimate: the block height that will hold a given future timestamp depends on the actual block-production rate and is not knowable ahead of time, so derive `estimated_DPoWTime_block_height` from the current head height and time, and treat it as approximate.
 
-Stake early enough to satisfy **both**. If blocks are produced faster than 5 s, the time condition binds; if slower, the block condition binds. Do not rely on a fixed "24 h" rule — compute against both and add the buffer.
+Stake early enough to satisfy **both**. If blocks are produced faster than 5 s, the time condition binds (MATURITY_BLOCKS is reached sooner, so the wall-clock threshold is the last to fall); if slower, the block condition binds. Do not rely on a fixed "24 h" rule — compute against both and add the buffer.
 
-Obtain the activation `DPoWBlock` from the team and stake well ahead of it — do not assume any particular advance-notice window. Treat the staking deadline as a hard cut-off: a miner not authorized at `DPoWBlock` cannot produce valid blocks until it stakes and matures afterwards.
+Obtain the activation `DPoWTime` from the team and stake well ahead of it — do not assume any particular advance-notice window. Treat the staking deadline as a hard cut-off: a miner not authorized at `DPoWTime` cannot produce valid blocks until it stakes and matures afterwards.
 
 ---
 
