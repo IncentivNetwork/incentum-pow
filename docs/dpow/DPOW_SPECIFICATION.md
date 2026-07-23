@@ -345,14 +345,14 @@ ErrMinerNotMature             = errors.New("miner stake not yet mature: maturity
 ErrMinerRegistryNotConfigured = errors.New("miner registry not configured: dpow block is set but registry address is zero")
 ```
 
-> **Note on `ErrMinerRegistryNotConfigured` wording.** The literal error string still reads "dpow block is set" — this is legacy wording predating DPOW-008-7 (#92) that the timestamp switch did not sweep. The condition it describes is now `DPoWTime != nil && MinerRegistryAddress == zero`; the "dpow block" phrase should be read as "the DPoW activation field", not as a reference to a live `DPoWBlock` field (which no longer exists). Fixing the string itself is out of scope for this doc-only PR and is tracked as a code-side follow-up under #66.
+> **Note on `ErrMinerRegistryNotConfigured` wording.** The literal error string still reads "dpow block is set" — this is legacy wording predating DPOW-008-7 (#92) that the timestamp switch did not sweep. The condition it describes is now `DPoWTime != nil && MinerRegistryAddress == zero`; the "dpow block" phrase should be read as the former block-number activation field (which no longer exists as such — the field is now `DPoWTime`). Fixing the string itself is out of scope for this doc-only PR and is tracked as a code-side follow-up under #66.
 
 ### 4.4 Core validation logic (`consensus/ethash/dpow.go`)
 
 `Ethash.VerifyMinerAuthorization(config, state, header)` performs, in order:
 
 1. **Fake-mode bypass** — returns `nil` if `PowMode` is `ModeFake` or `ModeFullFake` (used by tests / dev tools).
-2. **Activation gate** — returns `nil` if `!config.IsDPoW(header.Number)` (DPoW not active for this block).
+2. **Activation gate** — returns `nil` if `!config.IsDPoW(header.Time)` (DPoW not active for this block; `IsDPoW` is timestamp-based since DPOW-008-7 and gates on the block's own `Time` field).
 3. **Registry configured** — returns `ErrMinerRegistryNotConfigured` if the registry address is zero.
 4. **Active-miner check** — reads slot 0 (`miners[coinbase]`); returns `ErrUnauthorizedMiner` if the raw value is zero.
 5. **Time maturity** — reads slot 1 (`stakeTime`); returns `ErrMinerNotMature` if
