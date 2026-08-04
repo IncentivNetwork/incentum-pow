@@ -66,7 +66,7 @@ func (c *collector) addHistogram(name string, m metrics.Histogram) {
 	pv := []float64{0.5, 0.75, 0.95, 0.99, 0.999, 0.9999}
 	ps := m.Percentiles(pv)
 	c.writeSummaryCounter(name, m.Count())
-	c.buff.WriteString(fmt.Sprintf(typeSummaryTpl, mutateKey(name)))
+	fmt.Fprintf(c.buff, typeSummaryTpl, mutateKey(name))
 	for i := range pv {
 		c.writeSummaryPercentile(name, strconv.FormatFloat(pv[i], 'f', -1, 64), ps[i])
 	}
@@ -81,7 +81,7 @@ func (c *collector) addTimer(name string, m metrics.Timer) {
 	pv := []float64{0.5, 0.75, 0.95, 0.99, 0.999, 0.9999}
 	ps := m.Percentiles(pv)
 	c.writeSummaryCounter(name, m.Count())
-	c.buff.WriteString(fmt.Sprintf(typeSummaryTpl, mutateKey(name)))
+	fmt.Fprintf(c.buff, typeSummaryTpl, mutateKey(name))
 	for i := range pv {
 		c.writeSummaryPercentile(name, strconv.FormatFloat(pv[i], 'f', -1, 64), ps[i])
 	}
@@ -95,7 +95,7 @@ func (c *collector) addResettingTimer(name string, m metrics.ResettingTimer) {
 	ps := m.Percentiles([]float64{50, 95, 99})
 	val := m.Values()
 	c.writeSummaryCounter(name, len(val))
-	c.buff.WriteString(fmt.Sprintf(typeSummaryTpl, mutateKey(name)))
+	fmt.Fprintf(c.buff, typeSummaryTpl, mutateKey(name))
 	c.writeSummaryPercentile(name, "0.50", ps[0])
 	c.writeSummaryPercentile(name, "0.95", ps[1])
 	c.writeSummaryPercentile(name, "0.99", ps[2])
@@ -104,19 +104,19 @@ func (c *collector) addResettingTimer(name string, m metrics.ResettingTimer) {
 
 func (c *collector) writeGaugeCounter(name string, value interface{}) {
 	name = mutateKey(name)
-	c.buff.WriteString(fmt.Sprintf(typeGaugeTpl, name))
-	c.buff.WriteString(fmt.Sprintf(keyValueTpl, name, value))
+	fmt.Fprintf(c.buff, typeGaugeTpl, name)
+	fmt.Fprintf(c.buff, keyValueTpl, name, value)
 }
 
 func (c *collector) writeSummaryCounter(name string, value interface{}) {
 	name = mutateKey(name + "_count")
-	c.buff.WriteString(fmt.Sprintf(typeCounterTpl, name))
-	c.buff.WriteString(fmt.Sprintf(keyValueTpl, name, value))
+	fmt.Fprintf(c.buff, typeCounterTpl, name)
+	fmt.Fprintf(c.buff, keyValueTpl, name, value)
 }
 
 func (c *collector) writeSummaryPercentile(name, p string, value interface{}) {
 	name = mutateKey(name)
-	c.buff.WriteString(fmt.Sprintf(keyQuantileTagValueTpl, name, p, value))
+	fmt.Fprintf(c.buff, keyQuantileTagValueTpl, name, p, value)
 }
 
 func mutateKey(key string) string {
