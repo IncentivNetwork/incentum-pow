@@ -243,9 +243,10 @@ func (f *fuzzer) AddTxsSync() bool {
 }
 
 func (f *fuzzer) GetHelperTrie(typ uint, index uint64) *trie.Trie {
-	if typ == 0 {
+	switch typ {
+	case 0:
 		return f.chtTrie
-	} else if typ == 1 {
+	case 1:
 		return f.bloomTrie
 	}
 	return nil

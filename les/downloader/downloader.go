@@ -545,13 +545,14 @@ func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td *big.I
 		func() error { return d.fetchReceipts(origin + 1) }, // Receipts are retrieved during fast sync
 		func() error { return d.processHeaders(origin+1, td) },
 	}
-	if mode == FastSync {
+	switch mode {
+	case FastSync:
 		d.pivotLock.Lock()
 		d.pivotHeader = pivot
 		d.pivotLock.Unlock()
 
 		fetchers = append(fetchers, func() error { return d.processFastSyncContent() })
-	} else if mode == FullSync {
+	case FullSync:
 		fetchers = append(fetchers, d.processFullSyncContent)
 	}
 	return d.spawnSync(fetchers)
