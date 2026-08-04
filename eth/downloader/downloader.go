@@ -785,36 +785,15 @@ func calculateRequestSpan(remoteHeight, localHeight uint64) (int64, int, int, ui
 	// the highest block that we will get is 16 blocks back from head, which means we
 	// will fetch 14 or 15 blocks unnecessarily in the case the height difference
 	// between us and the peer is 1-2 blocks, which is most common
-	requestHead := int(remoteHeight) - 1
-	if requestHead < 0 {
-		requestHead = 0
-	}
+	requestHead := max(int(remoteHeight)-1, 0)
 	// requestBottom is the lowest block we want included in the query
 	// Ideally, we want to include the one just below our own head
-	requestBottom := int(localHeight - 1)
-	if requestBottom < 0 {
-		requestBottom = 0
-	}
+	requestBottom := max(int(localHeight-1), 0)
 	totalSpan := requestHead - requestBottom
-	span := 1 + totalSpan/MaxCount
-	if span < 2 {
-		span = 2
-	}
-	if span > 16 {
-		span = 16
-	}
+	span := min(max(1+totalSpan/MaxCount, 2), 16)
 
-	count = 1 + totalSpan/span
-	if count > MaxCount {
-		count = MaxCount
-	}
-	if count < 2 {
-		count = 2
-	}
-	from = requestHead - (count-1)*span
-	if from < 0 {
-		from = 0
-	}
+	count = max(min(1+totalSpan/span, MaxCount), 2)
+	from = max(requestHead-(count-1)*span, 0)
 	max := from + (count-1)*span
 	return int64(from), count, span - 1, uint64(max)
 }
@@ -1187,10 +1166,7 @@ func (d *Downloader) fetchHeaders(p *peerConnection, from uint64, head uint64) e
 				}
 				// If the head is way older than this batch, delay the last few headers
 				if head+uint64(reorgProtThreshold) < headers[n-1].Number.Uint64() {
-					delay := reorgProtHeaderDelay
-					if delay > n {
-						delay = n
-					}
+					delay := min(reorgProtHeaderDelay, n)
 					headers = headers[:n-delay]
 					hashes = hashes[:n-delay]
 				}
@@ -1379,10 +1355,7 @@ func (d *Downloader) processHeaders(origin uint64, td, ttd *big.Int, beaconMode 
 				default:
 				}
 				// Select the next chunk of headers to import
-				limit := maxHeadersProcess
-				if limit > len(headers) {
-					limit = len(headers)
-				}
+				limit := min(maxHeadersProcess, len(headers))
 				chunkHeaders := headers[:limit]
 				chunkHashes := hashes[:limit]
 

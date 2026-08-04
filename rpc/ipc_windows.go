@@ -40,10 +40,7 @@ func ipcListen(endpoint string) (net.Listener, error) {
 func newIPCConnection(ctx context.Context, endpoint string) (net.Conn, error) {
 	timeout := defaultPipeDialTimeout
 	if deadline, ok := ctx.Deadline(); ok {
-		timeout = deadline.Sub(time.Now())
-		if timeout < 0 {
-			timeout = 0
-		}
+		timeout = max(deadline.Sub(time.Now()), 0)
 	}
 	return npipe.DialTimeout(endpoint, timeout)
 }

@@ -84,10 +84,7 @@ func NewLesServer(node *node.Node, e ethBackend, config *ethconfig.Config) (*Les
 	}
 	// Calculate the number of threads used to service the light client
 	// requests based on the user-specified value.
-	threads := config.LightServ * 4 / 100
-	if threads < 4 {
-		threads = 4
-	}
+	threads := max(config.LightServ*4/100, 4)
 	srv := &LesServer{
 		lesCommons: lesCommons{
 			genesis:          e.BlockChain().Genesis().Hash(),
@@ -133,10 +130,7 @@ func NewLesServer(node *node.Node, e ethBackend, config *ethconfig.Config) (*Les
 	// to send requests most of the time. Our goal is to serve as many clients as
 	// possible while the actually used server capacity does not exceed the limits
 	totalRecharge := srv.costTracker.totalRecharge()
-	srv.maxCapacity = srv.minCapacity * uint64(srv.config.LightPeers)
-	if totalRecharge > srv.maxCapacity {
-		srv.maxCapacity = totalRecharge
-	}
+	srv.maxCapacity = max(totalRecharge, srv.minCapacity*uint64(srv.config.LightPeers))
 	srv.fcManager.SetCapacityLimits(srv.minCapacity, srv.maxCapacity, srv.minCapacity*2)
 	srv.clientPool = vfs.NewClientPool(lesDb, srv.minCapacity, defaultConnectedBias, mclock.System{}, issync)
 	srv.clientPool.Start()

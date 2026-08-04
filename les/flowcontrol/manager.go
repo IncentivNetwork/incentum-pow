@@ -277,10 +277,7 @@ func (cm *ClientManager) updateRecharge(now mclock.AbsTime) {
 	// updating is done in multiple steps if node buffers are filled and sumRecharge
 	// is decreased before the given target time
 	for cm.sumRecharge > 0 {
-		sumRecharge := cm.sumRecharge
-		if sumRecharge > cm.totalRecharge {
-			sumRecharge = cm.totalRecharge
-		}
+		sumRecharge := min(cm.sumRecharge, cm.totalRecharge)
 		bonusRatio := float64(1)
 		v := cm.curve.ValueAt(sumRecharge)
 		s := float64(sumRecharge)

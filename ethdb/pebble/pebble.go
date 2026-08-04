@@ -136,10 +136,7 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 	// Two memory tables is configured which is identical to leveldb,
 	// including a frozen memory table and another live one.
 	memTableLimit := 2
-	memTableSize := cache * 1024 * 1024 / 2 / memTableLimit
-	if memTableSize > maxMemTableSize {
-		memTableSize = maxMemTableSize
-	}
+	memTableSize := min(cache*1024*1024/2/memTableLimit, maxMemTableSize)
 	db := &Database{
 		fn:       file,
 		log:      logger,
