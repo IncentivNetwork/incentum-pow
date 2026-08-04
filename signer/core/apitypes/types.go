@@ -437,8 +437,8 @@ func parseInteger(encType string, encValue interface{}) (*big.Int, error) {
 		length = 256
 	} else {
 		lengthStr := ""
-		if strings.HasPrefix(encType, "uint") {
-			lengthStr = strings.TrimPrefix(encType, "uint")
+		if after, ok := strings.CutPrefix(encType, "uint"); ok {
+			lengthStr = after
 		} else {
 			lengthStr = strings.TrimPrefix(encType, "int")
 		}
@@ -524,8 +524,7 @@ func (typedData *TypedData) EncodePrimitiveValue(encType string, encValue interf
 		}
 		return crypto.Keccak256(bytesValue), nil
 	}
-	if strings.HasPrefix(encType, "bytes") {
-		lengthStr := strings.TrimPrefix(encType, "bytes")
+	if lengthStr, ok := strings.CutPrefix(encType, "bytes"); ok {
 		length, err := strconv.Atoi(lengthStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid size on bytes: %v", lengthStr)
