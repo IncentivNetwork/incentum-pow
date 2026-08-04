@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"slices"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/bloombits"
@@ -307,13 +308,7 @@ func (f *Filter) pendingLogs() ([]*types.Log, error) {
 }
 
 func includes(addresses []common.Address, a common.Address) bool {
-	for _, addr := range addresses {
-		if addr == a {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(addresses, a)
 }
 
 // filterLogs creates a slice of logs matching the given criteria.
@@ -336,13 +331,7 @@ Logs:
 			continue
 		}
 		for i, sub := range topics {
-			match := len(sub) == 0 // empty rule set == wildcard
-			for _, topic := range sub {
-				if log.Topics[i] == topic {
-					match = true
-					break
-				}
-			}
+			match := len(sub) == 0 || slices.Contains(sub, log.Topics[i]) // empty rule set == wildcard
 			if !match {
 				continue Logs
 			}

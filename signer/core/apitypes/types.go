@@ -24,6 +24,7 @@ import (
 	"math/big"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -272,12 +273,7 @@ func (typedData *TypedData) HashStruct(primaryType string, data TypedDataMessage
 func (typedData *TypedData) Dependencies(primaryType string, found []string) []string {
 	primaryType = strings.TrimSuffix(primaryType, "[]")
 	includes := func(arr []string, str string) bool {
-		for _, obj := range arr {
-			if obj == str {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(arr, str)
 	}
 
 	if includes(found, primaryType) {
