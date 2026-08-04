@@ -129,6 +129,22 @@ type Config struct {
 	// exposed.
 	HTTPModules []string
 
+	// HTTPDebugProfile is the name of the debug capability profile applied to the
+	// HTTP interface. When set, only the profile's methods are registered under
+	// the debug namespace; everything else answers with -32601.
+	HTTPDebugProfile string `toml:",omitempty"`
+
+	// HTTPAllowUnsafeDebug opts the HTTP interface into the legacy behaviour of
+	// registering the entire debug namespace.
+	//
+	// *WARNING* The debug namespace contains destructive and resource-exhausting
+	// methods. Only set this on an interface no untrusted caller can reach.
+	HTTPAllowUnsafeDebug bool `toml:",omitempty"`
+
+	// HTTPBatchLimit is the maximum number of elements accepted in a JSON-RPC
+	// batch on the HTTP interface. Zero means no limit.
+	HTTPBatchLimit int `toml:",omitempty"`
+
 	// HTTPTimeouts allows for customization of the timeout values used by the HTTP RPC
 	// interface.
 	HTTPTimeouts rpc.HTTPTimeouts
@@ -167,6 +183,23 @@ type Config struct {
 	// If the module list is empty, all RPC API endpoints designated public will be
 	// exposed.
 	WSModules []string
+
+	// WSDebugProfile is the name of the debug capability profile applied to the
+	// WebSocket interface. See HTTPDebugProfile.
+	WSDebugProfile string `toml:",omitempty"`
+
+	// WSAllowUnsafeDebug opts the WebSocket interface into the legacy behaviour of
+	// registering the entire debug namespace. See HTTPAllowUnsafeDebug.
+	WSAllowUnsafeDebug bool `toml:",omitempty"`
+
+	// WSBatchLimit is the maximum number of elements accepted in a JSON-RPC batch
+	// on the WebSocket interface. Zero means no limit.
+	WSBatchLimit int `toml:",omitempty"`
+
+	// DebugTraceMaxConcurrency caps how many restricted debug trace calls may run
+	// at once. The limiter is shared by all restricted transports, since the
+	// resource it protects — node CPU, memory and chain DB I/O — is shared too.
+	DebugTraceMaxConcurrency int `toml:",omitempty"`
 
 	// WSExposeAll exposes all API modules via the WebSocket RPC interface rather
 	// than just the public ones.

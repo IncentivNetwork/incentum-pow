@@ -19,6 +19,7 @@ package rpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -60,6 +61,7 @@ type handler struct {
 	conn           jsonWriter                     // where responses will be sent
 	log            log.Logger
 	allowSubscribe bool
+	limits         batchLimits // bounds on incoming batch requests
 
 	subLock    sync.Mutex
 	serverSubs map[ID]*Subscription
@@ -70,12 +72,13 @@ type callProc struct {
 	notifiers []*Notifier
 }
 
-func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry) *handler {
+func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry, limits batchLimits) *handler {
 	rootCtx, cancelRoot := context.WithCancel(connCtx)
 	h := &handler{
 		reg:            reg,
 		idgen:          idgen,
 		conn:           conn,
+		limits:         limits,
 		respWait:       make(map[string]*requestOp),
 		clientSubs:     make(map[string]*ClientSubscription),
 		rootCtx:        rootCtx,
@@ -161,6 +164,47 @@ func (b *batchCallBuffer) doWrite(ctx context.Context, conn jsonWriter, isErrorR
 	}
 }
 
+// rejectBatch answers every call in the batch with the same error, without
+// running any of them. Each response carries the id of its request so that a
+// client waiting on the batch resolves instead of blocking on a reply that
+// never arrives.
+func (h *handler) rejectBatch(msgs []*jsonrpcMessage, err error) {
+	h.startCallProc(func(cp *callProc) {
+		resp := make([]*jsonrpcMessage, 0, len(msgs))
+		for _, msg := range msgs {
+			if msg.isCall() || msg.isSubscribe() {
+				resp = append(resp, msg.errorResponse(err))
+			}
+		}
+		if len(resp) == 0 {
+			// A batch of notifications has nothing to correlate against.
+			h.conn.writeJSON(cp.ctx, errorMessage(err), true)
+			return
+		}
+		h.conn.writeJSON(cp.ctx, resp, true)
+	})
+}
+
+// checkBatchLimits verifies a batch against the connection's configured limits.
+// It returns nil when no limit is configured or exceeded.
+func (h *handler) checkBatchLimits(msgs []*jsonrpcMessage) error {
+	if h.limits.items > 0 && len(msgs) > h.limits.items {
+		return &invalidRequestError{fmt.Sprintf("batch too large: %d requests exceeds the limit of %d", len(msgs), h.limits.items)}
+	}
+	if h.limits.traces > 0 {
+		traces := 0
+		for _, msg := range msgs {
+			if isProfiledTraceMethod(msg.Method) {
+				traces++
+			}
+		}
+		if traces > h.limits.traces {
+			return &invalidRequestError{fmt.Sprintf("too many trace calls in batch: %d exceeds the limit of %d", traces, h.limits.traces)}
+		}
+	}
+	return nil
+}
+
 // handleBatch executes all messages in a batch and returns the responses.
 func (h *handler) handleBatch(msgs []*jsonrpcMessage) {
 	// Emit error response for empty batches:
@@ -169,6 +213,14 @@ func (h *handler) handleBatch(msgs []*jsonrpcMessage) {
 			resp := errorMessage(&invalidRequestError{"empty batch"})
 			h.conn.writeJSON(cp.ctx, resp, true)
 		})
+		return
+	}
+
+	// Reject over-sized batches before doing any work. The body size cap alone
+	// does not bound the cost of a batch: a few hundred bytes of trace calls can
+	// keep the node busy for minutes.
+	if err := h.checkBatchLimits(msgs); err != nil {
+		h.rejectBatch(msgs, err)
 		return
 	}
 

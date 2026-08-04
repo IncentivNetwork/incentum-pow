@@ -42,14 +42,18 @@ type httpConfig struct {
 	Vhosts             []string
 	prefix             string // path prefix on which to mount http handler
 	jwtSecret          []byte // optional JWT secret
+	batchLimit         int    // maximum number of elements in a batch, 0 means unlimited
+	debugProfile       *rpc.RestrictedDebugOptions
 }
 
 // wsConfig is the JSON-RPC/Websocket configuration
 type wsConfig struct {
-	Origins   []string
-	Modules   []string
-	prefix    string // path prefix on which to mount ws handler
-	jwtSecret []byte // optional JWT secret
+	Origins      []string
+	Modules      []string
+	prefix       string // path prefix on which to mount ws handler
+	jwtSecret    []byte // optional JWT secret
+	batchLimit   int    // maximum number of elements in a batch, 0 means unlimited
+	debugProfile *rpc.RestrictedDebugOptions
 }
 
 type rpcHandler struct {
@@ -297,7 +301,8 @@ func (h *httpServer) enableRPC(apis []rpc.API, config httpConfig) error {
 
 	// Create RPC server and handler.
 	srv := rpc.NewServer()
-	if err := RegisterApis(apis, config.Modules, srv); err != nil {
+	srv.SetBatchLimits(config.batchLimit, traceBatchLimit(config.debugProfile))
+	if err := registerApis(apis, config.Modules, srv, config.debugProfile); err != nil {
 		return err
 	}
 	h.httpConfig = config
@@ -328,7 +333,8 @@ func (h *httpServer) enableWS(apis []rpc.API, config wsConfig) error {
 	}
 	// Create RPC server and handler.
 	srv := rpc.NewServer()
-	if err := RegisterApis(apis, config.Modules, srv); err != nil {
+	srv.SetBatchLimits(config.batchLimit, traceBatchLimit(config.debugProfile))
+	if err := registerApis(apis, config.Modules, srv, config.debugProfile); err != nil {
 		return err
 	}
 	h.wsConfig = config
@@ -616,6 +622,14 @@ func (is *ipcServer) stop() error {
 // RegisterApis checks the given modules' availability, generates an allowlist based on the allowed modules,
 // and then registers all of the APIs exposed by the services.
 func RegisterApis(apis []rpc.API, modules []string, srv *rpc.Server) error {
+	return registerApis(apis, modules, srv, nil)
+}
+
+// registerApis is RegisterApis with an optional debug capability profile. When
+// debugProfile is non-nil the debug namespace is served by the restricted
+// wrapper of a service implementing rpc.RestrictedDebugProvider, and the
+// unrestricted debug services are not registered at all.
+func registerApis(apis []rpc.API, modules []string, srv *rpc.Server, debugProfile *rpc.RestrictedDebugOptions) error {
 	if bad, available := checkModuleAvailability(modules, apis); len(bad) > 0 {
 		log.Error("Unavailable modules in HTTP API list", "unavailable", bad, "available", available)
 	}
@@ -625,12 +639,46 @@ func RegisterApis(apis []rpc.API, modules []string, srv *rpc.Server) error {
 		allowList[module] = true
 	}
 	// Register all the APIs exposed by the services
+	var restrictedDebug bool
 	for _, api := range apis {
-		if allowList[api.Namespace] || len(allowList) == 0 {
-			if err := srv.RegisterName(api.Namespace, api.Service); err != nil {
+		if !allowList[api.Namespace] && len(allowList) != 0 {
+			continue
+		}
+		if debugProfile != nil && api.Namespace == rpc.DebugNamespace {
+			// Fail closed: a debug service that cannot produce a restricted view
+			// is dropped entirely rather than registered as-is.
+			service, err := rpc.RestrictedDebugService(api.Service, *debugProfile)
+			if err != nil {
 				return err
 			}
+			if service == nil {
+				continue
+			}
+			allowed, err := rpc.DebugProfileMethods(debugProfile.Profile)
+			if err != nil {
+				return err
+			}
+			if err := srv.RegisterNameWithMethods(api.Namespace, service, allowed); err != nil {
+				return err
+			}
+			restrictedDebug = true
+			continue
+		}
+		if err := srv.RegisterName(api.Namespace, api.Service); err != nil {
+			return err
 		}
 	}
+	if debugProfile != nil && !restrictedDebug {
+		return fmt.Errorf("debug profile %q is enabled but no registered service can serve it", debugProfile.Profile)
+	}
 	return nil
+}
+
+// traceBatchLimit returns the per-batch cap on profile-allowed trace calls for
+// a transport. Unrestricted transports are not capped.
+func traceBatchLimit(debugProfile *rpc.RestrictedDebugOptions) int {
+	if debugProfile == nil {
+		return 0
+	}
+	return rpc.MaxTraceCallsPerBatch
 }

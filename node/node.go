@@ -64,6 +64,10 @@ type Node struct {
 	ipc           *ipcServer  // Stores information about the ipc http server
 	inprocHandler *rpc.Server // In-process RPC request handler to process the API requests
 
+	// traceLimiter bounds concurrent restricted debug traces across every
+	// restricted transport. It is nil when no transport runs a debug profile.
+	traceLimiter *rpc.TraceLimiter
+
 	databases map[*closeTrackingDB]struct{} // All open databases
 }
 
@@ -110,6 +114,7 @@ func New(conf *Config) (*Node, error) {
 		stop:          make(chan struct{}),
 		server:        &p2p.Server{Config: conf.P2P},
 		databases:     make(map[*closeTrackingDB]struct{}),
+		traceLimiter:  conf.debugTraceLimiter(),
 	}
 
 	// Register built-in APIs.
@@ -376,6 +381,11 @@ func (n *Node) obtainJWTSecret(cliParam string) ([]byte, error) {
 // startup. It's not meant to be called at any time afterwards as it makes certain
 // assumptions about the state of the node.
 func (n *Node) startRPC() error {
+	// Reject an ambiguous debug-namespace configuration before opening any
+	// listener, so a mistake never results in a briefly exposed surface.
+	if err := n.config.checkDebugProfiles(); err != nil {
+		return err
+	}
 	// Filter out personal api
 	var apis []rpc.API
 	for _, api := range n.rpcAPIs {
@@ -402,6 +412,9 @@ func (n *Node) startRPC() error {
 		servers           []*httpServer
 		openAPIs, allAPIs = n.getAPIs()
 	)
+	for _, transport := range n.config.debugTransports() {
+		transport.warnUnsafe()
+	}
 
 	initHttp := func(server *httpServer, port int) error {
 		if err := server.setListenAddr(n.config.HTTPHost, port); err != nil {
@@ -412,6 +425,8 @@ func (n *Node) startRPC() error {
 			Vhosts:             n.config.HTTPVirtualHosts,
 			Modules:            n.config.HTTPModules,
 			prefix:             n.config.HTTPPathPrefix,
+			batchLimit:         n.config.HTTPBatchLimit,
+			debugProfile:       n.config.httpDebugTransport().options(n.traceLimiter),
 		}); err != nil {
 			return err
 		}
@@ -425,9 +440,11 @@ func (n *Node) startRPC() error {
 			return err
 		}
 		if err := server.enableWS(openAPIs, wsConfig{
-			Modules: n.config.WSModules,
-			Origins: n.config.WSOrigins,
-			prefix:  n.config.WSPathPrefix,
+			Modules:      n.config.WSModules,
+			Origins:      n.config.WSOrigins,
+			prefix:       n.config.WSPathPrefix,
+			batchLimit:   n.config.WSBatchLimit,
+			debugProfile: n.config.wsDebugTransport().options(n.traceLimiter),
 		}); err != nil {
 			return err
 		}
