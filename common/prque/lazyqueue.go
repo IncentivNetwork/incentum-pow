@@ -73,8 +73,8 @@ func NewLazyQueue[P constraints.Ordered, V any](setIndex SetIndexCallback[V], pr
 
 // Reset clears the contents of the queue
 func (q *LazyQueue[P, V]) Reset() {
-	q.queue[0] = newSstack[P, V](q.setIndex0)
-	q.queue[1] = newSstack[P, V](q.setIndex1)
+	q.queue[0] = newSstack[P](q.setIndex0)
+	q.queue[1] = newSstack[P](q.setIndex1)
 }
 
 // Refresh performs queue re-evaluation if necessary

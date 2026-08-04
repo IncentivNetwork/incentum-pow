@@ -104,7 +104,7 @@ func newPriorityPool(ns *nodestate.NodeStateMachine, setup *serverSetup, clock m
 		setup:           setup,
 		ns:              ns,
 		clock:           clock,
-		inactiveQueue:   prque.New[int64, *ppNodeInfo](inactiveSetIndex),
+		inactiveQueue:   prque.New[int64](inactiveSetIndex),
 		minCap:          minCap,
 		activeBias:      activeBias,
 		capacityStepDiv: capacityStepDiv,
