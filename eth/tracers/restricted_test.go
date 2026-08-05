@@ -124,6 +124,11 @@ func TestValidateRestrictedTraceConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "concatenated tracer config values",
+			config:  &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`{"onlyTopCall":true}{"onlyTopCall":false}`)},
+			wantErr: true,
+		},
+		{
 			name:   "timeout within cap",
 			config: &TraceConfig{Tracer: callTracerConfig(), Timeout: strPtr("10s")},
 		},

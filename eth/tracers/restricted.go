@@ -156,14 +156,17 @@ func validateRestrictedTraceConfig(config *TraceConfig) error {
 		return rpc.NewInvalidParamsError(fmt.Sprintf("reexec %d exceeds the limit of %d on this transport", *config.Reexec, restrictedMaxReexec))
 	}
 	if len(config.TracerConfig) > 0 {
+		// json.Valid rejects concatenated JSON values that Decoder.More cannot
+		// detect at the top level (it only reports position inside an array or
+		// object). This closes the gap for inputs like `{"onlyTopCall":true}{"x":1}`.
+		if !json.Valid(config.TracerConfig) {
+			return rpc.NewInvalidParamsError("invalid tracerConfig: invalid JSON")
+		}
 		dec := json.NewDecoder(bytes.NewReader(config.TracerConfig))
 		dec.DisallowUnknownFields()
 		var restricted RestrictedCallTracerConfig
 		if err := dec.Decode(&restricted); err != nil {
 			return rpc.NewInvalidParamsError(fmt.Sprintf("invalid tracerConfig: %v", err))
-		}
-		if dec.More() {
-			return rpc.NewInvalidParamsError("invalid tracerConfig: trailing data")
 		}
 	}
 	return nil
