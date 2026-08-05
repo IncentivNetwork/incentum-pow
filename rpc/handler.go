@@ -188,7 +188,7 @@ func (h *handler) rejectBatch(msgs []*jsonrpcMessage, err error) {
 // It returns nil when no limit is configured or exceeded.
 func (h *handler) checkBatchLimits(msgs []*jsonrpcMessage) error {
 	if h.limits.items > 0 && len(msgs) > h.limits.items {
-		return &invalidRequestError{fmt.Sprintf("batch too large: %d requests exceeds the limit of %d", len(msgs), h.limits.items)}
+		return &invalidRequestError{fmt.Sprintf("batch too large: %d requests exceed the limit of %d", len(msgs), h.limits.items)}
 	}
 	if h.limits.traces > 0 {
 		traces := 0
@@ -198,7 +198,7 @@ func (h *handler) checkBatchLimits(msgs []*jsonrpcMessage) error {
 			}
 		}
 		if traces > h.limits.traces {
-			return &invalidRequestError{fmt.Sprintf("too many trace calls in batch: %d exceeds the limit of %d", traces, h.limits.traces)}
+			return &invalidRequestError{fmt.Sprintf("too many trace calls in batch: %d exceed the limit of %d", traces, h.limits.traces)}
 		}
 	}
 	return nil
