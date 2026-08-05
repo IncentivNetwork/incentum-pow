@@ -177,8 +177,7 @@ func (h *handler) rejectBatch(msgs []*jsonrpcMessage, err error) {
 			}
 		}
 		if len(resp) == 0 {
-			// A batch of notifications has nothing to correlate against.
-			h.conn.writeJSON(cp.ctx, errorMessage(err), true)
+			// A batch of notifications must not yield a response per JSON-RPC 2.0.
 			return
 		}
 		h.conn.writeJSON(cp.ctx, resp, true)
