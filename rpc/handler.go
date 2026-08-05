@@ -172,7 +172,10 @@ func (h *handler) rejectBatch(msgs []*jsonrpcMessage, err error) {
 	h.startCallProc(func(cp *callProc) {
 		resp := make([]*jsonrpcMessage, 0, len(msgs))
 		for _, msg := range msgs {
-			if msg.isCall() || msg.isSubscribe() {
+			// Respond only to messages that carry an id to correlate against;
+			// notifications (id absent, including subscribe-shaped ones whose
+			// method ends in _subscribe) must not yield a response per JSON-RPC 2.0.
+			if msg.hasValidID() {
 				resp = append(resp, msg.errorResponse(err))
 			}
 		}
