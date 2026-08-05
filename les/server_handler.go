@@ -244,10 +244,7 @@ func (h *serverHandler) afterHandle(p *clientPeer, reqID, responseCount uint64, 
 	if h.server.costTracker.testing {
 		realCost = maxCost // Assign a fake cost for testing purpose
 	} else {
-		realCost = h.server.costTracker.realCost(task.servingTime, msg.Size, replySize)
-		if realCost > maxCost {
-			realCost = maxCost
-		}
+		realCost = min(h.server.costTracker.realCost(task.servingTime, msg.Size, replySize), maxCost)
 	}
 	bv := p.fcClient.RequestProcessed(reqID, responseCount, maxCost, realCost)
 	if reply != nil {

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"sync"
 	"time"
 
@@ -901,13 +902,7 @@ func (net *Network) snapshot(addServices []string, removeServices []string) (*Sn
 		}
 		snap.Nodes[i].Snapshots = snapshots
 		for _, addSvc := range addServices {
-			haveSvc := false
-			for _, svc := range snap.Nodes[i].Node.Config.Lifecycles {
-				if svc == addSvc {
-					haveSvc = true
-					break
-				}
-			}
+			haveSvc := slices.Contains(snap.Nodes[i].Node.Config.Lifecycles, addSvc)
 			if !haveSvc {
 				snap.Nodes[i].Node.Config.Lifecycles = append(snap.Nodes[i].Node.Config.Lifecycles, addSvc)
 			}
@@ -915,13 +910,7 @@ func (net *Network) snapshot(addServices []string, removeServices []string) (*Sn
 		if len(removeServices) > 0 {
 			var cleanedServices []string
 			for _, svc := range snap.Nodes[i].Node.Config.Lifecycles {
-				haveSvc := false
-				for _, rmSvc := range removeServices {
-					if rmSvc == svc {
-						haveSvc = true
-						break
-					}
-				}
+				haveSvc := slices.Contains(removeServices, svc)
 				if !haveSvc {
 					cleanedServices = append(cleanedServices, svc)
 				}

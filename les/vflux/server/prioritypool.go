@@ -104,7 +104,7 @@ func newPriorityPool(ns *nodestate.NodeStateMachine, setup *serverSetup, clock m
 		setup:           setup,
 		ns:              ns,
 		clock:           clock,
-		inactiveQueue:   prque.New[int64, *ppNodeInfo](inactiveSetIndex),
+		inactiveQueue:   prque.New[int64](inactiveSetIndex),
 		minCap:          minCap,
 		activeBias:      activeBias,
 		capacityStepDiv: capacityStepDiv,
@@ -215,10 +215,7 @@ func (pp *priorityPool) SetLimits(maxCount, maxCap uint64) {
 // setActiveBias sets the bias applied when trying to activate inactive nodes
 func (pp *priorityPool) setActiveBias(bias time.Duration) {
 	pp.lock.Lock()
-	pp.activeBias = bias
-	if pp.activeBias < time.Duration(1) {
-		pp.activeBias = time.Duration(1)
-	}
+	pp.activeBias = max(bias, time.Duration(1))
 	updates := pp.tryActivate(false)
 	pp.lock.Unlock()
 	pp.ns.Operation(func() { pp.updateFlags(updates) })
@@ -278,10 +275,7 @@ func activePriority(c *ppNodeInfo) int64 {
 
 // activeMaxPriority callback returns estimated maximum priority of ppNodeInfo item in activeQueue
 func (pp *priorityPool) activeMaxPriority(c *ppNodeInfo, until mclock.AbsTime) int64 {
-	future := time.Duration(until - pp.clock.Now())
-	if future < 0 {
-		future = 0
-	}
+	future := max(time.Duration(until-pp.clock.Now()), 0)
 	return invertPriority(c.nodePriority.estimatePriority(c.tempCapacity, 0, future, c.bias, false))
 }
 

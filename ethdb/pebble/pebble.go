@@ -99,9 +99,10 @@ func (d *Database) onCompactionBegin(info pebble.CompactionInfo) {
 }
 
 func (d *Database) onCompactionEnd(info pebble.CompactionInfo) {
-	if d.activeComp == 1 {
+	switch d.activeComp {
+	case 1:
 		d.compTime.Add(int64(time.Since(d.compStartTime)))
-	} else if d.activeComp == 0 {
+	case 0:
 		panic("should not happen")
 	}
 	d.activeComp--
@@ -136,10 +137,7 @@ func New(file string, cache int, handles int, namespace string, readonly bool) (
 	// Two memory tables is configured which is identical to leveldb,
 	// including a frozen memory table and another live one.
 	memTableLimit := 2
-	memTableSize := cache * 1024 * 1024 / 2 / memTableLimit
-	if memTableSize > maxMemTableSize {
-		memTableSize = maxMemTableSize
-	}
+	memTableSize := min(cache*1024*1024/2/memTableLimit, maxMemTableSize)
 	db := &Database{
 		fn:       file,
 		log:      logger,
@@ -521,11 +519,12 @@ func (b *batch) Replay(w ethdb.KeyValueWriter) error {
 		}
 		// The (k,v) slices might be overwritten if the batch is reset/reused,
 		// and the receiver should copy them if they are to be retained long-term.
-		if kind == pebble.InternalKeyKindSet {
+		switch kind {
+		case pebble.InternalKeyKindSet:
 			w.Put(k, v)
-		} else if kind == pebble.InternalKeyKindDelete {
+		case pebble.InternalKeyKindDelete:
 			w.Delete(k)
-		} else {
+		default:
 			return fmt.Errorf("unhandled operation, keytype: %v", kind)
 		}
 	}

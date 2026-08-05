@@ -108,7 +108,7 @@ type ClientManager struct {
 func NewClientManager(curve PieceWiseLinear, clock mclock.Clock) *ClientManager {
 	cm := &ClientManager{
 		clock:         clock,
-		rcQueue:       prque.New[int64, *ClientNode](func(a *ClientNode, i int) { a.queueIndex = i }),
+		rcQueue:       prque.New[int64](func(a *ClientNode, i int) { a.queueIndex = i }),
 		capLastUpdate: clock.Now(),
 		stop:          make(chan chan struct{}),
 	}
@@ -277,10 +277,7 @@ func (cm *ClientManager) updateRecharge(now mclock.AbsTime) {
 	// updating is done in multiple steps if node buffers are filled and sumRecharge
 	// is decreased before the given target time
 	for cm.sumRecharge > 0 {
-		sumRecharge := cm.sumRecharge
-		if sumRecharge > cm.totalRecharge {
-			sumRecharge = cm.totalRecharge
-		}
+		sumRecharge := min(cm.sumRecharge, cm.totalRecharge)
 		bonusRatio := float64(1)
 		v := cm.curve.ValueAt(sumRecharge)
 		s := float64(sumRecharge)
@@ -313,7 +310,7 @@ func (cm *ClientManager) addToQueue(node *ClientNode) {
 	if cm.priorityOffset-node.rcFullIntValue < -0x4000000000000000 {
 		cm.priorityOffset += 0x4000000000000000
 		// recreate priority queue with new offset to avoid overflow; should happen very rarely
-		newRcQueue := prque.New[int64, *ClientNode](func(a *ClientNode, i int) { a.queueIndex = i })
+		newRcQueue := prque.New[int64](func(a *ClientNode, i int) { a.queueIndex = i })
 		for cm.rcQueue.Size() > 0 {
 			n := cm.rcQueue.PopItem()
 			newRcQueue.Push(n, cm.priorityOffset-n.rcFullIntValue)

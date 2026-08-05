@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 
@@ -190,10 +191,8 @@ func sign(ctx *cli.Context) error {
 		if err != nil {
 			return err
 		}
-		for _, s := range signers {
-			if s == addr {
-				return nil
-			}
+		if slices.Contains(signers, addr) {
+			return nil
 		}
 		return fmt.Errorf("signer %v is not the admin", addr.Hex())
 	}

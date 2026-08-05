@@ -109,5 +109,5 @@ func (s *sstack[P, V]) Swap(i, j int) {
 
 // Resets the stack, effectively clearing its contents.
 func (s *sstack[P, V]) Reset() {
-	*s = *newSstack[P, V](s.setIndex)
+	*s = *newSstack[P](s.setIndex)
 }

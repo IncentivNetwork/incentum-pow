@@ -114,10 +114,7 @@ func addBalance(pool *ClientPool, id enode.ID, amount int64) {
 }
 
 func checkDiff(a, b uint64) bool {
-	maxDiff := (a + b) / 2000
-	if maxDiff < 1 {
-		maxDiff = 1
-	}
+	maxDiff := max((a+b)/2000, 1)
 	return a > b+maxDiff || b > a+maxDiff
 }
 

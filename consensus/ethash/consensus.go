@@ -134,10 +134,7 @@ func (ethash *Ethash) VerifyHeaders(chain consensus.ChainHeaderReader, headers [
 	}
 
 	// Spawn as many workers as allowed threads
-	workers := runtime.GOMAXPROCS(0)
-	if len(headers) < workers {
-		workers = len(headers)
-	}
+	workers := min(len(headers), runtime.GOMAXPROCS(0))
 
 	// Create a task channel and spawn the verifiers
 	var (

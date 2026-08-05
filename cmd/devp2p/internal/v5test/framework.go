@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/mclock"
@@ -254,10 +255,5 @@ func checkRecords(records []*enr.Record) ([]*enode.Node, error) {
 }
 
 func containsUint(ints []uint, x uint) bool {
-	for i := range ints {
-		if ints[i] == x {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ints, x)
 }
