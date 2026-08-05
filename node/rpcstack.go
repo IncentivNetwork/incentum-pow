@@ -626,8 +626,8 @@ func RegisterApis(apis []rpc.API, modules []string, srv *rpc.Server) error {
 }
 
 // registerApis is RegisterApis with an optional debug capability profile. When
-// debugProfile is non-nil the debug namespace is served by the restricted
-// wrapper of a service implementing rpc.RestrictedDebugProvider, and the
+// debugProfile is non-nil the debug namespace is served by the capability-
+// restricted wrapper returned by rpc.RestrictedDebugService, and the
 // unrestricted debug services are not registered at all.
 func registerApis(apis []rpc.API, modules []string, srv *rpc.Server, debugProfile *rpc.RestrictedDebugOptions) error {
 	if bad, available := checkModuleAvailability(modules, apis); len(bad) > 0 {
