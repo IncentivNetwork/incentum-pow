@@ -148,7 +148,10 @@ func validateRestrictedTraceConfig(config *TraceConfig) error {
 		if err != nil {
 			return rpc.NewInvalidParamsError(fmt.Sprintf("invalid timeout: %v", err))
 		}
-		if timeout <= 0 || timeout > restrictedMaxTraceTimeout {
+		if timeout <= 0 {
+			return rpc.NewInvalidParamsError(fmt.Sprintf("timeout %s must be positive", timeout))
+		}
+		if timeout > restrictedMaxTraceTimeout {
 			return rpc.NewInvalidParamsError(fmt.Sprintf("timeout %s exceeds the limit of %s on this transport", timeout, restrictedMaxTraceTimeout))
 		}
 	}
