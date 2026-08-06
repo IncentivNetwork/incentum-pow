@@ -62,6 +62,12 @@ func (t debugTransport) validate() error {
 		_, err := rpc.DebugProfileMethods(t.profile)
 		return err
 
+	case t.registersEverything() && !t.allowUnsafe:
+		return fmt.Errorf("empty --%s.api exposes every namespace, including %q: "+
+			"list the namespaces explicitly, set --%s.debug-profile=%s to restrict debug, "+
+			"or set --%s.allow-unsafe-debug to opt into the legacy full surface",
+			t.name, rpc.DebugNamespace, t.name, rpc.DebugProfileTraceIndexerV1, t.name)
+
 	case t.debugEnabled() && !t.allowUnsafe:
 		return fmt.Errorf("the %q namespace is exposed on --%s.api without --%s.debug-profile: "+
 			"it grants any caller reaching this transport destructive and resource-exhausting methods. "+
@@ -91,21 +97,21 @@ func (t debugTransport) options(limiter *rpc.TraceLimiter) *rpc.RestrictedDebugO
 // from an unfiltered module list. It is called once at startup: a per-request
 // warning would only bury it.
 func (t debugTransport) warnUnsafe() {
-	if t.profile != "" {
-		return
-	}
 	switch {
+	case t.registersEverything():
+		log.Warn("Empty API module list exposes every namespace",
+			"transport", t.name,
+			"flag", "--"+t.name+".api",
+			"advice", "list every namespace this interface should serve explicitly")
+
+	case t.profile != "":
+		return
+
 	case t.allowUnsafe && t.debugEnabled():
 		log.Warn("Full debug namespace exposed on untrusted transport",
 			"transport", t.name,
 			"flag", "--"+t.name+".allow-unsafe-debug",
 			"advice", "restrict with --"+t.name+".debug-profile="+rpc.DebugProfileTraceIndexerV1+" unless this interface is operator-only")
-
-	case t.registersEverything():
-		log.Warn("Empty API module list exposes every namespace, debug included",
-			"transport", t.name,
-			"flag", "--"+t.name+".api",
-			"advice", "list the namespaces this interface should serve, and add --"+t.name+".debug-profile="+rpc.DebugProfileTraceIndexerV1+" if it needs debug")
 	}
 }
 

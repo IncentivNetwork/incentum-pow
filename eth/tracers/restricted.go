@@ -178,6 +178,16 @@ func validateRestrictedTraceConfig(config *TraceConfig) error {
 		if err := dec.Decode(&restricted); err != nil {
 			return rpc.NewInvalidParamsError(fmt.Sprintf("invalid tracerConfig: %v", err))
 		}
+		// encoding/json accepts null for a bool field and silently leaves it
+		// false. The restricted schema requires an actual boolean when the field
+		// is present.
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(config.TracerConfig, &fields); err != nil {
+			return rpc.NewInvalidParamsError(fmt.Sprintf("invalid tracerConfig: %v", err))
+		}
+		if value, ok := fields["onlyTopCall"]; ok && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return rpc.NewInvalidParamsError("invalid tracerConfig: onlyTopCall must be a boolean")
+		}
 	}
 	return nil
 }

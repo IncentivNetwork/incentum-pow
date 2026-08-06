@@ -7,6 +7,10 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -289,5 +293,50 @@ func TestBatchLimits(t *testing.T) {
 				t.Fatalf("executed %d calls, want %d", service.calls, len(tt.methods))
 			}
 		})
+	}
+}
+
+func TestRejectedBatchResponseIDs(t *testing.T) {
+	server := NewServer()
+	server.SetBatchLimits(1, 0)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	// The first two elements are valid notifications and must not receive a
+	// response. Malformed elements without a usable id must receive id:null,
+	// while the valid request must retain its id.
+	body := `[
+		{"jsonrpc":"2.0","method":"rpc_modules"},
+		{"jsonrpc":"2.0","method":"eth_subscribe"},
+		{"jsonrpc":"1.0","method":"rpc_modules"},
+		{"jsonrpc":"2.0","method":""},
+		{"jsonrpc":"2.0","id":1,"method":"rpc_modules"},
+		{"jsonrpc":"2.0","id":[],"method":"rpc_modules"}
+	]`
+	resp, err := http.Post(httpServer.URL, contentType, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var messages []*jsonrpcMessage
+	if err := json.Unmarshal(data, &messages); err != nil {
+		t.Fatalf("invalid response %s: %v", data, err)
+	}
+	if len(messages) != 4 {
+		t.Fatalf("response count = %d, want 4: %s", len(messages), data)
+	}
+	wantIDs := []string{"null", "null", "1", "null"}
+	for i, message := range messages {
+		if got := string(message.ID); got != wantIDs[i] {
+			t.Errorf("response %d id = %s, want %s", i, got, wantIDs[i])
+		}
+		if message.Error == nil || message.Error.Code != -32600 {
+			t.Errorf("response %d error = %#v, want -32600", i, message.Error)
+		}
 	}
 }

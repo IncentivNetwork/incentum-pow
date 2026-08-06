@@ -250,6 +250,8 @@ func TestStartRPC(t *testing.T) {
 
 			// Apply some sane defaults.
 			config := test.cfg
+			config.HTTPModules = []string{"web3"}
+			config.WSModules = []string{"web3"}
 			// config.Logger = testlog.Logger(t, log.LvlDebug)
 			config.P2P.NoDiscovery = true
 			if config.HTTPTimeouts == (rpc.HTTPTimeouts{}) {

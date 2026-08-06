@@ -88,11 +88,11 @@ func TestDebugTransportValidate(t *testing.T) {
 			transport: debugTransport{name: "http", modules: []string{"eth", "net", "web3"}},
 		},
 		{
-			// An empty module list registers every namespace, debug among them,
-			// but the operator never named debug: that is warned about at
-			// startup, not made fatal.
+			// An empty module list registers every namespace, debug among them.
+			// It requires the same explicit profile or unsafe opt-in as naming debug.
 			name:      "empty module list without profile or opt-in",
 			transport: debugTransport{name: "http", modules: nil},
+			wantErr:   true,
 		},
 		{
 			name:      "empty module list with profile",

@@ -119,6 +119,11 @@ func TestValidateRestrictedTraceConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "null tracer config field",
+			config:  &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`{"onlyTopCall":null}`)},
+			wantErr: true,
+		},
+		{
 			name:    "nested tracer config",
 			config:  &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`{"onlyTopCall":{"a":1}}`)},
 			wantErr: true,

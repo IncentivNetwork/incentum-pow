@@ -67,7 +67,7 @@ Because of that, the node **refuses to start** when `debug` appears in `--http.a
 
 `--ws.debug-profile` and `--ws.allow-unsafe-debug` work identically for the WebSocket transport.
 
-An **empty** `--http.api` / `--ws.api` is a separate case: it registers every namespace, `debug` among them. Since nobody asked for `debug` by name there, this is not a startup error, but it does log a `WARN` at startup. Always list the namespaces the interface should serve.
+An **empty** `--http.api` / `--ws.api` registers every namespace, `debug` among them. It is rejected unless the matching debug profile or explicit unsafe opt-in is set, and it always logs a `WARN` because namespaces other than `debug` remain unrestricted. Always list the namespaces the interface should serve.
 
 An archive node indexing for Blockscout needs exactly the two profile methods:
 
