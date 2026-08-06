@@ -129,6 +129,21 @@ func TestValidateRestrictedTraceConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "null tracer config",
+			config:  &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`null`)},
+			wantErr: true,
+		},
+		{
+			name:    "array tracer config",
+			config:  &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`[]`)},
+			wantErr: true,
+		},
+		{
+			name:    "primitive tracer config",
+			config:  &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`true`)},
+			wantErr: true,
+		},
+		{
 			name:   "timeout within cap",
 			config: &TraceConfig{Tracer: callTracerConfig(), Timeout: strPtr("10s")},
 		},

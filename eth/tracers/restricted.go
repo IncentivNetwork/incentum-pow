@@ -165,6 +165,13 @@ func validateRestrictedTraceConfig(config *TraceConfig) error {
 		if !json.Valid(config.TracerConfig) {
 			return rpc.NewInvalidParamsError("invalid tracerConfig: invalid JSON")
 		}
+		// Require an object literal: `null`, arrays, and primitives would all
+		// decode into a zero-valued RestrictedCallTracerConfig without error,
+		// silently downgrading the "only allowed fields" guarantee of the profile.
+		trimmed := bytes.TrimLeft(config.TracerConfig, " \t\r\n")
+		if len(trimmed) == 0 || trimmed[0] != '{' {
+			return rpc.NewInvalidParamsError("invalid tracerConfig: must be a JSON object")
+		}
 		dec := json.NewDecoder(bytes.NewReader(config.TracerConfig))
 		dec.DisallowUnknownFields()
 		var restricted RestrictedCallTracerConfig
