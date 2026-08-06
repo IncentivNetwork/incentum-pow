@@ -198,12 +198,15 @@ func (api *adminAPI) StartHTTP(host *string, port *int, cors *string, apis *stri
 	}
 
 	// The module list may differ from the one validated at startup, so the debug
-	// rules are re-checked against it here as well.
+	// rules are re-checked against it here as well. warnUnsafe re-emits the
+	// startup warning so an operator enabling the full namespace at runtime via
+	// admin_startHTTP sees the same visibility as the boot path.
 	transport := api.node.config.httpDebugTransport()
 	transport.modules = config.Modules
 	if err := transport.validate(); err != nil {
 		return false, err
 	}
+	transport.warnUnsafe()
 	config.debugProfile = transport.options(api.node.traceLimiter)
 
 	if err := api.node.http.setListenAddr(*host, *port); err != nil {
@@ -276,12 +279,15 @@ func (api *adminAPI) StartWS(host *string, port *int, allowedOrigins *string, ap
 	}
 
 	// The module list may differ from the one validated at startup, so the debug
-	// rules are re-checked against it here as well.
+	// rules are re-checked against it here as well. warnUnsafe re-emits the
+	// startup warning so an operator enabling the full namespace at runtime via
+	// admin_startWS sees the same visibility as the boot path.
 	transport := api.node.config.wsDebugTransport()
 	transport.modules = config.Modules
 	if err := transport.validate(); err != nil {
 		return false, err
 	}
+	transport.warnUnsafe()
 	config.debugProfile = transport.options(api.node.traceLimiter)
 
 	// Enable WebSocket on the server.
