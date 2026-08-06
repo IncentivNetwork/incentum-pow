@@ -172,11 +172,17 @@ func (h *handler) rejectBatch(msgs []*jsonrpcMessage, err error) {
 	h.startCallProc(func(cp *callProc) {
 		resp := make([]*jsonrpcMessage, 0, len(msgs))
 		for _, msg := range msgs {
-			// Respond only to messages that carry an id to correlate against;
-			// notifications (id absent, including subscribe-shaped ones whose
-			// method ends in _subscribe) must not yield a response per JSON-RPC 2.0.
+			// Respond only to requests that carry an id; notifications (id absent,
+			// including subscribe-shaped ones whose method ends in _subscribe) must
+			// not yield a response per JSON-RPC 2.0.
+			if msg.ID == nil {
+				continue
+			}
 			if msg.hasValidID() {
 				resp = append(resp, msg.errorResponse(err))
+			} else {
+				// Invalid request id types (object/array) must be answered with id:null.
+				resp = append(resp, errorMessage(err))
 			}
 		}
 		if len(resp) == 0 {
