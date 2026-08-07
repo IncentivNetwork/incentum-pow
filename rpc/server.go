@@ -45,7 +45,10 @@ const (
 type Server struct {
 	services serviceRegistry
 	idgen    func() ID
-	limits   batchLimits
+	// limits is read on every connection accept and every HTTP request; the
+	// atomic pointer lets SetBatchLimits swap the value without racing against
+	// concurrent readers if it is ever called after the server started serving.
+	limits atomic.Pointer[batchLimits]
 
 	mutex  sync.Mutex
 	codecs map[ServerCodec]struct{}
@@ -66,6 +69,7 @@ func NewServer() *Server {
 		codecs: make(map[ServerCodec]struct{}),
 		run:    1,
 	}
+	server.limits.Store(&batchLimits{})
 	// Register the default service providing meta information about the RPC service such
 	// as the services and methods it offers.
 	rpcService := &RPCService{server}
@@ -85,9 +89,11 @@ func (s *Server) RegisterName(name string, receiver interface{}) error {
 // the number of elements in a batch, traceLimit caps how many of those may be
 // profile-allowed debug trace calls. Either limit is disabled when zero.
 //
-// It must be called before the server starts serving connections.
+// It should be called before the server starts serving connections. Late calls
+// are safe against data races (atomic swap), but only take effect for codecs
+// registered after the swap; already-running handlers keep their initial limits.
 func (s *Server) SetBatchLimits(itemLimit, traceLimit int) {
-	s.limits = batchLimits{items: itemLimit, traces: traceLimit}
+	s.limits.Store(&batchLimits{items: itemLimit, traces: traceLimit})
 }
 
 // ServeCodec reads incoming requests from codec, calls the appropriate callback and writes
@@ -103,7 +109,7 @@ func (s *Server) ServeCodec(codec ServerCodec, options CodecOption) {
 	}
 	defer s.untrackCodec(codec)
 
-	c := initClient(codec, s.idgen, &s.services, s.limits)
+	c := initClient(codec, s.idgen, &s.services, *s.limits.Load())
 	<-codec.closed()
 	c.Close()
 }
@@ -135,7 +141,7 @@ func (s *Server) serveSingleRequest(ctx context.Context, codec ServerCodec) {
 		return
 	}
 
-	h := newHandler(ctx, codec, s.idgen, &s.services, s.limits)
+	h := newHandler(ctx, codec, s.idgen, &s.services, *s.limits.Load())
 	h.allowSubscribe = false
 	defer h.close(io.EOF, nil)
 
