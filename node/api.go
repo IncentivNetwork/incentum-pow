@@ -18,7 +18,9 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -42,6 +44,9 @@ func (n *Node) apis() []rpc.API {
 		}, {
 			Namespace: "web3",
 			Service:   &web3API{n},
+		}, {
+			Namespace: "monitor",
+			Service:   &monitorAPI{n},
 		},
 	}
 }
@@ -336,6 +341,63 @@ func (api *adminAPI) NodeInfo() (*p2p.NodeInfo, error) {
 // Datadir retrieves the current data directory the node is using.
 func (api *adminAPI) Datadir() string {
 	return api.node.DataDir()
+}
+
+// MonitorNodeInfo contains read-only node information for monitoring purposes.
+type MonitorNodeInfo struct {
+	Name       string `json:"name"`
+	IP         string `json:"ip"`
+	ListenAddr string `json:"listenAddr"`
+	Ports      struct {
+		Listener  int `json:"listener"`
+		Discovery int `json:"discovery"`
+	} `json:"ports"`
+	Network    uint64   `json:"network"`
+	Difficulty *big.Int `json:"difficulty"`
+}
+
+// monitorAPI provides read-only node information for monitoring purposes.
+type monitorAPI struct {
+	node *Node
+}
+
+// NodeInfo returns node identity, network, ports and total difficulty.
+func (api *monitorAPI) NodeInfo() (*MonitorNodeInfo, error) {
+	server := api.node.Server()
+	if server == nil {
+		return nil, ErrNodeStopped
+	}
+	info := server.NodeInfo()
+	result := &MonitorNodeInfo{
+		Name:       info.Name,
+		IP:         info.IP,
+		ListenAddr: info.ListenAddr,
+	}
+	result.Ports.Listener = info.Ports.Listener
+	result.Ports.Discovery = info.Ports.Discovery
+
+	if ethProto, ok := info.Protocols["eth"]; ok {
+		if b, err := json.Marshal(ethProto); err == nil {
+			var ethInfo struct {
+				Network    uint64   `json:"network"`
+				Difficulty *big.Int `json:"difficulty"`
+			}
+			if err := json.Unmarshal(b, &ethInfo); err == nil {
+				result.Network = ethInfo.Network
+				result.Difficulty = ethInfo.Difficulty
+			}
+		}
+	}
+	return result, nil
+}
+
+// PeerCount returns the number of peers currently connected to the node.
+func (api *monitorAPI) PeerCount() (int, error) {
+	server := api.node.Server()
+	if server == nil {
+		return 0, ErrNodeStopped
+	}
+	return len(server.PeersInfo()), nil
 }
 
 // web3API offers helper utils

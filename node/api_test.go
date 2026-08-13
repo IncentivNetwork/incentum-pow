@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/assert"
 )
@@ -342,6 +343,79 @@ func checkRPC(url string) bool {
 
 	_, err = c.SupportedModules()
 	return err == nil
+}
+
+func TestMonitorNodeInfo(t *testing.T) {
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	api := &monitorAPI{stack}
+	info, err := api.NodeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name == "" {
+		t.Error("NodeInfo.Name is empty")
+	}
+	if info.ListenAddr == "" {
+		t.Error("NodeInfo.ListenAddr is empty")
+	}
+}
+
+func TestMonitorNodeInfoStoppedNode(t *testing.T) {
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	api := &monitorAPI{stack}
+	_, err = api.NodeInfo()
+	if err != ErrNodeStopped {
+		t.Errorf("expected ErrNodeStopped, got %v", err)
+	}
+}
+
+func TestMonitorPeerCount(t *testing.T) {
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	api := &monitorAPI{stack}
+	count, err := api.PeerCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 peers, got %d", count)
+	}
+}
+
+func TestMonitorPeerCountStoppedNode(t *testing.T) {
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	api := &monitorAPI{stack}
+	_, err = api.PeerCount()
+	if err != ErrNodeStopped {
+		t.Errorf("expected ErrNodeStopped, got %v", err)
+	}
 }
 
 // string/int pointer helpers.
