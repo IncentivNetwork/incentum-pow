@@ -46,8 +46,48 @@ Before activation, every node's service file must be hardened. This is not optio
 - [ ] **No** `--allow-insecure-unlock`.
 - [ ] **No** `--rpc.allow-unprotected-txs`.
 - [ ] `--txpool.pricelimit <wei>` — set a minimum gas price so zero-fee spam transactions propagated over P2P are rejected on entry. Pick a value above zero but below the normal transaction-fee level of the network; tune it to the network's actual fee policy (`1000000000` = 1 Gwei is a reasonable starting point, not a universal constant).
+- [ ] **No** `debug` in `--http.api` / `--ws.api` — unless the node indexes for a block explorer, in which case use the restricted profile described below.
 
 > Miners sign their `approve` / `stake` / `requestUnstake` transactions **externally** (with `cast --keystore` or a hardware wallet) and submit them over local IPC or a restricted RPC. The node itself never needs an unlocked account. See `DPOW_MINER_ONBOARDING.md`.
+
+#### The `debug` namespace on HTTP / WS
+
+`--http.api debug` registers the **entire** namespace — roughly fifty methods across four services. Any caller that reaches the transport can then rewind the chain (`debug_setHead`), create files at a path of their choosing (`debug_startCPUProfile`, and eight similar), disable garbage collection (`debug_setGCPercent -1`), compact the chain database, or run arbitrary JavaScript tracers. This is not a theoretical risk: it is what caused the 2026-07-31 archive-node rewind.
+
+Because of that, the node **refuses to start** when `debug` appears in `--http.api` or `--ws.api` without one of the two flags below. The behaviour is the same for both transports; restricting only HTTP would leave the whole surface open on the WebSocket port.
+
+| Configuration | Result |
+| --- | --- |
+| `debug` in `--http.api`, neither flag | Fatal startup error |
+| `debug` in `--http.api` + `--http.debug-profile trace-indexer-v1` | Only `debug_traceTransaction` and `debug_traceBlockByNumber` are registered; everything else answers `-32601 method not found` |
+| `debug` in `--http.api` + `--http.allow-unsafe-debug` | Full namespace, as before, with one `WARN` line at startup |
+| Both flags together | Fatal configuration error |
+| `--http.debug-profile` set, `debug` not in `--http.api` | Fatal configuration error |
+| IPC | Full namespace, unchanged |
+
+`--ws.debug-profile` and `--ws.allow-unsafe-debug` work identically for the WebSocket transport.
+
+An **empty** `--http.api` / `--ws.api` registers every namespace, `debug` among them. It is rejected unless the matching debug profile or explicit unsafe opt-in is set, and it always logs a `WARN` because namespaces other than `debug` remain unrestricted. Always list the namespaces the interface should serve.
+
+An archive node indexing for Blockscout needs exactly the two profile methods:
+
+```
+  --http.api 'eth,net,web3,txpool,debug' \
+  --http.debug-profile trace-indexer-v1 \
+  --ws.api 'eth,net,web3,debug' \
+  --ws.debug-profile trace-indexer-v1 \
+```
+
+On a profiled transport the two allowed methods are validated further: the tracer must be `callTracer` (only `onlyTopCall` is accepted as tracer config), `timeout` may not exceed `10s`, `reexec` may not exceed `128`, and the whole request is cut off after `30s`.
+
+Two further limits apply, both tunable:
+
+- `--http.debug-trace.max-concurrency <N>` (default `2`) — how many traces may run at once. The limit is shared by all restricted transports; `--ws.debug-trace.max-concurrency` is the same setting under the other prefix, so if you set both they must agree. On saturation callers get `-32005 too many concurrent traces` immediately rather than queueing.
+- `--http.rpc.batch-limit <N>` / `--ws.rpc.batch-limit <N>` (default `100`) — maximum number of elements in a JSON-RPC batch. On a profiled transport a batch may additionally contain at most 10 trace calls.
+
+> `rpc_modules` still reports `"debug":"1.0"` on a restricted transport. That field lists namespaces, not per-method capabilities; it is expected and needs no action.
+>
+> The concurrency limiter protects the process against overload. It is not a defence against a determined attacker — rate limiting at the reverse proxy is still required.
 
 ### 3.2 Example hardened `systemd` unit (miner node)
 

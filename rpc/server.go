@@ -45,10 +45,21 @@ const (
 type Server struct {
 	services serviceRegistry
 	idgen    func() ID
+	// limits is read on every connection accept and every HTTP request; the
+	// atomic pointer lets SetBatchLimits swap the value without racing against
+	// concurrent readers if it is ever called after the server started serving.
+	limits atomic.Pointer[batchLimits]
 
 	mutex  sync.Mutex
 	codecs map[ServerCodec]struct{}
 	run    int32
+}
+
+// batchLimits bounds JSON-RPC batch requests served by a connection. A zero
+// field means the corresponding limit is not enforced.
+type batchLimits struct {
+	items  int // maximum number of elements in one batch
+	traces int // maximum number of profile-allowed trace calls in one batch
 }
 
 // NewServer creates a new server instance with no registered handlers.
@@ -58,6 +69,7 @@ func NewServer() *Server {
 		codecs: make(map[ServerCodec]struct{}),
 		run:    1,
 	}
+	server.limits.Store(&batchLimits{})
 	// Register the default service providing meta information about the RPC service such
 	// as the services and methods it offers.
 	rpcService := &RPCService{server}
@@ -73,6 +85,17 @@ func (s *Server) RegisterName(name string, receiver interface{}) error {
 	return s.services.registerName(name, receiver)
 }
 
+// SetBatchLimits bounds the batch requests this server accepts. itemLimit caps
+// the number of elements in a batch, traceLimit caps how many of those may be
+// profile-allowed debug trace calls. Either limit is disabled when zero.
+//
+// It should be called before the server starts serving connections. Late calls
+// are safe against data races (atomic swap), but only take effect for codecs
+// registered after the swap; already-running handlers keep their initial limits.
+func (s *Server) SetBatchLimits(itemLimit, traceLimit int) {
+	s.limits.Store(&batchLimits{items: itemLimit, traces: traceLimit})
+}
+
 // ServeCodec reads incoming requests from codec, calls the appropriate callback and writes
 // the response back using the given codec. It will block until the codec is closed or the
 // server is stopped. In either case the codec is closed.
@@ -86,7 +109,7 @@ func (s *Server) ServeCodec(codec ServerCodec, options CodecOption) {
 	}
 	defer s.untrackCodec(codec)
 
-	c := initClient(codec, s.idgen, &s.services)
+	c := initClient(codec, s.idgen, &s.services, *s.limits.Load())
 	<-codec.closed()
 	c.Close()
 }
@@ -118,7 +141,7 @@ func (s *Server) serveSingleRequest(ctx context.Context, codec ServerCodec) {
 		return
 	}
 
-	h := newHandler(ctx, codec, s.idgen, &s.services)
+	h := newHandler(ctx, codec, s.idgen, &s.services, *s.limits.Load())
 	h.allowSubscribe = false
 	defer h.close(io.EOF, nil)
 

@@ -58,11 +58,29 @@ type callback struct {
 }
 
 func (r *serviceRegistry) registerName(name string, rcvr interface{}) error {
+	return r.registerNameFiltered(name, rcvr, nil)
+}
+
+// registerNameFiltered is registerName restricted to an allowlist of callback
+// names. A nil allowlist registers everything; a non-nil one registers exactly
+// the listed callbacks and errors if the receiver does not provide one of them.
+func (r *serviceRegistry) registerNameFiltered(name string, rcvr interface{}, allowed []string) error {
 	rcvrVal := reflect.ValueOf(rcvr)
 	if name == "" {
 		return fmt.Errorf("no service name for type %s", rcvrVal.Type().String())
 	}
 	callbacks := suitableCallbacks(rcvrVal)
+	if allowed != nil {
+		filtered := make(map[string]*callback, len(allowed))
+		for _, method := range allowed {
+			cb, ok := callbacks[method]
+			if !ok {
+				return fmt.Errorf("service %T doesn't expose method %s_%s", rcvr, name, method)
+			}
+			filtered[method] = cb
+		}
+		callbacks = filtered
+	}
 	if len(callbacks) == 0 {
 		return fmt.Errorf("service %T doesn't have any suitable methods/subscriptions to expose", rcvr)
 	}

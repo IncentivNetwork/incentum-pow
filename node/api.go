@@ -176,6 +176,7 @@ func (api *adminAPI) StartHTTP(host *string, port *int, cors *string, apis *stri
 		CorsAllowedOrigins: api.node.config.HTTPCors,
 		Vhosts:             api.node.config.HTTPVirtualHosts,
 		Modules:            api.node.config.HTTPModules,
+		batchLimit:         api.node.config.HTTPBatchLimit,
 	}
 	if cors != nil {
 		config.CorsAllowedOrigins = nil
@@ -195,6 +196,18 @@ func (api *adminAPI) StartHTTP(host *string, port *int, cors *string, apis *stri
 			config.Modules = append(config.Modules, strings.TrimSpace(m))
 		}
 	}
+
+	// The module list may differ from the one validated at startup, so the debug
+	// rules are re-checked against it here as well. warnUnsafe re-emits the
+	// startup warning so an operator enabling the full namespace at runtime via
+	// admin_startHTTP sees the same visibility as the boot path.
+	transport := api.node.config.httpDebugTransport()
+	transport.modules = config.Modules
+	if err := transport.validate(); err != nil {
+		return false, err
+	}
+	transport.warnUnsafe()
+	config.debugProfile = transport.options(api.node.traceLimiter)
 
 	if err := api.node.http.setListenAddr(*host, *port); err != nil {
 		return false, err
@@ -247,8 +260,9 @@ func (api *adminAPI) StartWS(host *string, port *int, allowedOrigins *string, ap
 
 	// Determine config.
 	config := wsConfig{
-		Modules: api.node.config.WSModules,
-		Origins: api.node.config.WSOrigins,
+		Modules:    api.node.config.WSModules,
+		Origins:    api.node.config.WSOrigins,
+		batchLimit: api.node.config.WSBatchLimit,
 		// ExposeAll: api.node.config.WSExposeAll,
 	}
 	if apis != nil {
@@ -263,6 +277,18 @@ func (api *adminAPI) StartWS(host *string, port *int, allowedOrigins *string, ap
 			config.Origins = append(config.Origins, strings.TrimSpace(origin))
 		}
 	}
+
+	// The module list may differ from the one validated at startup, so the debug
+	// rules are re-checked against it here as well. warnUnsafe re-emits the
+	// startup warning so an operator enabling the full namespace at runtime via
+	// admin_startWS sees the same visibility as the boot path.
+	transport := api.node.config.wsDebugTransport()
+	transport.modules = config.Modules
+	if err := transport.validate(); err != nil {
+		return false, err
+	}
+	transport.warnUnsafe()
+	config.debugProfile = transport.options(api.node.traceLimiter)
 
 	// Enable WebSocket on the server.
 	server := api.node.wsServerForPort(*port, false)

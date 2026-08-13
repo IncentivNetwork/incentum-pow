@@ -36,6 +36,16 @@ const (
 	DefaultGraphQLPort = 8547        // Default TCP port for the GraphQL server
 	DefaultAuthHost    = "localhost" // Default host interface for the authenticated apis
 	DefaultAuthPort    = 8551        // Default port for the authenticated apis
+
+	// DefaultBatchLimit is the default maximum number of elements in a JSON-RPC
+	// batch on the HTTP and WebSocket interfaces.
+	DefaultBatchLimit = 100
+
+	// DefaultDebugTraceMaxConcurrency is the default number of restricted debug
+	// trace calls allowed to run at once. Deliberately conservative: on an
+	// archive node every concurrent trace costs significant memory and chain DB
+	// I/O. Raise it only after load testing.
+	DefaultDebugTraceMaxConcurrency = 2
 )
 
 var (
@@ -48,16 +58,21 @@ var (
 
 // DefaultConfig contains reasonable default settings.
 var DefaultConfig = Config{
-	DataDir:             DefaultDataDir(),
-	HTTPPort:            DefaultHTTPPort,
-	AuthAddr:            DefaultAuthHost,
-	AuthPort:            DefaultAuthPort,
-	AuthVirtualHosts:    DefaultAuthVhosts,
-	HTTPModules:         []string{"net", "web3"},
-	HTTPVirtualHosts:    []string{"localhost"},
-	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-	WSPort:              DefaultWSPort,
-	WSModules:           []string{"net", "web3"},
+	DataDir:          DefaultDataDir(),
+	HTTPPort:         DefaultHTTPPort,
+	AuthAddr:         DefaultAuthHost,
+	AuthPort:         DefaultAuthPort,
+	AuthVirtualHosts: DefaultAuthVhosts,
+	HTTPModules:      []string{"net", "web3"},
+	HTTPVirtualHosts: []string{"localhost"},
+	HTTPTimeouts:     rpc.DefaultHTTPTimeouts,
+	HTTPBatchLimit:   DefaultBatchLimit,
+	WSPort:           DefaultWSPort,
+	WSModules:        []string{"net", "web3"},
+	WSBatchLimit:     DefaultBatchLimit,
+
+	DebugTraceMaxConcurrency: DefaultDebugTraceMaxConcurrency,
+
 	GraphQLVirtualHosts: []string{"localhost"},
 	P2P: p2p.Config{
 		ListenAddr: ":30303",
