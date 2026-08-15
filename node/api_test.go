@@ -421,6 +421,76 @@ func TestMonitorPeerCountStoppedNode(t *testing.T) {
 	}
 }
 
+// TestMonitorNamespaceOverHTTP exercises the two monitor methods over the
+// actual HTTP JSON-RPC transport with only the `monitor` namespace registered.
+// This is the acceptance-criteria integration test for issue #57: the methods
+// must be reachable through a real transport with the operator-facing flag set,
+// not just via direct Go calls.
+func TestMonitorNamespaceOverHTTP(t *testing.T) {
+	stack, err := New(&Config{
+		HTTPHost:     "127.0.0.1",
+		HTTPPort:     0,
+		HTTPModules:  []string{"monitor"},
+		HTTPTimeouts: rpc.DefaultHTTPTimeouts,
+		P2P:          p2p.Config{NoDiscovery: true, ListenAddr: "127.0.0.1:0"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	base := "http://" + stack.http.listenAddr()
+
+	// monitor_nodeInfo must respond with a JSON object carrying the expected fields.
+	resp := rpcRequest(t, base, "monitor_nodeInfo")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("monitor_nodeInfo status = %d, want 200", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, needle := range []string{`"result"`, `"name"`, `"listenAddr"`, `"ports"`} {
+		if !bytes.Contains(body, []byte(needle)) {
+			t.Errorf("monitor_nodeInfo body missing %q; got %s", needle, body)
+		}
+	}
+
+	// monitor_peerCount must respond with an integer result.
+	resp = rpcRequest(t, base, "monitor_peerCount")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("monitor_peerCount status = %d, want 200", resp.StatusCode)
+	}
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// New node with no peers — expect result:0. Also assert no error field.
+	if !bytes.Contains(body, []byte(`"result":0`)) {
+		t.Errorf("monitor_peerCount body = %s, want result:0", body)
+	}
+	if bytes.Contains(body, []byte(`"error"`)) {
+		t.Errorf("monitor_peerCount returned error: %s", body)
+	}
+
+	// admin methods must NOT be reachable — namespace is not registered.
+	resp = rpcRequest(t, base, "admin_peers")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin_peers status = %d, want 200 (JSON-RPC method-not-found is a 200 with error body)", resp.StatusCode)
+	}
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte(`"error"`)) || !bytes.Contains(body, []byte("method")) {
+		t.Errorf("admin_peers should have returned method-not-found; got %s", body)
+	}
+}
+
 // string/int pointer helpers.
 func sp(s string) *string { return &s }
 func ip(i int) *int       { return &i }
