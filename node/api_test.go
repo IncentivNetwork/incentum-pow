@@ -19,6 +19,7 @@ package node
 import (
 	"bytes"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,6 +30,34 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/assert"
 )
+
+// fakeEthNetwork / fakeEthDifficulty are the values the mock protocol below
+// advertises. Tests use them to prove the eth-protocol extraction branch of
+// monitorAPI.NodeInfo actually runs — a regression in the JSON round-trip
+// would surface as a mismatch here.
+const (
+	fakeEthNetwork    = uint64(24101)
+	fakeEthDifficulty = int64(12345)
+)
+
+// fakeEthProtocol returns a minimal p2p.Protocol registered under the "eth"
+// name whose NodeInfo exposes the two fields monitor_nodeInfo extracts. The
+// protocol itself is never negotiated — the tests only need the NodeInfo hook
+// to fire when p2p.Server.NodeInfo walks the registered protocols.
+func fakeEthProtocol() p2p.Protocol {
+	return p2p.Protocol{
+		Name:    "eth",
+		Version: 1,
+		Length:  1,
+		Run:     func(*p2p.Peer, p2p.MsgReadWriter) error { return nil },
+		NodeInfo: func() interface{} {
+			return struct {
+				Network    uint64   `json:"network"`
+				Difficulty *big.Int `json:"difficulty"`
+			}{Network: fakeEthNetwork, Difficulty: big.NewInt(fakeEthDifficulty)}
+		},
+	}
+}
 
 // This test uses the admin_startRPC and admin_startWS APIs,
 // checking whether the HTTP server is started correctly.
@@ -349,11 +378,15 @@ func TestMonitorNodeInfo(t *testing.T) {
 	// An explicit ListenAddr is required so p2p.Server actually starts a
 	// listener and reports a non-empty ListenAddr; without it the server
 	// short-circuits setupListening and the field is legitimately empty.
+	// A fake eth protocol is registered so the Protocols["eth"] extraction
+	// branch in monitorAPI.NodeInfo actually executes; without it network
+	// and difficulty stay at zero-value and the branch is uncovered.
 	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true, ListenAddr: "127.0.0.1:0"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stack.Close()
+	stack.RegisterProtocols([]p2p.Protocol{fakeEthProtocol()})
 
 	if err := stack.Start(); err != nil {
 		t.Fatal(err)
@@ -369,6 +402,12 @@ func TestMonitorNodeInfo(t *testing.T) {
 	}
 	if info.ListenAddr == "" {
 		t.Error("NodeInfo.ListenAddr is empty")
+	}
+	if info.Network != fakeEthNetwork {
+		t.Errorf("NodeInfo.Network = %d, want %d", info.Network, fakeEthNetwork)
+	}
+	if info.Difficulty == nil || info.Difficulty.Int64() != fakeEthDifficulty {
+		t.Errorf("NodeInfo.Difficulty = %v, want %d", info.Difficulty, fakeEthDifficulty)
 	}
 }
 
@@ -438,6 +477,9 @@ func TestMonitorNamespaceOverHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stack.Close()
+	// Register a fake eth protocol so monitor_nodeInfo can also assert on the
+	// network / difficulty fields — the whole point of exposing them.
+	stack.RegisterProtocols([]p2p.Protocol{fakeEthProtocol()})
 
 	if err := stack.Start(); err != nil {
 		t.Fatal(err)
@@ -445,7 +487,7 @@ func TestMonitorNamespaceOverHTTP(t *testing.T) {
 
 	base := "http://" + stack.http.listenAddr()
 
-	// monitor_nodeInfo must respond with a JSON object carrying the expected fields.
+	// monitor_nodeInfo must respond with a JSON object carrying every documented field.
 	resp := rpcRequest(t, base, "monitor_nodeInfo")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("monitor_nodeInfo status = %d, want 200", resp.StatusCode)
@@ -454,7 +496,14 @@ func TestMonitorNamespaceOverHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, needle := range []string{`"result"`, `"name"`, `"listenAddr"`, `"ports"`} {
+	for _, needle := range []string{
+		`"result"`,
+		`"name"`,
+		`"listenAddr"`,
+		`"ports"`,
+		`"network":24101`,
+		`"difficulty":12345`,
+	} {
 		if !bytes.Contains(body, []byte(needle)) {
 			t.Errorf("monitor_nodeInfo body missing %q; got %s", needle, body)
 		}
