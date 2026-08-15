@@ -95,7 +95,7 @@ Two further limits apply, both tunable:
 
 | Method | Returns |
 | --- | --- |
-| `monitor_nodeInfo` | Node identity and network: `name`, `ip`, `listenAddr`, `ports.listener`, `ports.discovery`, `network`, `difficulty`. The last two are sourced from the `eth` subprotocol; on a node that does not run `eth` they are absent (`network` is `0`, `difficulty` is `null`). |
+| `monitor_nodeInfo` | Node identity and network: `name`, `ip`, `listenAddr`, `ports.listener`, `ports.discovery`, `network`, `difficulty`. The last two are sourced from the `eth` subprotocol; on a node that does not run `eth` they remain present with zero values (`network` is `0`, `difficulty` is `null`). |
 | `monitor_peerCount` | Number of currently-connected peers |
 
 Recommended flag set for a probe-only RPC endpoint:
