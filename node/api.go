@@ -377,16 +377,23 @@ func (api *monitorAPI) NodeInfo() (*MonitorNodeInfo, error) {
 	result.Ports.Discovery = info.Ports.Discovery
 
 	if ethProto, ok := info.Protocols["eth"]; ok {
-		if b, err := json.Marshal(ethProto); err == nil {
-			var ethInfo struct {
-				Network    uint64   `json:"network"`
-				Difficulty *big.Int `json:"difficulty"`
-			}
-			if err := json.Unmarshal(b, &ethInfo); err == nil {
-				result.Network = ethInfo.Network
-				result.Difficulty = ethInfo.Difficulty
-			}
+		// Round-trip through JSON to extract network/difficulty without importing
+		// eth/protocols/eth (the concrete type lives there); a marshal or
+		// unmarshal failure is surfaced rather than silently returning zeros so
+		// broken monitoring data cannot be mistaken for a healthy node.
+		b, err := json.Marshal(ethProto)
+		if err != nil {
+			return nil, fmt.Errorf("monitor: marshal eth protocol info: %w", err)
 		}
+		var ethInfo struct {
+			Network    uint64   `json:"network"`
+			Difficulty *big.Int `json:"difficulty"`
+		}
+		if err := json.Unmarshal(b, &ethInfo); err != nil {
+			return nil, fmt.Errorf("monitor: unmarshal eth protocol info: %w", err)
+		}
+		result.Network = ethInfo.Network
+		result.Difficulty = ethInfo.Difficulty
 	}
 	return result, nil
 }
