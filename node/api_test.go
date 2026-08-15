@@ -346,7 +346,10 @@ func checkRPC(url string) bool {
 }
 
 func TestMonitorNodeInfo(t *testing.T) {
-	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true}})
+	// An explicit ListenAddr is required so p2p.Server actually starts a
+	// listener and reports a non-empty ListenAddr; without it the server
+	// short-circuits setupListening and the field is legitimately empty.
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true, ListenAddr: "127.0.0.1:0"}})
 	if err != nil {
 		t.Fatal(err)
 	}
