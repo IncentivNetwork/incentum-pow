@@ -397,7 +397,9 @@ func (api *monitorAPI) PeerCount() (int, error) {
 	if server == nil {
 		return 0, ErrNodeStopped
 	}
-	return len(server.PeersInfo()), nil
+	// PeerCount avoids the slice allocation and per-peer info gathering that
+	// PeersInfo would do; monitoring only needs the number, not the details.
+	return server.PeerCount(), nil
 }
 
 // web3API offers helper utils
