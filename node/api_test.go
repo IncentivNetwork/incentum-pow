@@ -485,7 +485,7 @@ func TestMonitorNamespaceOverHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	base := "http://" + stack.http.listenAddr()
+	base := stack.HTTPEndpoint()
 
 	// monitor_nodeInfo must respond with a JSON object carrying every documented field.
 	resp := rpcRequest(t, base, "monitor_nodeInfo")
@@ -527,16 +527,13 @@ func TestMonitorNamespaceOverHTTP(t *testing.T) {
 	}
 
 	// admin methods must NOT be reachable — namespace is not registered.
-	resp = rpcRequest(t, base, "admin_peers")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("admin_peers status = %d, want 200 (JSON-RPC method-not-found is a 200 with error body)", resp.StatusCode)
-	}
-	body, err = io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(body, []byte(`"error"`)) || !bytes.Contains(body, []byte("method")) {
-		t.Errorf("admin_peers should have returned method-not-found; got %s", body)
+	// Standard JSON-RPC method-not-found code is -32601; check that explicitly
+	// rather than substring-matching the error message, so the assertion cannot
+	// pass for an unrelated error shape (e.g. transport error containing "method").
+	var errResp jsonrpcResponse
+	decodeRPC(t, rpcRequest(t, base, "admin_peers"), &errResp)
+	if errResp.Error == nil || errResp.Error.Code != -32601 {
+		t.Errorf("admin_peers should return method-not-found (-32601); got %+v", errResp)
 	}
 }
 
