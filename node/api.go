@@ -343,8 +343,8 @@ func (api *adminAPI) Datadir() string {
 	return api.node.DataDir()
 }
 
-// MonitorNodeInfo contains read-only node information for monitoring purposes.
-type MonitorNodeInfo struct {
+// monitorNodeInfo contains read-only node information for monitoring purposes.
+type monitorNodeInfo struct {
 	Name       string `json:"name"`
 	IP         string `json:"ip"`
 	ListenAddr string `json:"listenAddr"`
@@ -362,13 +362,13 @@ type monitorAPI struct {
 }
 
 // NodeInfo returns node identity, network, ports and total difficulty.
-func (api *monitorAPI) NodeInfo() (*MonitorNodeInfo, error) {
+func (api *monitorAPI) NodeInfo() (*monitorNodeInfo, error) {
 	server := api.node.Server()
 	if server == nil {
 		return nil, ErrNodeStopped
 	}
 	info := server.NodeInfo()
-	result := &MonitorNodeInfo{
+	result := &monitorNodeInfo{
 		Name:       info.Name,
 		IP:         info.IP,
 		ListenAddr: info.ListenAddr,
