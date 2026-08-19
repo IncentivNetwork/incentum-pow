@@ -507,21 +507,15 @@ func TestMonitorNamespaceOverHTTP(t *testing.T) {
 		}
 	}
 
-	// monitor_peerCount must respond with an integer result.
-	resp = rpcRequest(t, base, "monitor_peerCount")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("monitor_peerCount status = %d, want 200", resp.StatusCode)
+	// monitor_peerCount must respond with an integer result. A new node has no
+	// peers, so the raw JSON result is exactly "0".
+	var countResp jsonrpcResponse
+	decodeRPC(t, rpcRequest(t, base, "monitor_peerCount"), &countResp)
+	if countResp.Error != nil {
+		t.Fatalf("monitor_peerCount returned error: %v", countResp.Error)
 	}
-	body, err = io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// New node with no peers — expect result:0. Also assert no error field.
-	if !bytes.Contains(body, []byte(`"result":0`)) {
-		t.Errorf("monitor_peerCount body = %s, want result:0", body)
-	}
-	if bytes.Contains(body, []byte(`"error"`)) {
-		t.Errorf("monitor_peerCount returned error: %s", body)
+	if !bytes.Equal(countResp.Result, []byte("0")) {
+		t.Errorf("monitor_peerCount result = %s, want 0", countResp.Result)
 	}
 
 	// admin methods must NOT be reachable — namespace is not registered.
