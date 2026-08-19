@@ -487,25 +487,23 @@ func TestMonitorNamespaceOverHTTP(t *testing.T) {
 
 	base := stack.HTTPEndpoint()
 
-	// monitor_nodeInfo must respond with a JSON object carrying every documented field.
-	resp := rpcRequest(t, base, "monitor_nodeInfo")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("monitor_nodeInfo status = %d, want 200", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
+	// monitor_nodeInfo must respond with a JSON object carrying every documented
+	// field. Decoding into jsonrpcResponse also lets us fail loud if the method
+	// regresses to returning a JSON-RPC error while still producing HTTP 200.
+	var infoResp jsonrpcResponse
+	decodeRPC(t, rpcRequest(t, base, "monitor_nodeInfo"), &infoResp)
+	if infoResp.Error != nil {
+		t.Fatalf("monitor_nodeInfo returned error: %v", infoResp.Error)
 	}
 	for _, needle := range []string{
-		`"result"`,
 		`"name"`,
 		`"listenAddr"`,
 		`"ports"`,
 		`"network":24101`,
 		`"difficulty":12345`,
 	} {
-		if !bytes.Contains(body, []byte(needle)) {
-			t.Errorf("monitor_nodeInfo body missing %q; got %s", needle, body)
+		if !bytes.Contains(infoResp.Result, []byte(needle)) {
+			t.Errorf("monitor_nodeInfo result missing %q; got %s", needle, infoResp.Result)
 		}
 	}
 
