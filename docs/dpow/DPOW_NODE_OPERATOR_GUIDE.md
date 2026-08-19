@@ -101,7 +101,7 @@ Two further limits apply, both tunable:
 Recommended flag set for a probe-only RPC endpoint:
 
 ```
-  --http.api 'eth,net,web3,txpool,monitor' \
+  --http.api 'eth,net,web3,txpool,monitor'
 ```
 
 There is no matching restricted profile — the whole namespace is safe by construction, no debug or admin methods are ever reachable through `monitor`. `admin` should stay out of `--http.api` / `--ws.api` on any transport that is externally reachable.
