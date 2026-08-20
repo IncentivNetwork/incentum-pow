@@ -363,11 +363,13 @@ type monitorAPI struct {
 
 // NodeInfo returns node identity, network, ports and total difficulty.
 func (api *monitorAPI) NodeInfo() (*monitorNodeInfo, error) {
-	server := api.node.Server()
-	if server == nil {
+	// Gate on the lifecycle state, not on Server() != nil: Server() is
+	// initialised to a non-nil struct in New, and calling NodeInfo on an
+	// unstarted p2p.Server panics on its nil localnode.
+	if !api.node.isRunning() {
 		return nil, ErrNodeStopped
 	}
-	info := server.NodeInfo()
+	info := api.node.Server().NodeInfo()
 	result := &monitorNodeInfo{
 		Name:       info.Name,
 		IP:         info.IP,
@@ -400,13 +402,15 @@ func (api *monitorAPI) NodeInfo() (*monitorNodeInfo, error) {
 
 // PeerCount returns the number of peers currently connected to the node.
 func (api *monitorAPI) PeerCount() (int, error) {
-	server := api.node.Server()
-	if server == nil {
+	// Gate on the lifecycle state, not on Server() != nil: Server() is
+	// initialised to a non-nil struct in New, and calling PeerCount on an
+	// unstarted p2p.Server deadlocks on its nil peerOp / quit channels.
+	if !api.node.isRunning() {
 		return 0, ErrNodeStopped
 	}
 	// PeerCount avoids the slice allocation and per-peer info gathering that
 	// PeersInfo would do; monitoring only needs the number, not the details.
-	return server.PeerCount(), nil
+	return api.node.Server().PeerCount(), nil
 }
 
 // web3API offers helper utils
