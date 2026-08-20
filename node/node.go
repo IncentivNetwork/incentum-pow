@@ -554,11 +554,13 @@ func (n *Node) Wait() {
 	<-n.stop
 }
 
-// isRunning reports whether the node has completed Start and has not yet been
-// Closed. Callers whose behaviour depends on the p2p server actually being up
-// should gate on this rather than on Server() != nil, because Server() is
-// initialised to a non-nil struct in New and stays that way for the lifetime
-// of the Node.
+// isRunning reports whether the node lifecycle is currently in runningState.
+// The state is set by Start once endpoints have been opened (before registered
+// lifecycles are started) and cleared by Close only at the end of shutdown,
+// so a true return does not guarantee every Lifecycle is fully up. Callers
+// whose behaviour depends on the p2p server being usable should prefer this
+// over Server() != nil, because Server() is initialised to a non-nil struct
+// in New and stays that way for the lifetime of the Node.
 func (n *Node) isRunning() bool {
 	n.lock.Lock()
 	defer n.lock.Unlock()
