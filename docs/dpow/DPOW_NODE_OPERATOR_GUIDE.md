@@ -91,7 +91,7 @@ Two further limits apply, both tunable:
 
 #### The `monitor` namespace for observability
 
-`--http.api monitor` exposes a small read-only surface intended for monitoring probes that previously had to enable `admin` — and thus also grant `admin_addPeer` / `admin_removePeer` / `admin_exportChain` / `admin_importChain` / `admin_startHTTP` / `admin_startWS`. The `monitor` namespace has no side effects and is safe to include in any public or internal RPC listener.
+`--http.api monitor` exposes a small read-only surface intended for monitoring probes that previously had to enable `admin` — and thus also grant `admin_addPeer` / `admin_removePeer` / `admin_exportChain` / `admin_importChain` / `admin_startHTTP` / `admin_startWS`. The `monitor` namespace has no side effects; no call it exposes can change node state. Note, however, that `monitor_nodeInfo` returns identifying metadata (client version and OS through `name`, plus `ip` / `listenAddr` / `ports`), so treat it like other read-only fingerprinting surface: keep the listener behind a reverse proxy with an IP allowlist or a private network wherever practical.
 
 | Method | Returns |
 | --- | --- |
