@@ -497,8 +497,11 @@ func TestMonitorNamespaceOverHTTP(t *testing.T) {
 	}
 	for _, needle := range []string{
 		`"name"`,
+		`"ip"`,
 		`"listenAddr"`,
 		`"ports"`,
+		`"listener"`,  // nested in ports; monitorNodeInfo always marshals it
+		`"discovery"`, // nested in ports; same
 		`"network":24101`,
 		`"difficulty":12345`,
 	} {
