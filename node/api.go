@@ -364,8 +364,11 @@ type monitorAPI struct {
 // NodeInfo returns node identity, network, ports and total difficulty.
 func (api *monitorAPI) NodeInfo() (*monitorNodeInfo, error) {
 	// Gate on the lifecycle state, not on Server() != nil: Server() is
-	// initialised to a non-nil struct in New, and calling NodeInfo on an
-	// unstarted p2p.Server panics on its nil localnode.
+	// initialised to a non-nil struct in New, so it is never nil for the
+	// lifetime of the Node. Server().NodeInfo() on an unstarted server does
+	// not panic (Self() returns a fallback enode) but would report placeholder
+	// data — 0.0.0.0 / port 0 / an empty ListenAddr — which a monitoring probe
+	// must not mistake for a healthy node.
 	if !api.node.isRunning() {
 		return nil, ErrNodeStopped
 	}
