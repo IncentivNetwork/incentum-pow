@@ -18,7 +18,9 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -42,6 +44,9 @@ func (n *Node) apis() []rpc.API {
 		}, {
 			Namespace: "web3",
 			Service:   &web3API{n},
+		}, {
+			Namespace: "monitor",
+			Service:   &monitorAPI{n},
 		},
 	}
 }
@@ -336,6 +341,79 @@ func (api *adminAPI) NodeInfo() (*p2p.NodeInfo, error) {
 // Datadir retrieves the current data directory the node is using.
 func (api *adminAPI) Datadir() string {
 	return api.node.DataDir()
+}
+
+// monitorNodeInfo contains read-only node information for monitoring purposes.
+type monitorNodeInfo struct {
+	Name       string `json:"name"`
+	IP         string `json:"ip"`
+	ListenAddr string `json:"listenAddr"`
+	Ports      struct {
+		Listener  int `json:"listener"`
+		Discovery int `json:"discovery"`
+	} `json:"ports"`
+	Network    uint64   `json:"network"`
+	Difficulty *big.Int `json:"difficulty"`
+}
+
+// monitorAPI provides read-only node information for monitoring purposes.
+type monitorAPI struct {
+	node *Node
+}
+
+// NodeInfo returns node identity, network, ports and total difficulty.
+func (api *monitorAPI) NodeInfo() (*monitorNodeInfo, error) {
+	// Gate on the lifecycle state, not on Server() != nil: Server() is
+	// initialised to a non-nil struct in New, so it is never nil for the
+	// lifetime of the Node. Server().NodeInfo() on an unstarted server does
+	// not panic (Self() returns a fallback enode) but would report placeholder
+	// data — 0.0.0.0 / port 0 / an empty ListenAddr — which a monitoring probe
+	// must not mistake for a healthy node.
+	if !api.node.isRunning() {
+		return nil, ErrNodeStopped
+	}
+	info := api.node.Server().NodeInfo()
+	result := &monitorNodeInfo{
+		Name:       info.Name,
+		IP:         info.IP,
+		ListenAddr: info.ListenAddr,
+	}
+	result.Ports.Listener = info.Ports.Listener
+	result.Ports.Discovery = info.Ports.Discovery
+
+	if ethProto, ok := info.Protocols["eth"]; ok {
+		// Round-trip through JSON to extract network/difficulty without importing
+		// eth/protocols/eth (the concrete type lives there); a marshal or
+		// unmarshal failure is surfaced rather than silently returning zeros so
+		// broken monitoring data cannot be mistaken for a healthy node.
+		b, err := json.Marshal(ethProto)
+		if err != nil {
+			return nil, fmt.Errorf("monitor: marshal eth protocol info: %w", err)
+		}
+		var ethInfo struct {
+			Network    uint64   `json:"network"`
+			Difficulty *big.Int `json:"difficulty"`
+		}
+		if err := json.Unmarshal(b, &ethInfo); err != nil {
+			return nil, fmt.Errorf("monitor: unmarshal eth protocol info: %w", err)
+		}
+		result.Network = ethInfo.Network
+		result.Difficulty = ethInfo.Difficulty
+	}
+	return result, nil
+}
+
+// PeerCount returns the number of peers currently connected to the node.
+func (api *monitorAPI) PeerCount() (int, error) {
+	// Gate on the lifecycle state, not on Server() != nil: Server() is
+	// initialised to a non-nil struct in New, and calling PeerCount on an
+	// unstarted p2p.Server deadlocks on its nil peerOp / quit channels.
+	if !api.node.isRunning() {
+		return 0, ErrNodeStopped
+	}
+	// PeerCount avoids the slice allocation and per-peer info gathering that
+	// PeersInfo would do; monitoring only needs the number, not the details.
+	return api.node.Server().PeerCount(), nil
 }
 
 // web3API offers helper utils

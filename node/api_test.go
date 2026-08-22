@@ -19,15 +19,45 @@ package node
 import (
 	"bytes"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/assert"
 )
+
+// fakeEthNetwork / fakeEthDifficulty are the values the mock protocol below
+// advertises. Tests use them to prove the eth-protocol extraction branch of
+// monitorAPI.NodeInfo actually runs — a regression in the JSON round-trip
+// would surface as a mismatch here.
+const (
+	fakeEthNetwork    = uint64(24101)
+	fakeEthDifficulty = int64(12345)
+)
+
+// fakeEthProtocol returns a minimal p2p.Protocol registered under the "eth"
+// name whose NodeInfo exposes the two fields monitor_nodeInfo extracts. The
+// protocol itself is never negotiated — the tests only need the NodeInfo hook
+// to fire when p2p.Server.NodeInfo walks the registered protocols.
+func fakeEthProtocol() p2p.Protocol {
+	return p2p.Protocol{
+		Name:    "eth",
+		Version: 1,
+		Length:  1,
+		Run:     func(*p2p.Peer, p2p.MsgReadWriter) error { return nil },
+		NodeInfo: func() interface{} {
+			return struct {
+				Network    uint64   `json:"network"`
+				Difficulty *big.Int `json:"difficulty"`
+			}{Network: fakeEthNetwork, Difficulty: big.NewInt(fakeEthDifficulty)}
+		},
+	}
+}
 
 // This test uses the admin_startRPC and admin_startWS APIs,
 // checking whether the HTTP server is started correctly.
@@ -342,6 +372,164 @@ func checkRPC(url string) bool {
 
 	_, err = c.SupportedModules()
 	return err == nil
+}
+
+func TestMonitorNodeInfo(t *testing.T) {
+	// An explicit ListenAddr is required so p2p.Server actually starts a
+	// listener and reports a non-empty ListenAddr; without it the server
+	// short-circuits setupListening and the field is legitimately empty.
+	// A fake eth protocol is registered so the Protocols["eth"] extraction
+	// branch in monitorAPI.NodeInfo actually executes; without it network
+	// and difficulty stay at zero-value and the branch is uncovered.
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true, ListenAddr: "127.0.0.1:0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+	stack.RegisterProtocols([]p2p.Protocol{fakeEthProtocol()})
+
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	api := &monitorAPI{stack}
+	info, err := api.NodeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name == "" {
+		t.Error("NodeInfo.Name is empty")
+	}
+	if info.ListenAddr == "" {
+		t.Error("NodeInfo.ListenAddr is empty")
+	}
+	if info.Network != fakeEthNetwork {
+		t.Errorf("NodeInfo.Network = %d, want %d", info.Network, fakeEthNetwork)
+	}
+	if info.Difficulty == nil || info.Difficulty.Int64() != fakeEthDifficulty {
+		t.Errorf("NodeInfo.Difficulty = %v, want %d", info.Difficulty, fakeEthDifficulty)
+	}
+}
+
+func TestMonitorNodeInfoStoppedNode(t *testing.T) {
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	api := &monitorAPI{stack}
+	_, err = api.NodeInfo()
+	if err != ErrNodeStopped {
+		t.Errorf("expected ErrNodeStopped, got %v", err)
+	}
+}
+
+func TestMonitorPeerCount(t *testing.T) {
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	api := &monitorAPI{stack}
+	count, err := api.PeerCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 peers, got %d", count)
+	}
+}
+
+func TestMonitorPeerCountStoppedNode(t *testing.T) {
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	api := &monitorAPI{stack}
+	_, err = api.PeerCount()
+	if err != ErrNodeStopped {
+		t.Errorf("expected ErrNodeStopped, got %v", err)
+	}
+}
+
+// TestMonitorNamespaceOverHTTP exercises the two monitor methods over the
+// actual HTTP JSON-RPC transport with only the `monitor` namespace registered.
+// This is the acceptance-criteria integration test for issue #57: the methods
+// must be reachable through a real transport with the operator-facing flag set,
+// not just via direct Go calls.
+func TestMonitorNamespaceOverHTTP(t *testing.T) {
+	stack, err := New(&Config{
+		HTTPHost:     "127.0.0.1",
+		HTTPPort:     0,
+		HTTPModules:  []string{"monitor"},
+		HTTPTimeouts: rpc.DefaultHTTPTimeouts,
+		P2P:          p2p.Config{NoDiscovery: true, ListenAddr: "127.0.0.1:0"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+	// Register a fake eth protocol so monitor_nodeInfo can also assert on the
+	// network / difficulty fields — the whole point of exposing them.
+	stack.RegisterProtocols([]p2p.Protocol{fakeEthProtocol()})
+
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	base := stack.HTTPEndpoint()
+
+	// monitor_nodeInfo must respond with a JSON object carrying every documented
+	// field. Decoding into jsonrpcResponse also lets us fail loud if the method
+	// regresses to returning a JSON-RPC error while still producing HTTP 200.
+	var infoResp jsonrpcResponse
+	decodeRPC(t, rpcRequest(t, base, "monitor_nodeInfo"), &infoResp)
+	if infoResp.Error != nil {
+		t.Fatalf("monitor_nodeInfo returned error: %v", infoResp.Error)
+	}
+	for _, needle := range []string{
+		`"name"`,
+		`"ip"`,
+		`"listenAddr"`,
+		`"ports"`,
+		`"listener"`,  // nested in ports; monitorNodeInfo always marshals it
+		`"discovery"`, // nested in ports; same
+		`"network":24101`,
+		`"difficulty":12345`,
+	} {
+		if !bytes.Contains(infoResp.Result, []byte(needle)) {
+			t.Errorf("monitor_nodeInfo result missing %q; got %s", needle, infoResp.Result)
+		}
+	}
+
+	// monitor_peerCount must respond with an integer result. A new node has no
+	// peers, so the raw JSON result is exactly "0".
+	var countResp jsonrpcResponse
+	decodeRPC(t, rpcRequest(t, base, "monitor_peerCount"), &countResp)
+	if countResp.Error != nil {
+		t.Fatalf("monitor_peerCount returned error: %v", countResp.Error)
+	}
+	if !bytes.Equal(countResp.Result, []byte("0")) {
+		t.Errorf("monitor_peerCount result = %s, want 0", countResp.Result)
+	}
+
+	// admin methods must NOT be reachable — namespace is not registered.
+	// Standard JSON-RPC method-not-found code is -32601; check that explicitly
+	// rather than substring-matching the error message, so the assertion cannot
+	// pass for an unrelated error shape (e.g. transport error containing "method").
+	var errResp jsonrpcResponse
+	decodeRPC(t, rpcRequest(t, base, "admin_peers"), &errResp)
+	if errResp.Error == nil || errResp.Error.Code != -32601 {
+		t.Errorf("admin_peers should return method-not-found (-32601); got %+v", errResp)
+	}
 }
 
 // string/int pointer helpers.

@@ -554,6 +554,19 @@ func (n *Node) Wait() {
 	<-n.stop
 }
 
+// isRunning reports whether the node lifecycle is currently in runningState.
+// The state is flipped inside Start (under the same lock as endpoint setup)
+// and cleared by Close only at the end of shutdown, so a true return does
+// not guarantee every registered Lifecycle is fully up. Callers whose
+// behaviour depends on the p2p server being usable should prefer this over
+// Server() != nil, because Server() is initialised to a non-nil struct in
+// New and stays that way for the lifetime of the Node.
+func (n *Node) isRunning() bool {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	return n.state == runningState
+}
+
 // RegisterLifecycle registers the given Lifecycle on the node.
 func (n *Node) RegisterLifecycle(lifecycle Lifecycle) {
 	n.lock.Lock()

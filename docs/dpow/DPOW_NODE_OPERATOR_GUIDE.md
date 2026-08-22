@@ -89,6 +89,23 @@ Two further limits apply, both tunable:
 >
 > The concurrency limiter protects the process against overload. It is not a defence against a determined attacker — rate limiting at the reverse proxy is still required.
 
+#### The `monitor` namespace for observability
+
+`--http.api monitor` exposes a small read-only surface intended for monitoring probes that previously had to enable `admin` — and thus also grant `admin_addPeer` / `admin_removePeer` / `admin_exportChain` / `admin_importChain` / `admin_startHTTP` / `admin_startWS`. The `monitor` namespace has no side effects; no call it exposes can change node state. Note, however, that `monitor_nodeInfo` returns identifying metadata (client version and OS through `name`, plus `ip` / `listenAddr` / `ports`), so treat it like other read-only fingerprinting surface: keep the listener behind a reverse proxy with an IP allowlist or a private network wherever practical.
+
+| Method | Returns |
+| --- | --- |
+| `monitor_nodeInfo` | Node identity and network: `name`, `ip`, `listenAddr`, `ports.listener`, `ports.discovery`, `network`, `difficulty`. The last two are sourced from the `eth` subprotocol; on a node that does not run `eth` they remain present with zero values (`network` is `0`, `difficulty` is `null`). |
+| `monitor_peerCount` | Number of currently-connected peers |
+
+Recommended flag set for a probe-only RPC endpoint:
+
+```
+  --http.api 'eth,net,web3,txpool,monitor'
+```
+
+There is no matching restricted profile — the whole namespace is safe by construction, no debug or admin methods are ever reachable through `monitor`. `admin` should stay out of `--http.api` / `--ws.api` on any transport that is externally reachable.
+
 ### 3.2 Example hardened `systemd` unit (miner node)
 
 ```ini
