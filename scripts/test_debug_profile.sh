@@ -285,6 +285,20 @@ expect_ok() { # label, endpoint, payload
 	fi
 }
 
+wait_receipt() { # endpoint, transaction hash
+	local receipt i
+	for ((i = 0; i < 60; i++)); do
+		receipt=$(rpc "$1" "$(jq -nc --arg tx "$2" \
+			'{jsonrpc:"2.0",method:"eth_getTransactionReceipt",params:[$tx],id:1}')")
+		if printf '%s' "$receipt" | jq -e '.result.blockNumber != null' >/dev/null 2>&1; then
+			printf '%s' "$receipt"
+			return 0
+		fi
+		sleep 0.5
+	done
+	return 1
+}
+
 # build_batch renders a JSON-RPC batch of $1 elements from the printf template
 # $2, which receives the element index as its id.
 build_batch() { # count, template
@@ -422,28 +436,46 @@ phase_restricted() {
 	local ep="$NODE_HTTP" ws="$NODE_WS"
 
 	# -- a real transaction to trace ----------------------------------------
-	local acc tx receipt trace
+	local acc tx receipt trace contract block
 	acc=$(rpc "$ep" '{"jsonrpc":"2.0","method":"eth_accounts","params":[],"id":1}' | jq -r '.result[0] // empty')
 	if [ -z "$acc" ]; then
-		skipped "real trace" "no dev account available"
+		bad "real trace" "no dev account available on the node created by this script"
+		return
 	else
-		tx=$(rpc "$ep" "{\"jsonrpc\":\"2.0\",\"method\":\"eth_sendTransaction\",\"params\":[{\"from\":\"$acc\",\"to\":\"0x00000000000000000000000000000000000000ff\",\"value\":\"0x1\"}],\"id\":1}" | jq -r '.result // empty')
-		sleep 2
-		receipt=$(rpc "$ep" "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$tx\"],\"id\":1}" | jq -r '.result.status // empty')
-		if [ "$receipt" != "0x1" ]; then
-			skipped "real trace" "transaction was not mined"
+		# Deploy a tiny contract that CALLs the identity precompile. A plain
+		# transfer has no child calls and cannot prove onlyTopCall suppresses them.
+		tx=$(rpc "$ep" "$(jq -nc --arg from "$acc" \
+			'{jsonrpc:"2.0",method:"eth_sendTransaction",params:[{from:$from,gas:"0x20000",
+			data:"0x6011600c60003960116000f360006000600060006000600461fffff15000"}],id:1}')" | jq -r '.result // empty')
+		receipt=$(wait_receipt "$ep" "$tx")
+		contract=$(printf '%s' "$receipt" | jq -r '.result.contractAddress // empty')
+		if [ -z "$contract" ] || [ "$(printf '%s' "$receipt" | jq -r '.result.status')" != "0x1" ]; then
+			bad "real trace" "test contract was not deployed"
+			return
+		fi
+		tx=$(rpc "$ep" "$(jq -nc --arg from "$acc" --arg to "$contract" \
+			'{jsonrpc:"2.0",method:"eth_sendTransaction",params:[{from:$from,to:$to,gas:"0x20000"}],id:1}')" | jq -r '.result // empty')
+		receipt=$(wait_receipt "$ep" "$tx")
+		block=$(printf '%s' "$receipt" | jq -r '.result.blockNumber // empty')
+		if [ "$(printf '%s' "$receipt" | jq -r '.result.status // empty')" != "0x1" ]; then
+			bad "real trace" "transaction was not mined successfully"
+			return
 		else
 			# A registered method is not a working one: this is the only check
 			# that the restricted wrapper actually delegates to the tracer.
 			trace=$(rpc "$ep" "{\"jsonrpc\":\"2.0\",\"method\":\"debug_traceTransaction\",\"params\":[\"$tx\",{\"tracer\":\"callTracer\"}],\"id\":1}")
 			if [ "$(printf '%s' "$trace" | jq -r '.result.type // empty')" = "CALL" ] &&
-				[ "$(printf '%s' "$trace" | jq -r '.result.from // empty')" = "$acc" ]; then
+				[ "$(printf '%s' "$trace" | jq -r '.result.from // empty')" = "$acc" ] &&
+				printf '%s' "$trace" | jq -e '.result.calls | length > 0' >/dev/null; then
 				ok "debug_traceTransaction returns a real call trace"
 			else
 				bad "debug_traceTransaction returns a real call trace" "$trace"
 			fi
+			local full_trace="$trace"
 			trace=$(rpc "$ep" "{\"jsonrpc\":\"2.0\",\"method\":\"debug_traceTransaction\",\"params\":[\"$tx\",{\"tracer\":\"callTracer\",\"tracerConfig\":{\"onlyTopCall\":true}}],\"id\":1}")
-			if [ "$(printf '%s' "$trace" | jq -r '.result.type // empty')" = "CALL" ]; then
+			if printf '%s' "$trace" | jq -e --argjson full "$full_trace" \
+				'.error == null and .result.type == "CALL" and
+				(.result | has("calls") | not) and .result == ($full.result | del(.calls))' >/dev/null; then
 				ok "onlyTopCall works (the Blockscout path)"
 			else
 				bad "onlyTopCall works (the Blockscout path)" "$trace"
@@ -451,8 +483,14 @@ phase_restricted() {
 		fi
 	fi
 
-	expect_ok "debug_traceBlockByNumber with callTracer" "$ep" \
-		'{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{"tracer":"callTracer"}],"id":1}'
+	trace=$(rpc "$ep" "$(jq -nc --arg block "$block" \
+		'{jsonrpc:"2.0",method:"debug_traceBlockByNumber",params:[$block,{tracer:"callTracer"}],id:1}')")
+	if printf '%s' "$trace" | jq -e --argjson full "$full_trace" \
+		'.error == null and (.result | length == 1) and .result[0].result == $full.result' >/dev/null; then
+		ok "debug_traceBlockByNumber returns the mined transaction trace"
+	else
+		bad "debug_traceBlockByNumber returns the mined transaction trace" "$trace"
+	fi
 
 	# -- the destructive surface --------------------------------------------
 	# Safe here and nowhere else: this chain was created seconds ago.
@@ -577,11 +615,17 @@ phase_restricted() {
 				bad "$m rejected over WS" "$got"
 			fi
 		done
-		got=$(attach "$ws" 'debug.traceBlockByNumber("latest",{tracer:"callTracer"}).length')
-		if printf '%s' "$got" | grep -qE '^[0-9]+$'; then
+		got=$(attach "$ws" "var traces=debug.traceBlockByNumber(\"$block\",{tracer:\"callTracer\"}); traces.length===1 && traces[0].result.from===\"$acc\" && traces[0].result.calls.length>0")
+		if [ "$got" = true ]; then
 			ok "debug_traceBlockByNumber works over WS"
 		else
 			bad "debug_traceBlockByNumber works over WS" "$got"
+		fi
+		got=$(attach "$ws" "var trace=debug.traceTransaction(\"$tx\",{tracer:\"callTracer\",tracerConfig:{onlyTopCall:true}}); trace.type===\"CALL\" && trace.from===\"$acc\" && !trace.calls")
+		if [ "$got" = true ]; then
+			ok "debug_traceTransaction with onlyTopCall works over WS"
+		else
+			bad "debug_traceTransaction with onlyTopCall works over WS" "$got"
 		fi
 	fi
 
