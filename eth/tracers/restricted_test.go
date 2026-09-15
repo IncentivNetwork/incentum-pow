@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/rpc"
 )
@@ -350,49 +352,81 @@ func TestRestrictedDebugAPIDefaultRequestTimeout(t *testing.T) {
 	}
 }
 
-// TestRestrictedDebugAPIRequestDeadlineAborts shows the whole-request bound
-// actually cuts a call off, rather than merely being stored on the struct.
-//
-// It is the only thing bounding debug_traceBlockByNumber: that method sums the
-// per-transaction timeout over every transaction in the block, so the 10s cap
-// on TraceConfig.Timeout does not bound the request. A caller that supplies no
-// deadline of its own — which is every RPC request — must still be cut off.
+// deadlineBackend blocks chain access until the actual delegated context ends.
+// Embedding Backend makes any unexpected call fail instead of returning fake data.
+type deadlineBackend struct {
+	Backend
+	entered chan context.Context
+}
+
+func (b *deadlineBackend) BlockByNumber(ctx context.Context, _ rpc.BlockNumber) (*types.Block, error) {
+	b.entered <- ctx
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (b *deadlineBackend) GetTransaction(ctx context.Context, _ common.Hash) (*types.Transaction, common.Hash, uint64, uint64, error) {
+	b.entered <- ctx
+	<-ctx.Done()
+	return nil, common.Hash{}, 0, 0, ctx.Err()
+}
+
+// Exercise both public wrappers, including delegation, cancellation and slot
+// release. Waiting on enter() alone would still pass if either wrapper
+// stopped using it or delegated with the original context.
 func TestRestrictedDebugAPIRequestDeadlineAborts(t *testing.T) {
 	const timeout = 50 * time.Millisecond
-
-	api := &RestrictedDebugAPI{
-		limiter:        rpc.NewTraceLimiter(1),
-		requestTimeout: timeout,
-	}
-
-	// context.Background() has no deadline, exactly like an incoming request.
-	ctx, done, err := api.enter(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer done()
-
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		t.Fatal("no deadline attached to the request context")
-	}
-	if remaining := time.Until(deadline); remaining > timeout {
-		t.Fatalf("deadline is %s away, want at most %s", remaining, timeout)
-	}
-
-	// A tracer that respects its context — as eth/tracers does — is released
-	// when the bound expires instead of running for as long as the block takes.
-	start := time.Now()
-	select {
-	case <-ctx.Done():
-	case <-time.After(5 * time.Second):
-		t.Fatal("the request was never aborted")
-	}
-	if elapsed := time.Since(start); elapsed < timeout {
-		t.Fatalf("aborted after %s, before the %s bound", elapsed, timeout)
-	}
-	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		t.Fatalf("context error = %v, want %v", ctx.Err(), context.DeadlineExceeded)
+	for _, method := range []string{"transaction", "block"} {
+		t.Run(method, func(t *testing.T) {
+			backend := &deadlineBackend{entered: make(chan context.Context, 1)}
+			limiter := rpc.NewTraceLimiter(1)
+			service, err := newRestrictedDebugAPI(NewAPI(backend), rpc.RestrictedDebugOptions{
+				Profile: rpc.DebugProfileTraceIndexerV1, Limiter: limiter, RequestTimeout: timeout,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			api := service.(*RestrictedDebugAPI)
+			caller, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			result := make(chan error, 1)
+			start := time.Now()
+			go func() {
+				config := &TraceConfig{Tracer: callTracerConfig()}
+				var err error
+				if method == "transaction" {
+					_, err = api.TraceTransaction(caller, common.Hash{}, config)
+				} else {
+					_, err = api.TraceBlockByNumber(caller, rpc.LatestBlockNumber, config)
+				}
+				result <- err
+			}()
+			select {
+			case ctx := <-backend.entered:
+				deadline, ok := ctx.Deadline()
+				if !ok || deadline.Sub(start) < timeout || time.Until(deadline) > timeout {
+					t.Fatal("delegated context does not carry the request deadline")
+				}
+			case <-caller.Done():
+				t.Fatal("request never reached the backend")
+			}
+			select {
+			case err := <-result:
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("request error = %v, want DeadlineExceeded", err)
+				}
+				if caller.Err() != nil {
+					t.Fatal("request only stopped at the caller's longer deadline")
+				}
+			case <-caller.Done():
+				t.Fatal("request did not stop at the restricted deadline")
+			}
+			release, err := limiter.Acquire()
+			if err != nil {
+				t.Fatal("request leaked its concurrency slot:", err)
+			}
+			release()
+		})
 	}
 }
 
