@@ -25,6 +25,10 @@
 
 set -uo pipefail
 
+for tool in curl jq; do
+	command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 2; }
+done
+
 cd "$(dirname "$0")/.." || exit 2
 
 RUNNER="${RUNNER:-binary}"
@@ -325,6 +329,7 @@ matrix_fatal() { # label, want, flags...
 matrix_starts() { # label, flags...
 	local label="$1"
 	shift
+	MATRIX_OUT=""
 
 	if ! run_geth_once "${INERT[@]}" "$@" --exec '1+1' console; then
 		bad "$label" "$(grep -i fatal "$RUN_OUT" | head -1)"
@@ -467,7 +472,7 @@ phase_restricted() {
 	expect_code "debug_setHead(0) rejected" "$ep" \
 		'{"jsonrpc":"2.0","method":"debug_setHead","params":["0x0"],"id":1}' -32601
 	head_after=$(rpc "$ep" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r .result)
-	if [ "$head_before" = "$head_after" ]; then
+	if [[ "$head_before" =~ ^0x[0-9a-fA-F]+$ ]] && [ "$head_before" = "$head_after" ]; then
 		ok "the chain head survived debug_setHead (still $head_after)"
 	else
 		bad "the chain was rewound" "$head_before -> $head_after"
@@ -546,8 +551,8 @@ phase_restricted() {
 
 	# A batch made only of notifications gets no response at all, so a client
 	# is never left waiting on a reply that will not come.
-	resp=$(rpc "$ep" "$(build_batch 11 '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{"tracer":"callTracer"}]}')")
-	if [ -z "$(printf '%s' "$resp" | tr -d '[:space:]')" ]; then
+	if resp=$(rpc "$ep" "$(build_batch 11 '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{"tracer":"callTracer"}]}')") &&
+		[ -z "$(printf '%s' "$resp" | tr -d '[:space:]')" ]; then
 		ok "a rejected notification-only batch draws no response"
 	else
 		bad "a rejected notification-only batch draws no response" "$resp"
@@ -789,25 +794,23 @@ phase_unsafe() {
 	expect_ok "debug_memStats is served" "$ep" \
 		'{"jsonrpc":"2.0","method":"debug_memStats","params":[],"id":1}'
 
-	# traceCall reaches the tracer rather than being rejected as unknown.
-	local body code
-	body=$(rpc "$ep" '{"jsonrpc":"2.0","method":"debug_traceCall","params":[{},"latest",{"tracer":"callTracer"}],"id":1}')
-	code=$(printf '%s' "$body" | jq -r '.error.code // empty')
-	if [ "$code" = "-32601" ]; then
-		bad "debug_traceCall is served" "still rejected as unknown: $body"
-	else
-		ok "debug_traceCall is served"
-	fi
+	# Argument validation proves registration without depending on whether the
+	# legacy traceCall implementation can execute on a fresh genesis state.
+	expect_code "debug_traceCall is registered" "$ep" \
+		'{"jsonrpc":"2.0","method":"debug_traceCall","params":[],"id":1}' \
+		-32602 'missing value for required argument 0'
 
 	# And the profile's parameter validation does not apply here: a tracer the
 	# profile rejects with -32602 must get through. Whether the block itself can
 	# be traced is a property of the chain, so only the rejection matters.
+	local body
 	body=$(rpc "$ep" '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{"tracer":"prestateTracer"}],"id":1}')
-	code=$(printf '%s' "$body" | jq -r '.error.code // empty')
-	if [ "$code" = "-32602" ] || [ "$code" = "-32601" ]; then
-		bad "an unrestricted tracer config is accepted" "$body"
-	else
+	if printf '%s' "$body" | jq -e '
+		(.error == null and (.result | type == "array")) or
+		(.error.code == -32000 and .error.message == "genesis is not traceable")' >/dev/null 2>&1; then
 		ok "an unrestricted tracer config is accepted"
+	else
+		bad "an unrestricted tracer config is accepted" "$body"
 	fi
 }
 

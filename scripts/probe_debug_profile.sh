@@ -35,6 +35,10 @@
 
 set -uo pipefail
 
+for tool in curl jq; do
+	command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 2; }
+done
+
 ENDPOINT="${1:-}"
 if [ -z "$ENDPOINT" ]; then
 	echo "usage: $0 <http-rpc-endpoint>" >&2
@@ -254,7 +258,7 @@ find_traceable_tx() {
 			return 0
 		fi
 
-		 scanned=$((scanned + n))
+		scanned=$((scanned + n))
 	done
 }
 
@@ -282,10 +286,8 @@ echo
 echo "--- Safety gate ---"
 gate_open=0
 for method in debug_gcStats debug_traceCall; do
-	case "$method" in
-	debug_traceCall) payload='{"jsonrpc":"2.0","method":"debug_traceCall","params":[{},"latest"],"id":1}' ;;
-	*) payload="{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}" ;;
-	esac
+	# Missing arguments keep traceCall from executing on an unrestricted node.
+	payload="{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}"
 	code=$(rpc_call "$payload" | jq -r '.error.code // empty')
 	if [ "$code" != "-32601" ]; then
 		gate_open=1
