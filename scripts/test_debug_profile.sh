@@ -170,14 +170,13 @@ start_geth() {
 	fi
 
 	if [ "$RUNNER" = docker ]; then
-		local name="debugprofile-$label"
-		local ports=(-p "$http_port:8545")
+		local name="$(basename "$WORKDIR")-$label"
+		local ports=(-p "127.0.0.1:$http_port:8545")
 		local listen=(--http.port 8545)
 		if [ "$ws_port" != 0 ]; then
-			ports+=(-p "$ws_port:8546")
+			ports+=(-p "127.0.0.1:$ws_port:8546")
 			listen+=(--ws.port 8546)
 		fi
-		$DOCKER rm -f "$name" >/dev/null 2>&1
 		$DOCKER run -d --name "$name" "${ports[@]}" "$IMAGE" \
 			--datadir /data --http.addr 0.0.0.0 --http.vhosts '*' \
 			--ws.addr 0.0.0.0 --ws.origins '*' "${listen[@]}" "$@" >/dev/null || return 1
