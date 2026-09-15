@@ -751,6 +751,14 @@ phase_batch_limit_flag() {
 	else
 		bad "the default limit of 100 no longer applies" "$resp"
 	fi
+
+	# --ws.rpc.batch-limit has its own branch in cmd/utils/flags.go and is not
+	# reachable from here: a genuine JSON-RPC batch over a WebSocket needs a
+	# real WS client, and geth's console splits a batch into separate calls, so
+	# it returns results for a batch the server would have rejected. Covered by
+	# TestWSBatchLimitFlag in cmd/geth instead.
+	skipped "the WS batch limit is honoured" \
+		"needs a WS client; covered by cmd/geth TestWSBatchLimitFlag"
 }
 
 # ---------------------------------------------------------------------------

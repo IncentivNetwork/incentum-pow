@@ -6,9 +6,17 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // The debug-profile flags are wired in cmd/utils/flags.go and validated in
@@ -235,4 +243,92 @@ func TestDebugProfileStartupWarnings(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWSBatchLimitFlag drives --ws.rpc.batch-limit through the real binary.
+//
+// The verification script cannot reach this one: sending a genuine JSON-RPC
+// batch over a WebSocket needs a real WS client, and geth's own console splits
+// a batch into separate calls — it returns results for a batch the server
+// would have rejected, so it would report success whatever the flag did. The
+// HTTP side of the same flag is covered by scripts/test_debug_profile.sh.
+func TestWSBatchLimitFlag(t *testing.T) {
+	t.Parallel()
+
+	const limit = 5
+	port := freePort(t)
+	endpoint := fmt.Sprintf("ws://127.0.0.1:%d", port)
+
+	geth := runGeth(t,
+		"--dev", "--port", "0", "--authrpc.port", "0",
+		"--nodiscover", "--maxpeers", "0", "--ipcdisable",
+		"--ws", "--ws.addr", "127.0.0.1", "--ws.port", strconv.Itoa(port),
+		"--ws.origins", "*", "--ws.api", "eth,net,web3,debug",
+		"--ws.debug-profile", "trace-indexer-v1",
+		"--ws.rpc.batch-limit", strconv.Itoa(limit),
+	)
+	defer geth.Kill()
+	waitForEndpoint(t, endpoint, 30*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := rpc.DialWebsocket(ctx, endpoint, "")
+	if err != nil {
+		t.Fatalf("dial %s: %v", endpoint, err)
+	}
+	defer client.Close()
+
+	batchOf := func(n int) []rpc.BatchElem {
+		batch := make([]rpc.BatchElem, n)
+		for i := range batch {
+			batch[i] = rpc.BatchElem{Method: "eth_chainId", Result: new(string)}
+		}
+		return batch
+	}
+
+	over := batchOf(limit + 1)
+	if err := client.BatchCallContext(ctx, over); err != nil {
+		t.Fatalf("batch call: %v", err)
+	}
+	want := fmt.Sprintf("batch too large: %d requests exceed the limit of %d", limit+1, limit)
+	for i, elem := range over {
+		if elem.Error == nil {
+			t.Fatalf("element %d succeeded; the configured limit was not applied to WS", i)
+		}
+		var rpcErr rpc.Error
+		if !errors.As(elem.Error, &rpcErr) {
+			t.Fatalf("element %d: %v is not a JSON-RPC error", i, elem.Error)
+		}
+		if rpcErr.ErrorCode() != -32600 {
+			t.Fatalf("element %d: code = %d, want -32600", i, rpcErr.ErrorCode())
+		}
+		if elem.Error.Error() != want {
+			t.Fatalf("element %d: error = %q, want %q", i, elem.Error, want)
+		}
+	}
+
+	atLimit := batchOf(limit)
+	if err := client.BatchCallContext(ctx, atLimit); err != nil {
+		t.Fatalf("batch call: %v", err)
+	}
+	for i, elem := range atLimit {
+		if elem.Error != nil {
+			t.Fatalf("element %d of an at-limit batch failed: %v", i, elem.Error)
+		}
+	}
+}
+
+// freePort reserves a port and hands it back. The gap between closing the
+// listener and geth binding is a race in principle, but the alternative —
+// a fixed port — collides with whatever else is on the machine.
+func freePort(t *testing.T) int {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port
 }
