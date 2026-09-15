@@ -8,6 +8,7 @@ package tracers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -209,6 +210,111 @@ func TestValidateRestrictedTraceConfig(t *testing.T) {
 	}
 }
 
+// TestValidateRestrictedTraceConfigMessages pins the text of every distinct
+// rejection. The table above proves each configuration is refused; these
+// assertions prove the caller is told which knob to turn. Every rejection is
+// explicit rather than a silent clamp precisely so the message can be acted on,
+// which only holds if the message says what was actually asked for.
+func TestValidateRestrictedTraceConfigMessages(t *testing.T) {
+	tests := []struct {
+		name   string
+		config *TraceConfig
+		want   string
+		prefix bool // match a prefix: the tail comes from encoding/json
+	}{
+		{
+			name:   "nil config",
+			config: nil,
+			want:   `tracer is required on this transport and must be "callTracer"`,
+		},
+		{
+			name:   "no tracer",
+			config: &TraceConfig{},
+			want:   `tracer must be "callTracer" on this transport`,
+		},
+		{
+			name:   "other native tracer",
+			config: &TraceConfig{Tracer: strPtr("prestateTracer")},
+			want:   `tracer must be "callTracer" on this transport`,
+		},
+		{
+			name:   "struct logger options",
+			config: &TraceConfig{Tracer: callTracerConfig(), Config: &logger.Config{EnableMemory: true}},
+			want:   "struct logger options are not available on this transport",
+		},
+		{
+			name:   "unparsable timeout",
+			config: &TraceConfig{Tracer: callTracerConfig(), Timeout: strPtr("forever")},
+			want:   `invalid timeout: time: invalid duration "forever"`,
+		},
+		{
+			name:   "negative timeout",
+			config: &TraceConfig{Tracer: callTracerConfig(), Timeout: strPtr("-1s")},
+			want:   "timeout -1s must be positive",
+		},
+		{
+			// The message quotes the requested value, not the cap, so an
+			// operator can see what the caller asked for.
+			name:   "timeout over cap",
+			config: &TraceConfig{Tracer: callTracerConfig(), Timeout: strPtr("10.001s")},
+			want:   "timeout 10.001s exceeds the limit of 10s on this transport",
+		},
+		{
+			name:   "reexec over cap",
+			config: &TraceConfig{Tracer: callTracerConfig(), Reexec: uintPtr(129)},
+			want:   "reexec 129 exceeds the limit of 128 on this transport",
+		},
+		{
+			name:   "concatenated tracer config values",
+			config: &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`{"onlyTopCall":true}{"onlyTopCall":false}`)},
+			want:   "invalid tracerConfig: invalid JSON",
+		},
+		{
+			name:   "null tracer config",
+			config: &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`null`)},
+			want:   "invalid tracerConfig: must be a JSON object",
+		},
+		{
+			name:   "array tracer config",
+			config: &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`[]`)},
+			want:   "invalid tracerConfig: must be a JSON object",
+		},
+		{
+			name:   "withLog",
+			config: &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`{"withLog":true}`)},
+			want:   `invalid tracerConfig: json: unknown field "withLog"`,
+		},
+		{
+			name:   "null onlyTopCall",
+			config: &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`{"onlyTopCall":null}`)},
+			want:   "invalid tracerConfig: onlyTopCall must be a boolean",
+		},
+		{
+			name:   "wrong onlyTopCall type",
+			config: &TraceConfig{Tracer: callTracerConfig(), TracerConfig: rawJSON(`{"onlyTopCall":"yes"}`)},
+			want:   "invalid tracerConfig: json: cannot unmarshal string into Go struct field RestrictedCallTracerConfig.onlyTopCall",
+			prefix: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRestrictedTraceConfig(tt.config)
+			if err == nil {
+				t.Fatal("config accepted, want rejection")
+			}
+			if tt.prefix {
+				if !strings.HasPrefix(err.Error(), tt.want) {
+					t.Fatalf("error = %q, want prefix %q", err, tt.want)
+				}
+				return
+			}
+			if err.Error() != tt.want {
+				t.Fatalf("error = %q, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestRestrictedDebugAPIConcurrencyLimit(t *testing.T) {
 	api := &RestrictedDebugAPI{
 		limiter:        rpc.NewTraceLimiter(1),
@@ -241,5 +347,79 @@ func TestRestrictedDebugAPIDefaultRequestTimeout(t *testing.T) {
 	}
 	if got := service.(*RestrictedDebugAPI).requestTimeout; got != restrictedDefaultRequestTimeout {
 		t.Fatalf("request timeout = %s, want %s", got, restrictedDefaultRequestTimeout)
+	}
+}
+
+// TestRestrictedDebugAPIRequestDeadlineAborts shows the whole-request bound
+// actually cuts a call off, rather than merely being stored on the struct.
+//
+// It is the only thing bounding debug_traceBlockByNumber: that method sums the
+// per-transaction timeout over every transaction in the block, so the 10s cap
+// on TraceConfig.Timeout does not bound the request. A caller that supplies no
+// deadline of its own — which is every RPC request — must still be cut off.
+func TestRestrictedDebugAPIRequestDeadlineAborts(t *testing.T) {
+	const timeout = 50 * time.Millisecond
+
+	api := &RestrictedDebugAPI{
+		limiter:        rpc.NewTraceLimiter(1),
+		requestTimeout: timeout,
+	}
+
+	// context.Background() has no deadline, exactly like an incoming request.
+	ctx, done, err := api.enter(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer done()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("no deadline attached to the request context")
+	}
+	if remaining := time.Until(deadline); remaining > timeout {
+		t.Fatalf("deadline is %s away, want at most %s", remaining, timeout)
+	}
+
+	// A tracer that respects its context — as eth/tracers does — is released
+	// when the bound expires instead of running for as long as the block takes.
+	start := time.Now()
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request was never aborted")
+	}
+	if elapsed := time.Since(start); elapsed < timeout {
+		t.Fatalf("aborted after %s, before the %s bound", elapsed, timeout)
+	}
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("context error = %v, want %v", ctx.Err(), context.DeadlineExceeded)
+	}
+}
+
+// TestRestrictedDebugAPIRequestDeadlineTightensCaller covers the other
+// direction: a caller that asks for longer than the bound does not get it.
+func TestRestrictedDebugAPIRequestDeadlineTightensCaller(t *testing.T) {
+	const timeout = 50 * time.Millisecond
+
+	api := &RestrictedDebugAPI{
+		limiter:        rpc.NewTraceLimiter(1),
+		requestTimeout: timeout,
+	}
+
+	caller, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+
+	ctx, done, err := api.enter(caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer done()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("no deadline attached to the request context")
+	}
+	if remaining := time.Until(deadline); remaining > timeout {
+		t.Fatalf("caller's deadline survived: %s away, want at most %s", remaining, timeout)
 	}
 }
