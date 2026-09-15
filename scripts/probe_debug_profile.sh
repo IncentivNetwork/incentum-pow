@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # probe_debug_profile.sh — verify the fail-closed debug RPC profile on a LIVE
-# node without putting that node at risk.
+# node using read-only requests.
 #
 # The restricted profile is what stands between a public RPC endpoint and
 # debug_setHead, arbitrary-path profile files and chain-db compaction. This
@@ -30,6 +30,8 @@
 #                      (default 50)
 #
 # Requirements: curl, jq
+# Output deliberately omits endpoint, node metadata and raw RPC responses so
+# both successful and failed runs can be shared without disclosing the node.
 
 set -uo pipefail
 
@@ -53,9 +55,8 @@ ok() {
 
 bad() {
 	printf '  \033[31mFAIL\033[0m %s\n' "$1"
-	if [ $# -gt 1 ]; then
-		printf '       %s\n' "$2"
-	fi
+	# Details may contain server responses, addresses or credentials. Keep
+	# them out of shareable evidence, including on failure paths.
 	fail=$((fail + 1))
 }
 
@@ -73,12 +74,17 @@ skipped() {
 rpc_call() {
 	local ua=()
 	[ -n "$PROBE_UA" ] && ua=(-A "$PROBE_UA")
-	curl -sS --max-time "$TIMEOUT" \
+	# Disable curlrc (which may enable verbose output) and suppress diagnostics
+	# containing the URL or response. Preserve failure as a non-zero status.
+	curl -q -sf --proto '=http,https' --max-time "$TIMEOUT" \
 		"${ua[@]}" \
 		-H 'Content-Type: application/json' \
 		--data "$1" \
-		"$ENDPOINT"
+		--url "$ENDPOINT" 2>/dev/null
 }
+
+# jq diagnostics can quote response data too. Callers check status or output.
+jq() { command jq "$@" 2>/dev/null; }
 
 # expect_error asserts that a call fails with a given code, and optionally with
 # an exact message.
@@ -177,7 +183,7 @@ expect_reachable() {
 	"") ok "$label" ;;
 	-32601) bad "$label" "method is not registered: $msg" ;;
 	-32602) bad "$label" "arguments were rejected: $msg" ;;
-	*) ok "$label (reachable; the chain answered $code $msg)" ;;
+	*) ok "$label (reachable)" ;;
 	esac
 }
 
@@ -222,7 +228,7 @@ find_traceable_tx() {
 	done
 }
 
-echo "=== Probing $ENDPOINT ==="
+echo "=== Probing debug RPC profile ==="
 echo
 
 # ---------------------------------------------------------------------------
@@ -231,12 +237,10 @@ echo
 echo "--- Node ---"
 chain_id=$(rpc_call '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' | jq -r '.result // empty')
 if [ -z "$chain_id" ]; then
-	echo "  node did not answer eth_chainId; is $ENDPOINT reachable?" >&2
+	echo "  node did not answer eth_chainId" >&2
 	exit 2
 fi
-client=$(rpc_call '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' | jq -r '.result // empty')
-echo "  chainId: $chain_id"
-echo "  client:  $client"
+echo "  node answered eth_chainId (metadata omitted)"
 echo
 
 # ---------------------------------------------------------------------------
@@ -255,7 +259,7 @@ for method in debug_gcStats debug_traceCall; do
 	code=$(rpc_call "$payload" | jq -r '.error.code // empty')
 	if [ "$code" != "-32601" ]; then
 		gate_open=1
-		printf '  \033[31m%s did not return -32601 (got %s)\033[0m\n' "$method" "${code:-a result}"
+		printf '  \033[31m%s did not return -32601\033[0m\n' "$method"
 	else
 		ok "$method is not registered"
 	fi
