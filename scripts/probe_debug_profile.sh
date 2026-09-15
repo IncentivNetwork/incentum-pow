@@ -43,6 +43,11 @@ fi
 
 TIMEOUT="${PROBE_TIMEOUT:-20}"
 PROBE_UA="${PROBE_UA:-}"
+SCAN_BLOCKS="${PROBE_SCAN_BLOCKS:-50}"
+if [[ ! "$SCAN_BLOCKS" =~ ^[1-9][0-9]{0,5}$ ]]; then
+	echo "PROBE_SCAN_BLOCKS must be an integer from 1 to 999999" >&2
+	exit 2
+fi
 
 pass=0
 fail=0
@@ -70,17 +75,35 @@ skipped() {
 	skip=$((skip + 1))
 }
 
-# rpc_call POSTs a JSON-RPC payload and prints the raw response body.
+# rpc_call only returns complete, well-formed responses matching the request.
+# Empty bodies, proxy errors and missing/duplicate batch IDs are failures.
 rpc_call() {
-	local ua=()
+	local body ua=()
 	[ -n "$PROBE_UA" ] && ua=(-A "$PROBE_UA")
 	# Disable curlrc (which may enable verbose output) and suppress diagnostics
 	# containing the URL or response. Preserve failure as a non-zero status.
-	curl -q -sf --proto '=http,https' --max-time "$TIMEOUT" \
+	body=$(curl -q -sf --proto '=http,https' --max-time "$TIMEOUT" \
 		"${ua[@]}" \
 		-H 'Content-Type: application/json' \
 		--data "$1" \
-		--url "$ENDPOINT" 2>/dev/null
+		--url "$ENDPOINT" 2>/dev/null) || return 1
+	printf '%s' "$body" | jq -se --argjson request "$1" '
+		def response:
+			type == "object" and .jsonrpc == "2.0" and
+			(has("result") != has("error")) and
+			(if has("error") then
+				(.error | type == "object") and
+				(.error.code | type == "number") and
+				(.error.message | type == "string")
+			else true end);
+		length == 1 and (.[0] |
+			if ($request | type) == "array" then
+				type == "array" and
+				(map(.id) | sort) == ($request | map(.id) | sort) and
+				all(.[]; response)
+			else response and .id == $request.id end)
+	' >/dev/null || return 1
+	printf '%s' "$body"
 }
 
 # jq diagnostics can quote response data too. Callers check status or output.
@@ -156,7 +179,10 @@ BATCH_LIMIT=0
 # cheap request settles it; every later expectation is derived from the answer.
 detect_batch_limit() {
 	local resp msg
-	resp=$(rpc_call "$(build_batch 101 "$plain_elem")")
+	if ! resp=$(rpc_call "$(build_batch 101 "$plain_elem")"); then
+		bad "batch limit discovery returned a complete RPC response"
+		return 1
+	fi
 	msg=$(printf '%s' "$resp" |
 		jq -r 'if type == "array" then ([.[] | .error.message] | map(select(. != null)) | first) else .error.message end // empty' 2>/dev/null)
 	case "$msg" in
@@ -165,6 +191,14 @@ detect_batch_limit() {
 	case "$BATCH_LIMIT" in
 	'' | *[!0-9]*) BATCH_LIMIT=0 ;;
 	esac
+	if [ "$BATCH_LIMIT" -gt 0 ] && [ "$BATCH_LIMIT" -le 100 ]; then
+		printf '%s' "$resp" | jq -e --arg msg "batch too large: 101 requests exceed the limit of $BATCH_LIMIT" \
+			'all(.[]; .error.code == -32600 and .error.message == $msg)' >/dev/null && return 0
+	elif [ "$BATCH_LIMIT" -eq 0 ]; then
+		printf '%s' "$resp" | jq -e 'all(.[]; has("result") and (.result | type == "string"))' >/dev/null && return 0
+	fi
+	bad "batch limit discovery returned the expected results or limit error"
+	return 1
 }
 
 # find_traceable_tx looks for a recent transaction to trace, batching the block
@@ -179,11 +213,14 @@ TRACE_COUNT=0
 find_traceable_tx() {
 	local head scan chunk scanned n i batch out block
 	head=$(rpc_call '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty')
-	[ -z "$head" ] && return
+	if [[ ! "$head" =~ ^0x[0-9a-fA-F]{1,12}$ ]]; then
+		bad "transaction scan read the chain head"
+		return 1
+	fi
 	head=$((head))
-	scan="${PROBE_SCAN_BLOCKS:-50}"
+	scan="$SCAN_BLOCKS"
 	[ "$scan" -gt "$head" ] && scan="$head"
-	[ "$scan" -le 0 ] && return
+	[ "$scan" -le 0 ] && return 0
 
 	chunk=50
 	[ "$BATCH_LIMIT" -gt 0 ] && [ "$BATCH_LIMIT" -lt "$chunk" ] && chunk="$BATCH_LIMIT"
@@ -198,7 +235,14 @@ find_traceable_tx() {
 			[ -n "$batch" ] && batch="$batch,"
 			batch="$batch$(printf '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["0x%x",false],"id":%d}' $((head - scanned - i)) "$i")"
 		done
-		out=$(rpc_call "[$batch]")
+		if ! out=$(rpc_call "[$batch]") || ! printf '%s' "$out" | jq -e '
+			all(.[]; .error == null and (.result | type == "object") and
+				(.result.number | type == "string" and test("^0x[0-9a-fA-F]+$")) and
+				(.result.transactions | type == "array" and
+					all(.[]; type == "string" and test("^0x[0-9a-fA-F]{64}$"))))' >/dev/null; then
+			bad "transaction scan received every requested block"
+			return 1
+		fi
 		# Ids ascend as the scan walks backwards, so the smallest id holding
 		# transactions is the newest such block.
 		block=$(printf '%s' "$out" |
@@ -207,10 +251,10 @@ find_traceable_tx() {
 			TRACE_TX=$(printf '%s' "$block" | jq -r '.transactions[0]')
 			TRACE_BLOCK=$(printf '%s' "$block" | jq -r '.number')
 			TRACE_COUNT=$(printf '%s' "$block" | jq '.transactions | length')
-			return
+			return 0
 		fi
 
-		scanned=$((scanned + n))
+		 scanned=$((scanned + n))
 	done
 }
 
@@ -300,7 +344,7 @@ echo
 
 # The batch caps are operator-configurable, and the block scan below batches
 # too, so establish what this node actually enforces before either is used.
-detect_batch_limit
+detect_batch_limit || exit 1
 if [ "$BATCH_LIMIT" -gt 0 ]; then
 	echo "--- Limits ---"
 	echo "  batch elements: $BATCH_LIMIT"
@@ -318,8 +362,9 @@ expect_error "onlyTopCall accepts a missing transaction" \
 # Registration is not function. Trace a real transaction when the chain offers
 # one; an idle or freshly started node has nothing to trace, and that is
 # reported rather than passed.
-find_traceable_tx
-if [ -z "$TRACE_TX" ]; then
+if ! find_traceable_tx; then
+	skipped "real transaction and block traces" "block discovery failed (reported as FAIL above)"
+elif [ -z "$TRACE_TX" ]; then
 	skipped "debug_traceTransaction returns a real call trace" \
 		"no transaction in the last ${PROBE_SCAN_BLOCKS:-50} blocks"
 	skipped "onlyTopCall returns a real call trace" \
@@ -465,7 +510,8 @@ else
 	# a property of the chain, so the assertion is only that nothing was
 	# rejected by a batch cap.
 	resp=$(rpc_call "$(build_batch "$TRACE_CAP" "$trace_elem")")
-	if [ "$(printf '%s' "$resp" | jq '[.[] | select(.error.code == -32600)] | length')" = "0" ]; then
+	if printf '%s' "$resp" | jq -e --argjson count "$TRACE_CAP" \
+		'length == $count and all(.[]; .error.code == -32000 and .error.message == "transaction not found")' >/dev/null; then
 		ok "$TRACE_CAP traces accepted (at the trace cap)"
 	else
 		bad "$TRACE_CAP traces rejected by a batch cap" "$resp"
