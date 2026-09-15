@@ -12,9 +12,9 @@
 # come back -32601.
 #
 # Load: nothing here changes node state, but tracing is not free. The probe
-# issues a handful of single-transaction traces and two at-limit batches of ten
-# trace calls. Traces of blocks are only requested where a cheaper call cannot
-# make the point. On a busy archive node prefer a quiet moment.
+# traces one recent transaction twice and its containing block once. Batch
+# checks use a missing transaction hash to avoid extra trace work. On a busy
+# archive node prefer a quiet moment.
 #
 # For the destructive half of the matrix — and for the configuration matrix,
 # which needs restarts — use scripts/test_debug_profile.sh against a local
@@ -167,26 +167,6 @@ detect_batch_limit() {
 	esac
 }
 
-# expect_reachable asserts a method is registered and accepted the arguments.
-# It deliberately tolerates -32000: whether a particular block or transaction
-# can be traced is a property of the chain, not of the profile. A node whose
-# head is the genesis block answers "genesis is not traceable" to every trace,
-# and that says nothing about whether the restriction works.
-expect_reachable() {
-	local label="$1" payload="$2"
-	local body code msg
-
-	body=$(rpc_call "$payload")
-	code=$(printf '%s' "$body" | jq -r '.error.code // empty' 2>/dev/null)
-	msg=$(printf '%s' "$body" | jq -r '.error.message // empty' 2>/dev/null)
-	case "$code" in
-	"") ok "$label" ;;
-	-32601) bad "$label" "method is not registered: $msg" ;;
-	-32602) bad "$label" "arguments were rejected: $msg" ;;
-	*) ok "$label (reachable)" ;;
-	esac
-}
-
 # find_traceable_tx looks for a recent transaction to trace, batching the block
 # lookups so a remote endpoint is not hit with a round trip per block. The
 # chunk size follows the node's own batch cap: one oversized request would be
@@ -194,8 +174,10 @@ expect_reachable() {
 # chain that has plenty. Leaves TRACE_TX empty only when the scanned range
 # really holds none.
 TRACE_TX=""
+TRACE_BLOCK=""
+TRACE_COUNT=0
 find_traceable_tx() {
-	local head scan chunk scanned n i batch out
+	local head scan chunk scanned n i batch out block
 	head=$(rpc_call '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty')
 	[ -z "$head" ] && return
 	head=$((head))
@@ -219,10 +201,14 @@ find_traceable_tx() {
 		out=$(rpc_call "[$batch]")
 		# Ids ascend as the scan walks backwards, so the smallest id holding
 		# transactions is the newest such block.
-		TRACE_TX=$(printf '%s' "$out" |
-			jq -r '[.[]? | select((.result.transactions // []) | length > 0)] | min_by(.id) | .result.transactions[0] // empty' 2>/dev/null)
-		[ "$TRACE_TX" = null ] && TRACE_TX=""
-		[ -n "$TRACE_TX" ] && return
+		block=$(printf '%s' "$out" |
+			jq -c '[.[]? | select((.result.transactions // []) | length > 0)] | min_by(.id) | .result // empty')
+		if [ -n "$block" ]; then
+			TRACE_TX=$(printf '%s' "$block" | jq -r '.transactions[0]')
+			TRACE_BLOCK=$(printf '%s' "$block" | jq -r '.number')
+			TRACE_COUNT=$(printf '%s' "$block" | jq '.transactions | length')
+			return
+		fi
 
 		scanned=$((scanned + n))
 	done
@@ -322,12 +308,12 @@ if [ "$BATCH_LIMIT" -gt 0 ]; then
 fi
 
 echo "--- Allowed methods ---"
-expect_reachable "debug_traceBlockByNumber is registered" \
-	"$(trace_params '{"tracer":"callTracer"}')"
-expect_reachable "debug_traceTransaction is registered" \
-	"$(trace_tx "$ZERO_HASH" '{"tracer":"callTracer"}')"
-expect_reachable "onlyTopCall is accepted (the Blockscout path)" \
-	"$(trace_tx "$ZERO_HASH" '{"tracer":"callTracer","tracerConfig":{"onlyTopCall":true}}')"
+expect_error "debug_traceTransaction accepts a missing transaction" \
+	"$(trace_tx "$ZERO_HASH" '{"tracer":"callTracer"}')" \
+	-32000 'transaction not found'
+expect_error "onlyTopCall accepts a missing transaction" \
+	"$(trace_tx "$ZERO_HASH" '{"tracer":"callTracer","tracerConfig":{"onlyTopCall":true}}')" \
+	-32000 'transaction not found'
 
 # Registration is not function. Trace a real transaction when the chain offers
 # one; an idle or freshly started node has nothing to trace, and that is
@@ -338,18 +324,38 @@ if [ -z "$TRACE_TX" ]; then
 		"no transaction in the last ${PROBE_SCAN_BLOCKS:-50} blocks"
 	skipped "onlyTopCall returns a real call trace" \
 		"no transaction in the last ${PROBE_SCAN_BLOCKS:-50} blocks"
+	skipped "debug_traceBlockByNumber returns real call traces" \
+		"no transaction in the scanned blocks"
 else
 	body=$(rpc_call "$(trace_tx "$TRACE_TX" '{"tracer":"callTracer"}')")
-	if [ -n "$(printf '%s' "$body" | jq -r '.result.type // empty')" ]; then
+	call_trace='type == "object" and (.type == "CALL" or .type == "CREATE") and
+		(.from | type == "string" and test("^0x[0-9a-fA-F]{40}$")) and
+		(.gasUsed | type == "string" and test("^0x[0-9a-fA-F]+$"))'
+	if printf '%s' "$body" | jq -e ".error == null and (.result | $call_trace)" >/dev/null; then
 		ok "debug_traceTransaction returns a real call trace"
 	else
 		bad "debug_traceTransaction returns a real call trace" "$body"
 	fi
+	tx_trace=$(printf '%s' "$body" | jq -c '.result // null')
 	body=$(rpc_call "$(trace_tx "$TRACE_TX" '{"tracer":"callTracer","tracerConfig":{"onlyTopCall":true}}')")
-	if [ -n "$(printf '%s' "$body" | jq -r '.result.type // empty')" ]; then
+	if printf '%s' "$body" | jq -e --argjson tx "${tx_trace:-null}" \
+		".error == null and (.result | $call_trace) and
+		(.result | (.calls // [] | length) == 0) and .result == (\$tx | del(.calls))" >/dev/null; then
 		ok "onlyTopCall returns a real call trace"
 	else
 		bad "onlyTopCall returns a real call trace" "$body"
+	fi
+	# Pin the block selected by the scan, not a moving or empty latest block.
+	# The first transaction must match the independently obtained single trace.
+	body=$(rpc_call "$(jq -nc --arg block "$TRACE_BLOCK" \
+		'{jsonrpc:"2.0",method:"debug_traceBlockByNumber",params:[$block,{tracer:"callTracer"}],id:1}')")
+	if printf '%s' "$body" | jq -e --argjson count "$TRACE_COUNT" --argjson tx "${tx_trace:-null}" \
+		".error == null and (.result | type == \"array\" and length == \$count) and
+		all(.result[]; .error == null and (.result | $call_trace)) and
+		.result[0].result == \$tx" >/dev/null; then
+		ok "debug_traceBlockByNumber returns real call traces"
+	else
+		bad "debug_traceBlockByNumber returns real call traces"
 	fi
 fi
 echo
