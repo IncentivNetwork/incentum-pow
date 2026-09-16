@@ -322,11 +322,6 @@ if printf '%s' "$modules" | jq -e 'has("debug")' >/dev/null 2>&1; then
 else
 	bad "rpc_modules does not list debug" "$modules"
 fi
-if printf '%s' "$modules" | jq -e 'has("admin")' >/dev/null 2>&1; then
-	printf '  \033[33mWARN\033[0m admin namespace is exposed on this endpoint.\n'
-	printf '       admin_startHTTP/admin_startWS can reopen a transport; the profile\n'
-	printf '       re-check is the only thing preventing a full debug surface.\n'
-fi
 echo
 
 # ---------------------------------------------------------------------------
@@ -347,11 +342,6 @@ echo
 # The batch caps are operator-configurable, and the block scan below batches
 # too, so establish what this node actually enforces before either is used.
 detect_batch_limit || exit 1
-if [ "$BATCH_LIMIT" -gt 0 ]; then
-	echo "--- Limits ---"
-	echo "  batch elements: $BATCH_LIMIT"
-	echo
-fi
 
 echo "--- Allowed methods ---"
 expect_error "debug_traceTransaction accepts a missing transaction" \
@@ -469,7 +459,7 @@ check_batch() {
 		bad "$label" "$bad_elems of $count elements carried a different error"
 		return
 	fi
-	ok "$label ($count elements, each answered individually)"
+	ok "$label (each element answered individually)"
 }
 
 # The element cap. Expectations come from the limit this node reported, so a
@@ -482,15 +472,15 @@ if [ "$BATCH_LIMIT" -eq 0 ]; then
 		"the cap could not be determined"
 else
 	over=$((BATCH_LIMIT + 1))
-	check_batch "$over requests rejected" \
+	check_batch "a batch above the element cap is rejected" \
 		"$(build_batch "$over" "$plain_elem")" \
 		-32600 "batch too large: $over requests exceed the limit of $BATCH_LIMIT"
 
 	resp=$(rpc_call "$(build_batch "$BATCH_LIMIT" "$plain_elem")")
 	if [ "$(printf '%s' "$resp" | jq '[.[] | select(has("result"))] | length')" = "$BATCH_LIMIT" ]; then
-		ok "$BATCH_LIMIT requests accepted (at the element cap)"
+		ok "a batch at the element cap is accepted"
 	else
-		bad "$BATCH_LIMIT requests accepted (at the element cap)" "$resp"
+		bad "a batch at the element cap is accepted" "$resp"
 	fi
 fi
 
@@ -499,9 +489,9 @@ fi
 # trace cap is never reached.
 if [ "$BATCH_LIMIT" -ne 0 ] && [ "$BATCH_LIMIT" -le "$TRACE_CAP" ]; then
 	skipped "the trace cap is enforced" \
-		"the element cap of $BATCH_LIMIT fires before $((TRACE_CAP + 1)) trace calls"
+		"the configured element cap fires first"
 	skipped "a batch at the trace cap is accepted" \
-		"the element cap of $BATCH_LIMIT fires first"
+		"the configured element cap fires first"
 else
 	over=$((TRACE_CAP + 1))
 	check_batch "$over traces rejected" \
