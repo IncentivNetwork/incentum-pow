@@ -50,15 +50,34 @@ type unrestrictableDebugService struct{}
 func (s *unrestrictableDebugService) SetGCPercent() string { return "ok" }
 
 func TestDebugTransportValidate(t *testing.T) {
+	// wantMsg pins the operator-facing text, not just the fact of rejection:
+	// this message is the only guidance an operator gets when a node refuses to
+	// boot, and naming the wrong flag in it would be its own outage.
 	tests := []struct {
 		name      string
 		transport debugTransport
 		wantErr   bool
+		wantMsg   string
 	}{
 		{
 			name:      "debug without profile or opt-in",
 			transport: debugTransport{name: "http", modules: []string{"eth", "debug"}},
 			wantErr:   true,
+			wantMsg: `the "debug" namespace is exposed on --http.api without --http.debug-profile: ` +
+				"it grants any caller reaching this transport destructive and resource-exhausting methods. " +
+				"Set --http.debug-profile=trace-indexer-v1 to expose only the indexer trace methods, " +
+				"or --http.allow-unsafe-debug to keep the full namespace",
+		},
+		{
+			// The same rejection on the other transport has to name the other
+			// transport's flags, or it sends the operator to the wrong knob.
+			name:      "ws debug without profile or opt-in",
+			transport: debugTransport{name: "ws", modules: []string{"eth", "debug"}},
+			wantErr:   true,
+			wantMsg: `the "debug" namespace is exposed on --ws.api without --ws.debug-profile: ` +
+				"it grants any caller reaching this transport destructive and resource-exhausting methods. " +
+				"Set --ws.debug-profile=trace-indexer-v1 to expose only the indexer trace methods, " +
+				"or --ws.allow-unsafe-debug to keep the full namespace",
 		},
 		{
 			name:      "debug with profile",
@@ -72,16 +91,19 @@ func TestDebugTransportValidate(t *testing.T) {
 			name:      "profile and unsafe opt-in together",
 			transport: debugTransport{name: "http", modules: []string{"eth", "debug"}, profile: rpc.DebugProfileTraceIndexerV1, allowUnsafe: true},
 			wantErr:   true,
+			wantMsg:   "--http.debug-profile and --http.allow-unsafe-debug are mutually exclusive",
 		},
 		{
 			name:      "profile without debug in api",
 			transport: debugTransport{name: "http", modules: []string{"eth"}, profile: rpc.DebugProfileTraceIndexerV1},
 			wantErr:   true,
+			wantMsg:   `--http.debug-profile is set but "debug" is not in --http.api`,
 		},
 		{
 			name:      "unknown profile",
 			transport: debugTransport{name: "http", modules: []string{"eth", "debug"}, profile: "trace-indexer-v2"},
 			wantErr:   true,
+			wantMsg:   `unknown debug profile "trace-indexer-v2" (known profiles: trace-indexer-v1)`,
 		},
 		{
 			name:      "no debug namespace",
@@ -93,6 +115,9 @@ func TestDebugTransportValidate(t *testing.T) {
 			name:      "empty module list without profile or opt-in",
 			transport: debugTransport{name: "http", modules: nil},
 			wantErr:   true,
+			wantMsg: `empty --http.api exposes every namespace, including "debug": ` +
+				"list the namespaces explicitly, set --http.debug-profile=trace-indexer-v1 to restrict debug, " +
+				"or set --http.allow-unsafe-debug to opt into the legacy full surface",
 		},
 		{
 			name:      "empty module list with profile",
@@ -116,8 +141,97 @@ func TestDebugTransportValidate(t *testing.T) {
 			if !tt.wantErr && err != nil {
 				t.Fatalf("configuration rejected: %v", err)
 			}
+			if tt.wantMsg != "" && err.Error() != tt.wantMsg {
+				t.Fatalf("error =\n%q\nwant\n%q", err.Error(), tt.wantMsg)
+			}
 		})
 	}
+}
+
+// TestDebugTraceLimiterCapacity covers a value that reads as "unlimited" but is
+// not: a non-positive concurrency setting falls back to the default rather than
+// removing the cap. An operator who wrote 0 expecting no limit gets 2, and the
+// difference only shows up under load, so it is worth pinning here.
+func TestDebugTraceLimiterCapacity(t *testing.T) {
+	// capacity drains the limiter and reports how many slots it handed out.
+	capacity := func(limiter *rpc.TraceLimiter) int {
+		var granted int
+		for {
+			release, err := limiter.Acquire()
+			if err != nil {
+				return granted
+			}
+			defer release()
+			granted++
+			if granted > 100 {
+				t.Fatal("limiter never saturated")
+			}
+		}
+	}
+
+	tests := []struct {
+		name string
+		max  int
+		want int
+	}{
+		{name: "explicit", max: 5, want: 5},
+		{name: "zero falls back to the default", max: 0, want: DefaultDebugTraceMaxConcurrency},
+		{name: "negative falls back to the default", max: -1, want: DefaultDebugTraceMaxConcurrency},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				HTTPDebugProfile:         rpc.DebugProfileTraceIndexerV1,
+				DebugTraceMaxConcurrency: tt.max,
+			}
+			limiter := config.debugTraceLimiter()
+			if limiter == nil {
+				t.Fatal("no limiter for a profiled configuration")
+			}
+			if got := capacity(limiter); got != tt.want {
+				t.Fatalf("capacity = %d, want %d", got, tt.want)
+			}
+		})
+	}
+
+	t.Run("no profile means no limiter", func(t *testing.T) {
+		config := &Config{DebugTraceMaxConcurrency: 4}
+		if config.debugTraceLimiter() != nil {
+			t.Fatal("limiter created for an unprofiled configuration")
+		}
+	})
+}
+
+// TestDebugProfileNameIsTrimmed covers surrounding whitespace, which reaches the
+// config verbatim from a systemd unit or an Ansible template where a stray
+// space is easy to introduce and hard to see.
+func TestDebugProfileNameIsTrimmed(t *testing.T) {
+	t.Run("padded name is accepted", func(t *testing.T) {
+		config := &Config{
+			HTTPHost:         "127.0.0.1",
+			HTTPModules:      []string{"eth", "debug"},
+			HTTPDebugProfile: "  " + rpc.DebugProfileTraceIndexerV1 + "  ",
+		}
+		if got := config.httpDebugTransport().profile; got != rpc.DebugProfileTraceIndexerV1 {
+			t.Fatalf("profile = %q, want %q", got, rpc.DebugProfileTraceIndexerV1)
+		}
+		if err := config.checkDebugProfiles(); err != nil {
+			t.Fatalf("padded profile rejected: %v", err)
+		}
+	})
+
+	t.Run("blank name counts as unset", func(t *testing.T) {
+		// Whitespace is not a profile. Treating it as one would register the
+		// full namespace behind what looks like a restricted configuration.
+		config := &Config{
+			HTTPHost:         "127.0.0.1",
+			HTTPModules:      []string{"eth", "debug"},
+			HTTPDebugProfile: "   ",
+		}
+		if err := config.checkDebugProfiles(); err == nil {
+			t.Fatal("a blank profile was accepted as a restriction")
+		}
+	})
 }
 
 func TestCheckDebugProfilesSkipsDisabledTransports(t *testing.T) {
