@@ -340,8 +340,8 @@ func (oracle *Oracle) FeeHistory(ctx context.Context, blocks uint64, unresolvedL
 		if fees.results.baseFee != nil {
 			reward[i], baseFee[i], gasUsedRatio[i] = fees.results.reward, fees.results.baseFee, fees.results.gasUsedRatio
 			// Only let block i's predicted nextBaseFee land in baseFee[i+1] when
-			// no authoritative header has filled that slot. The header write a
-			// few lines up (`baseFee[i] = fees.results.baseFee`) is unconditional
+			// no authoritative header has filled that slot. The header assignment
+			// a few lines up (`baseFee[i] = fees.results.baseFee`) is unconditional
 			// and runs for index i+1 when block i+1 is processed, so once block
 			// i+1 has arrived this guard fails and i's prediction is discarded.
 			// Conversely, when block i+1 is missing (request beyond head or a

@@ -247,10 +247,7 @@ func (cp *ClientPool) SetCapacity(node *enode.Node, reqCap uint64, bias time.Dur
 
 			// Specify a narrow target range that allows a limited number of fine step
 			// iterations
-			minTarget = maxTarget - maxTarget/20
-			if minTarget < capacity {
-				minTarget = capacity
-			}
+			minTarget = max(maxTarget-maxTarget/20, capacity)
 		} else {
 			minTarget, maxTarget = reqCap, reqCap
 		}

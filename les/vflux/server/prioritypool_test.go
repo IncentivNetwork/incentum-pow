@@ -128,10 +128,7 @@ func TestPriorityPool(t *testing.T) {
 				return int64(c.balance / cap)
 			})
 			var ok bool
-			expFail := expCap + 10
-			if expFail < testMinCap {
-				expFail = testMinCap
-			}
+			expFail := max(expCap+10, testMinCap)
 			ns.Operation(func() {
 				ok = pp.requestCapacity(c.node, expFail, expFail, 0) == expFail
 			})

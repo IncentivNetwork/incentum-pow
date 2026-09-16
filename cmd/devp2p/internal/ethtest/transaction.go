@@ -19,6 +19,7 @@ package ethtest
 import (
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 
@@ -103,11 +104,9 @@ func sendSuccessfulTx(s *Suite, tx *types.Transaction, prevTx *types.Transaction
 					continue
 				}
 			}
-			for _, gotHash := range txHashes {
-				if gotHash == tx.Hash() {
-					// Ok
-					return nil
-				}
+			if slices.Contains(txHashes, tx.Hash()) {
+				// Ok
+				return nil
 			}
 			return fmt.Errorf("missing transaction announcement: got %v missing %v", txHashes, tx.Hash())
 		case *NewPooledTransactionHashes:

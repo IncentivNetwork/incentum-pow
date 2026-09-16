@@ -319,13 +319,13 @@ A fully compromised governance multisig can drain miner stakes and halt block pr
 
 ### 8.3 Recovery from a halted chain
 
-If governance removes every miner (or all authorized miners go offline), block production stops. Recovery is **not** a simple binary swap. The client's config-compatibility check treats any post-activation change to `DPoWBlock`, `MinerRegistryAddress`, `DPoWMaturityTime`, or `DPoWMaturityBlocks` as incompatible, with the rewind target set to the pre-DPoW boundary.
+If governance removes every miner (or all authorized miners go offline), block production stops. Recovery is **not** a simple binary swap. The client's config-compatibility check treats any post-activation change to `DPoWTime`, `MinerRegistryAddress`, `DPoWMaturityTime`, or `DPoWMaturityBlocks` as incompatible, with the rewind target set to the pre-DPoW boundary.
 
 Recovery therefore requires a coordinated social hard fork:
 
-1. Decide the recovery configuration — typically `DPoWBlock = nil` (disable DPoW) or a fresh `MinerRegistryAddress`.
+1. Decide the recovery configuration — typically `DPoWTime = nil` (disable DPoW) or a fresh `MinerRegistryAddress`.
 2. Build and publish a recovery binary with that configuration.
-3. Every node rewinds to before the original `DPoWBlock` and re-syncs under the new configuration.
+3. Every node rewinds to before the original `DPoWTime` and re-syncs under the new configuration.
 4. Coordinate the upgrade window network-wide to avoid a split between rewound and non-rewound nodes.
 
 This is a last-resort procedure; the standing safeguards (multisig, 7-day delay, independent canceller) exist precisely to avoid reaching it.

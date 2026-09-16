@@ -78,6 +78,7 @@ type Client struct {
 	idgen    func() ID // for subscriptions
 	isHTTP   bool      // connection type: http, ws or ipc
 	services *serviceRegistry
+	limits   batchLimits // batch limits enforced on incoming requests (server side only)
 
 	idCounter uint32
 
@@ -114,7 +115,7 @@ func (c *Client) newClientConn(conn ServerCodec) *clientConn {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, clientContextKey{}, c)
 	ctx = context.WithValue(ctx, peerInfoContextKey{}, conn.peerInfo())
-	handler := newHandler(ctx, conn, c.idgen, c.services)
+	handler := newHandler(ctx, conn, c.idgen, c.services, c.limits)
 	return &clientConn{conn, handler}
 }
 
@@ -226,17 +227,18 @@ func newClient(initctx context.Context, connect reconnectFunc) (*Client, error) 
 	if err != nil {
 		return nil, err
 	}
-	c := initClient(conn, randomIDGenerator(), new(serviceRegistry))
+	c := initClient(conn, randomIDGenerator(), new(serviceRegistry), batchLimits{})
 	c.reconnectFunc = connect
 	return c, nil
 }
 
-func initClient(conn ServerCodec, idgen func() ID, services *serviceRegistry) *Client {
+func initClient(conn ServerCodec, idgen func() ID, services *serviceRegistry, limits batchLimits) *Client {
 	_, isHTTP := conn.(*httpConn)
 	c := &Client{
 		isHTTP:      isHTTP,
 		idgen:       idgen,
 		services:    services,
+		limits:      limits,
 		writeConn:   conn,
 		close:       make(chan struct{}),
 		closing:     make(chan struct{}),

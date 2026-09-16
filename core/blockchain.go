@@ -2367,10 +2367,7 @@ func (bc *BlockChain) indexBlocks(tail *uint64, head uint64, done chan struct{})
 			// It can happen when chain is rewound to a historical point which
 			// is even lower than the indexes tail, recap the indexing target
 			// to new head to avoid reading non-existent block bodies.
-			end := *tail
-			if end > head+1 {
-				end = head + 1
-			}
+			end := min(*tail, head+1)
 			rawdb.IndexTransactions(bc.db, 0, end, bc.quit)
 		}
 		return

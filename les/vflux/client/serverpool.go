@@ -257,10 +257,7 @@ func (s *ServerPool) addPreNegFilter(input enode.Iterator, query QueryFunc) enod
 			return
 		}
 		fails := atomic.LoadUint32(&s.queryFails)
-		failMax := fails
-		if failMax > maxQueryFails {
-			failMax = maxQueryFails
-		}
+		failMax := min(fails, maxQueryFails)
 		if rand.Intn(maxQueryFails*2) < int(failMax) {
 			// skip pre-negotiation with increasing chance, max 50%
 			// this ensures that the client can operate even if UDP is not working at all
@@ -446,10 +443,7 @@ func (s *ServerPool) addDialCost(n *nodeHistory, amount int64) uint64 {
 	if amount > 0 {
 		n.dialCost.Add(amount, logOffset)
 	}
-	totalDialCost := n.dialCost.Value(logOffset)
-	if totalDialCost < dialCost {
-		totalDialCost = dialCost
-	}
+	totalDialCost := max(n.dialCost.Value(logOffset), dialCost)
 	return totalDialCost
 }
 

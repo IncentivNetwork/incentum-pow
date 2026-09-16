@@ -96,13 +96,22 @@ func VerifyEip1559Header(config *params.ChainConfig, parent, header *types.Heade
 	}
 	// Defer the exact-equality basefee check to the block-execution path when
 	// the dynamic fork is active but no state is available here. Still enforce
-	// the state-free lower bound so a peer cannot ship a header with an
-	// arbitrarily low BaseFee and have header-only validation accept it.
+	// the state-free lower and upper bounds so a peer cannot ship a header with
+	// an arbitrarily low or high BaseFee and have header-only validation accept
+	// it. The contract floor can only raise the result up to
+	// params.DynamicMinBaseFeeUpperWei (the on-chain MAX_MIN_BASE_FEE mirror),
+	// so any header above max(rawBaseFee, DynamicMinBaseFeeUpperWei) is
+	// impossible regardless of contract state.
 	if config.IsDynamicMinBaseFee(parent.Time) && stateDB == nil {
 		rawBaseFee := calcRawBaseFee(config, parent)
 		if header.BaseFee.Cmp(rawBaseFee) < 0 {
 			return fmt.Errorf("invalid baseFee: have %s, below raw EIP-1559 value %s (floor check deferred)",
 				header.BaseFee, rawBaseFee)
+		}
+		maxAllowed := math.BigMax(rawBaseFee, params.DynamicMinBaseFeeUpperWei)
+		if header.BaseFee.Cmp(maxAllowed) > 0 {
+			return fmt.Errorf("invalid baseFee: have %s, above max stateless allowed %s (floor check deferred)",
+				header.BaseFee, maxAllowed)
 		}
 		return nil
 	}

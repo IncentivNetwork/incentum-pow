@@ -506,10 +506,7 @@ func (p *serverPeer) getRequestCost(msgcode uint64, amount int) uint64 {
 	if costs == nil {
 		return 0
 	}
-	cost := costs.baseCost + costs.reqCost*uint64(amount)
-	if cost > p.fcParams.BufLimit {
-		cost = p.fcParams.BufLimit
-	}
+	cost := min(costs.baseCost+costs.reqCost*uint64(amount), p.fcParams.BufLimit)
 	return cost
 }
 

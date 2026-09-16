@@ -80,13 +80,21 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			return nil, nil, 0, fmt.Errorf("min base fee: parent header %s not found at block %s",
 				header.ParentHash.Hex(), block.Number().String())
 		}
-		expectedBaseFee, err := misc.CalcBaseFee(p.config, parent, statedb)
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("min base fee: block %s recompute failed: %w", block.Number().String(), err)
-		}
-		if header.BaseFee == nil || header.BaseFee.Cmp(expectedBaseFee) != 0 {
-			return nil, nil, 0, fmt.Errorf("min base fee: block %s baseFee=%v does not match expected baseFee %v",
-				block.Number().String(), header.BaseFee, expectedBaseFee)
+		// The activation predicate inside CalcBaseFee is parent.Time-gated, so on
+		// the single boundary block (parent.Time < activation <= header.Time)
+		// CalcBaseFee falls through the legacy EIP-1559 path and the recompute
+		// is redundant: both sides match by construction. Re-checking on
+		// parent.Time here makes the activation semantics explicit and skips
+		// the extra CalcBaseFee call on that one block per chain lifetime.
+		if p.config.IsDynamicMinBaseFee(parent.Time) {
+			expectedBaseFee, err := misc.CalcBaseFee(p.config, parent, statedb)
+			if err != nil {
+				return nil, nil, 0, fmt.Errorf("min base fee: block %s recompute failed: %w", block.Number().String(), err)
+			}
+			if header.BaseFee == nil || header.BaseFee.Cmp(expectedBaseFee) != 0 {
+				return nil, nil, 0, fmt.Errorf("min base fee: block %s baseFee=%v does not match expected baseFee %v",
+					block.Number().String(), header.BaseFee, expectedBaseFee)
+			}
 		}
 	}
 

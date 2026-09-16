@@ -201,7 +201,7 @@ func (c *ChtIndexerBackend) Process(ctx context.Context, header *types.Header) e
 
 	td := rawdb.ReadTd(c.diskdb, hash, num)
 	if td == nil {
-		panic(nil)
+		panic("total difficulty missing for indexed header")
 	}
 	var encNumber [8]byte
 	binary.BigEndian.PutUint64(encNumber[:], num)

@@ -231,40 +231,28 @@ func (p *peerConnection) SetNodeDataIdle(delivered int, deliveryTime time.Time) 
 // HeaderCapacity retrieves the peers header download allowance based on its
 // previously discovered throughput.
 func (p *peerConnection) HeaderCapacity(targetRTT time.Duration) int {
-	cap := p.rates.Capacity(eth.BlockHeadersMsg, targetRTT)
-	if cap > MaxHeaderFetch {
-		cap = MaxHeaderFetch
-	}
+	cap := min(p.rates.Capacity(eth.BlockHeadersMsg, targetRTT), MaxHeaderFetch)
 	return cap
 }
 
 // BlockCapacity retrieves the peers block download allowance based on its
 // previously discovered throughput.
 func (p *peerConnection) BlockCapacity(targetRTT time.Duration) int {
-	cap := p.rates.Capacity(eth.BlockBodiesMsg, targetRTT)
-	if cap > MaxBlockFetch {
-		cap = MaxBlockFetch
-	}
+	cap := min(p.rates.Capacity(eth.BlockBodiesMsg, targetRTT), MaxBlockFetch)
 	return cap
 }
 
 // ReceiptCapacity retrieves the peers receipt download allowance based on its
 // previously discovered throughput.
 func (p *peerConnection) ReceiptCapacity(targetRTT time.Duration) int {
-	cap := p.rates.Capacity(eth.ReceiptsMsg, targetRTT)
-	if cap > MaxReceiptFetch {
-		cap = MaxReceiptFetch
-	}
+	cap := min(p.rates.Capacity(eth.ReceiptsMsg, targetRTT), MaxReceiptFetch)
 	return cap
 }
 
 // NodeDataCapacity retrieves the peers state download allowance based on its
 // previously discovered throughput.
 func (p *peerConnection) NodeDataCapacity(targetRTT time.Duration) int {
-	cap := p.rates.Capacity(eth.NodeDataMsg, targetRTT)
-	if cap > MaxStateFetch {
-		cap = MaxStateFetch
-	}
+	cap := min(p.rates.Capacity(eth.NodeDataMsg, targetRTT), MaxStateFetch)
 	return cap
 }
 

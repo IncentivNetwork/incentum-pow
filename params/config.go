@@ -389,8 +389,11 @@ var (
 		// rationale as DPoWTime above: a future activation timestamp keeps
 		// isForkTimestampIncompatible(nil, &future, headTime) returning false
 		// on every restart, so the existing devnet chain DB is accepted as-is
-		// and the contract floor engages at block.Time >= DynamicMinBaseFeeTime.
-		// Contract deployed in tx
+		// and the contract floor engages starting from the first block whose
+		// parent.Time >= DynamicMinBaseFeeTime (the activation predicate is
+		// parent-time gated — see consensus/misc/eip1559.go and miner/worker.go
+		// — which introduces a one-block delay between the timestamp boundary
+		// and the first contract-floored block). Contract deployed in tx
 		// 0xae84c70b02c2dc3da02ab9d1dc85d73f91b6deb04153cd44cb3a407a569dccd7
 		// at block 966206 with initial floor 12600 gwei (= legacy
 		// MinBaseFeeUpdated), 10-minute timelock, 100-block activation delay,

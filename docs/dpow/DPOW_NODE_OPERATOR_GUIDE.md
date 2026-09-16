@@ -7,9 +7,9 @@
 
 ## 1. What is changing
 
-DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to consensus. From the activation block `DPoWBlock` onward, a block is valid only if its coinbase is a staked, matured miner in the `MinerRegistry` contract.
+DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to consensus. From the activation timestamp `DPoWTime` onward (i.e. every block whose `block.timestamp ≥ DPoWTime`), a block is valid only if its coinbase is a staked, matured miner in the `MinerRegistry` contract.
 
-**This is a consensus-breaking hard fork.** Every node — whether it mines or not — must run the DPoW-enabled binary before `DPoWBlock`. A node still running old software will accept unauthorized blocks and **fork off the canonical chain**.
+**This is a consensus-breaking hard fork.** Every node — whether it mines or not — must run the DPoW-enabled binary before `DPoWTime`. A node still running old software will accept unauthorized blocks and **fork off the canonical chain**.
 
 | Node type | Must upgrade? | Must stake? |
 |---|---|---|
@@ -23,7 +23,7 @@ DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to co
 
 - Know your `systemd` unit name (e.g. `incentum.service`).
 - Have the published SHA-256 checksum of the new binary release.
-- Schedule the upgrade well before `DPoWBlock` — do not wait for activation day.
+- Schedule the upgrade well before `DPoWTime` — do not wait for activation day.
 
 Install paths differ between nodes. The shell commands in this guide reference the geth binary and data directory through two variables — set them to your node's actual paths before running any command:
 
@@ -46,8 +46,65 @@ Before activation, every node's service file must be hardened. This is not optio
 - [ ] **No** `--allow-insecure-unlock`.
 - [ ] **No** `--rpc.allow-unprotected-txs`.
 - [ ] `--txpool.pricelimit <wei>` — set a minimum gas price so zero-fee spam transactions propagated over P2P are rejected on entry. Pick a value above zero but below the normal transaction-fee level of the network; tune it to the network's actual fee policy (`1000000000` = 1 Gwei is a reasonable starting point, not a universal constant).
+- [ ] **No** `debug` in `--http.api` / `--ws.api` — unless the node indexes for a block explorer, in which case use the restricted profile described below.
 
 > Miners sign their `approve` / `stake` / `requestUnstake` transactions **externally** (with `cast --keystore` or a hardware wallet) and submit them over local IPC or a restricted RPC. The node itself never needs an unlocked account. See `DPOW_MINER_ONBOARDING.md`.
+
+#### The `debug` namespace on HTTP / WS
+
+`--http.api debug` registers the **entire** namespace — roughly fifty methods across four services. Any caller that reaches the transport can then rewind the chain (`debug_setHead`), create files at a path of their choosing (`debug_startCPUProfile`, and eight similar), disable garbage collection (`debug_setGCPercent -1`), compact the chain database, or run arbitrary JavaScript tracers. This is not a theoretical risk: it is what caused the 2026-07-31 archive-node rewind.
+
+Because of that, the node **refuses to start** when `debug` appears in `--http.api` or `--ws.api` without one of the two flags below. The behaviour is the same for both transports; restricting only HTTP would leave the whole surface open on the WebSocket port.
+
+| Configuration | Result |
+| --- | --- |
+| `debug` in `--http.api`, neither flag | Fatal startup error |
+| `debug` in `--http.api` + `--http.debug-profile trace-indexer-v1` | Only `debug_traceTransaction` and `debug_traceBlockByNumber` are registered; everything else answers `-32601 method not found` |
+| `debug` in `--http.api` + `--http.allow-unsafe-debug` | Full namespace, as before, with one `WARN` line at startup |
+| Both flags together | Fatal configuration error |
+| `--http.debug-profile` set, `debug` not in `--http.api` | Fatal configuration error |
+| IPC | Full namespace, unchanged |
+
+`--ws.debug-profile` and `--ws.allow-unsafe-debug` work identically for the WebSocket transport.
+
+An **empty** `--http.api` / `--ws.api` registers every namespace, `debug` among them. It is rejected unless the matching debug profile or explicit unsafe opt-in is set, and it always logs a `WARN` because namespaces other than `debug` remain unrestricted. Always list the namespaces the interface should serve.
+
+An archive node indexing for Blockscout needs exactly the two profile methods:
+
+```
+  --http.api 'eth,net,web3,txpool,debug' \
+  --http.debug-profile trace-indexer-v1 \
+  --ws.api 'eth,net,web3,debug' \
+  --ws.debug-profile trace-indexer-v1 \
+```
+
+On a profiled transport the two allowed methods are validated further: the tracer must be `callTracer` (only `onlyTopCall` is accepted as tracer config), `timeout` may not exceed `10s`, `reexec` may not exceed `128`, and the whole request is cut off after `30s`.
+
+Two further limits apply, both tunable:
+
+- `--http.debug-trace.max-concurrency <N>` (default `2`) — how many traces may run at once. The limit is shared by all restricted transports; `--ws.debug-trace.max-concurrency` is the same setting under the other prefix, so if you set both they must agree. On saturation callers get `-32005 too many concurrent traces` immediately rather than queueing.
+- `--http.rpc.batch-limit <N>` / `--ws.rpc.batch-limit <N>` (default `100`) — maximum number of elements in a JSON-RPC batch. On a profiled transport a batch may additionally contain at most 10 trace calls.
+
+> `rpc_modules` still reports `"debug":"1.0"` on a restricted transport. That field lists namespaces, not per-method capabilities; it is expected and needs no action.
+>
+> The concurrency limiter protects the process against overload. It is not a defence against a determined attacker — rate limiting at the reverse proxy is still required.
+
+#### The `monitor` namespace for observability
+
+`--http.api monitor` exposes a small read-only surface intended for monitoring probes that previously had to enable `admin` — and thus also grant `admin_addPeer` / `admin_removePeer` / `admin_exportChain` / `admin_importChain` / `admin_startHTTP` / `admin_startWS`. The `monitor` namespace has no side effects; no call it exposes can change node state. Note, however, that `monitor_nodeInfo` returns identifying metadata (client version and OS through `name`, plus `ip` / `listenAddr` / `ports`), so treat it like other read-only fingerprinting surface: keep the listener behind a reverse proxy with an IP allowlist or a private network wherever practical.
+
+| Method | Returns |
+| --- | --- |
+| `monitor_nodeInfo` | Node identity and network: `name`, `ip`, `listenAddr`, `ports.listener`, `ports.discovery`, `network`, `difficulty`. The last two are sourced from the `eth` subprotocol; on a node that does not run `eth` they remain present with zero values (`network` is `0`, `difficulty` is `null`). |
+| `monitor_peerCount` | Number of currently-connected peers |
+
+Recommended flag set for a probe-only RPC endpoint:
+
+```
+  --http.api 'eth,net,web3,txpool,monitor'
+```
+
+There is no matching restricted profile — the whole namespace is safe by construction, no debug or admin methods are ever reachable through `monitor`. `admin` should stay out of `--http.api` / `--ws.api` on any transport that is externally reachable.
 
 ### 3.2 Example hardened `systemd` unit (miner node)
 
@@ -114,20 +171,20 @@ Two paths: installing the pre-built release artifact (recommended) or building f
 
 **Install pre-built binary (recommended)**
 
-CI publishes a GitHub Release for each `v*-dpow-mainnet` tag containing a static `linux/amd64` tarball and its SHA-256 checksum file. Download both, verify, extract, and install:
+CI publishes a GitHub Release for each `v*` tag containing a static `linux/amd64` tarball and its SHA-256 checksum file. Release tags are named `v<version>-<theme>-mainnet`, so the theme varies between releases — `v1.11.8-dpow-mainnet` and `v1.11.9-dmbf-mainnet` were both published by the same workflow. Download both files, verify, extract, and install:
 
 ```bash
-RELEASE_TAG=<the-actual-release-tag>   # e.g. v1.11.7-dpow-mainnet
-RELEASE_URL=https://github.com/IncentivNetwork/incentum-pow/releases/download/${RELEASE_TAG}
+RELEASE_TAG="<the-actual-release-tag>"   # e.g. v1.11.8-dpow-mainnet
+RELEASE_URL="https://github.com/IncentivNetwork/incentum-pow/releases/download/${RELEASE_TAG}"
 
-curl -L -O ${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz
-curl -L -O ${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256
+curl -L -O "${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz"
+curl -L -O "${RELEASE_URL}/geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256"
 
 # Verify the tarball BEFORE extracting — must succeed:
-sha256sum -c geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256
+sha256sum -c "geth-linux-amd64-${RELEASE_TAG}.tar.gz.sha256"
 
 # Extract (the tarball contains `geth` and `COPYING`):
-tar -xzf geth-linux-amd64-${RELEASE_TAG}.tar.gz
+tar -xzf "geth-linux-amd64-${RELEASE_TAG}.tar.gz"
 
 # Confirm the embedded version and Git commit match the released tag:
 ./geth version
@@ -167,8 +224,8 @@ At startup geth logs a one-line consensus banner:
 ```bash
 sudo journalctl -u incentum.service | grep -i "Consensus:"
 # DPoW-enabled binary with activation set:
-#   Consensus: Ethash + DPoW (authorized mining, activates at block #<DPoWBlock>)
-# DPoW code present but inactive (DPoWBlock = nil):
+#   Consensus: Ethash + DPoW (authorized mining, activates at timestamp <DPoWTime> / <RFC3339 UTC>)
+# DPoW code present but inactive (DPoWTime = nil):
 #   Consensus: Ethash (proof-of-work)
 ```
 
@@ -179,16 +236,16 @@ For the full active chain config, attach over IPC:
 ```
 
 ```javascript
-admin.nodeInfo.protocols.eth.config   // shows dpowBlock, minerRegistryAddress,
+admin.nodeInfo.protocols.eth.config   // shows dpowTime, minerRegistryAddress,
                                       // dpowMaturityTime, dpowMaturityBlocks
 ```
 
 > The `admin` namespace is intentionally excluded from the hardened `--http.api` / `--ws.api` set (§3.1), so run this command over the local IPC socket. `admin` is not inherently IPC-only — it can be served over HTTP/WS if added to those flags, which the hardening checklist deliberately avoids.
 
-- Before the activation release: `dpowBlock` is absent/`null` — DPoW code is present but inert.
-- For the activation release: `dpowBlock` is set and `minerRegistryAddress` is the real deployed contract.
+- Before the activation release: `dpowTime` is absent/`null` — DPoW code is present but inert.
+- For the activation release: `dpowTime` is set (Unix seconds) and `minerRegistryAddress` is the real deployed contract.
 
-A node configured with `DPoWBlock` set but no registry address **refuses to start** (`CheckDPoWConfig` invariant) — this is intentional.
+A node configured with `DPoWTime` set but no registry address **refuses to start** (`CheckDPoWConfig` invariant) — this is intentional.
 
 ### 4.6 Start and verify
 
@@ -213,7 +270,7 @@ eth.syncing          // false once caught up
 
 ## 5. Activation day
 
-At the first block with `number ≥ DPoWBlock`:
+At the first block with `block.timestamp ≥ DPoWTime`:
 
 - A correctly upgraded node enforces DPoW and follows the canonical chain produced by authorized miners.
 - A node still on old software accepts an unauthorized block and **forks off** — it will appear "stuck" on a minority chain.
@@ -221,9 +278,12 @@ At the first block with `number ≥ DPoWBlock`:
 ### 5.1 Health checks
 
 ```bash
-# latest block + miner
+# latest block, miner, and timestamp — `timestamp` is the activation predicate input,
+# compare it against the binary's embedded `DPoWTime` (§4.5) to confirm the chain has
+# crossed activation. The block is fetched once so `block`, `miner`, and `timestamp`
+# come from the same header even if a new block is mined mid-check.
 "$GETH" attach --exec \
-  'JSON.stringify({block: eth.blockNumber, miner: eth.getBlock("latest").miner})' \
+  'var b = eth.getBlock("latest"); JSON.stringify({block: b.number, miner: b.miner, timestamp: b.timestamp})' \
   "$DATADIR/geth.ipc"
 
 # consensus errors in the last 15 minutes
@@ -238,7 +298,7 @@ Expected after activation: the latest block's `miner` is always a staked, author
 Symptoms: your `eth.blockNumber` diverges from public explorers; logs show repeated `DPoW: unauthorized coinbase …` or `Synchronisation failed, dropping peer …`.
 
 1. Confirm you are running the DPoW-enabled binary (`geth version` → expected release commit).
-2. Confirm the embedded config has the correct `DPoWBlock` and `MinerRegistryAddress` (§4.5).
+2. Confirm the embedded config has the correct `DPoWTime` and `MinerRegistryAddress` (§4.5).
 3. Restart the node. It will re-evaluate peers and re-sync onto the canonical chain.
 4. If it still does not converge, stop the node, remove the diverged chain segment by resyncing (`geth removedb` of chaindata or a fresh datadir), and let it re-sync from peers.
 

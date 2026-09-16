@@ -323,10 +323,10 @@ func FuzzClientPool(input []byte) int {
 		activeCount, activeCap := pool.Active()
 		doLog("Clientpool stats in pool", "count", activeCount, "cap", activeCap)
 		if activeCount != f.activeCount || activeCap != f.activeCap {
-			panic(nil)
+			panic("pool active count/capacity differs from the fuzzer's tally")
 		}
 		if f.activeCount > f.maxCount || f.activeCap > f.maxCap {
-			panic(nil)
+			panic("active count/capacity exceeds the configured maximum")
 		}
 	}
 	return 0

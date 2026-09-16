@@ -732,6 +732,23 @@ var (
 		Value:    "",
 		Category: flags.APICategory,
 	}
+	HTTPDebugProfileFlag = &cli.StringFlag{
+		Name:     "http.debug-profile",
+		Usage:    "Capability profile restricting the debug namespace on the HTTP-RPC interface (" + strings.Join(rpc.DebugProfileNames(), ", ") + ")",
+		Value:    "",
+		Category: flags.APICategory,
+	}
+	HTTPAllowUnsafeDebugFlag = &cli.BoolFlag{
+		Name:     "http.allow-unsafe-debug",
+		Usage:    "Expose the entire debug namespace over HTTP-RPC, including destructive and resource-exhausting methods",
+		Category: flags.APICategory,
+	}
+	HTTPBatchLimitFlag = &cli.IntFlag{
+		Name:     "http.rpc.batch-limit",
+		Usage:    "Maximum number of requests in a JSON-RPC batch on the HTTP-RPC interface (0 = unlimited)",
+		Value:    node.DefaultBatchLimit,
+		Category: flags.APICategory,
+	}
 	GraphQLEnabledFlag = &cli.BoolFlag{
 		Name:     "graphql",
 		Usage:    "Enable GraphQL on the HTTP-RPC server. Note that GraphQL can only be started if an HTTP server is started as well.",
@@ -782,6 +799,35 @@ var (
 		Name:     "ws.rpcprefix",
 		Usage:    "HTTP path prefix on which JSON-RPC is served. Use '/' to serve on all paths.",
 		Value:    "",
+		Category: flags.APICategory,
+	}
+	WSDebugProfileFlag = &cli.StringFlag{
+		Name:     "ws.debug-profile",
+		Usage:    "Capability profile restricting the debug namespace on the WS-RPC interface (" + strings.Join(rpc.DebugProfileNames(), ", ") + ")",
+		Value:    "",
+		Category: flags.APICategory,
+	}
+	WSAllowUnsafeDebugFlag = &cli.BoolFlag{
+		Name:     "ws.allow-unsafe-debug",
+		Usage:    "Expose the entire debug namespace over WS-RPC, including destructive and resource-exhausting methods",
+		Category: flags.APICategory,
+	}
+	WSBatchLimitFlag = &cli.IntFlag{
+		Name:     "ws.rpc.batch-limit",
+		Usage:    "Maximum number of requests in a JSON-RPC batch on the WS-RPC interface (0 = unlimited)",
+		Value:    node.DefaultBatchLimit,
+		Category: flags.APICategory,
+	}
+	HTTPDebugTraceMaxConcurrencyFlag = &cli.IntFlag{
+		Name:     "http.debug-trace.max-concurrency",
+		Usage:    "Maximum number of debug trace calls running concurrently across all restricted transports",
+		Value:    node.DefaultDebugTraceMaxConcurrency,
+		Category: flags.APICategory,
+	}
+	WSDebugTraceMaxConcurrencyFlag = &cli.IntFlag{
+		Name:     "ws.debug-trace.max-concurrency",
+		Usage:    "Alias of --http.debug-trace.max-concurrency; the limit is shared by all restricted transports",
+		Value:    node.DefaultDebugTraceMaxConcurrency,
 		Category: flags.APICategory,
 	}
 	ExecFlag = &cli.StringFlag{
@@ -1224,6 +1270,39 @@ func setHTTP(ctx *cli.Context, cfg *node.Config) {
 	if ctx.IsSet(AllowUnprotectedTxs.Name) {
 		cfg.AllowUnprotectedTxs = ctx.Bool(AllowUnprotectedTxs.Name)
 	}
+
+	if ctx.IsSet(HTTPDebugProfileFlag.Name) {
+		cfg.HTTPDebugProfile = ctx.String(HTTPDebugProfileFlag.Name)
+	}
+	if ctx.IsSet(HTTPAllowUnsafeDebugFlag.Name) {
+		cfg.HTTPAllowUnsafeDebug = ctx.Bool(HTTPAllowUnsafeDebugFlag.Name)
+	}
+	if ctx.IsSet(HTTPBatchLimitFlag.Name) {
+		cfg.HTTPBatchLimit = ctx.Int(HTTPBatchLimitFlag.Name)
+	}
+	setDebugTraceConcurrency(ctx, cfg)
+}
+
+// setDebugTraceConcurrency resolves the trace concurrency limit. The HTTP and WS
+// flags configure a single limiter shared by every restricted transport, so
+// setting both to different values has no meaning and is rejected rather than
+// silently resolved.
+func setDebugTraceConcurrency(ctx *cli.Context, cfg *node.Config) {
+	httpSet := ctx.IsSet(HTTPDebugTraceMaxConcurrencyFlag.Name)
+	wsSet := ctx.IsSet(WSDebugTraceMaxConcurrencyFlag.Name)
+	switch {
+	case httpSet && wsSet:
+		http, ws := ctx.Int(HTTPDebugTraceMaxConcurrencyFlag.Name), ctx.Int(WSDebugTraceMaxConcurrencyFlag.Name)
+		if http != ws {
+			Fatalf("--%s (%d) and --%s (%d) configure the same shared limiter and must agree",
+				HTTPDebugTraceMaxConcurrencyFlag.Name, http, WSDebugTraceMaxConcurrencyFlag.Name, ws)
+		}
+		cfg.DebugTraceMaxConcurrency = http
+	case httpSet:
+		cfg.DebugTraceMaxConcurrency = ctx.Int(HTTPDebugTraceMaxConcurrencyFlag.Name)
+	case wsSet:
+		cfg.DebugTraceMaxConcurrency = ctx.Int(WSDebugTraceMaxConcurrencyFlag.Name)
+	}
 }
 
 // setGraphQL creates the GraphQL listener interface string from the set
@@ -1261,6 +1340,17 @@ func setWS(ctx *cli.Context, cfg *node.Config) {
 	if ctx.IsSet(WSPathPrefixFlag.Name) {
 		cfg.WSPathPrefix = ctx.String(WSPathPrefixFlag.Name)
 	}
+
+	if ctx.IsSet(WSDebugProfileFlag.Name) {
+		cfg.WSDebugProfile = ctx.String(WSDebugProfileFlag.Name)
+	}
+	if ctx.IsSet(WSAllowUnsafeDebugFlag.Name) {
+		cfg.WSAllowUnsafeDebug = ctx.Bool(WSAllowUnsafeDebugFlag.Name)
+	}
+	if ctx.IsSet(WSBatchLimitFlag.Name) {
+		cfg.WSBatchLimit = ctx.Int(WSBatchLimitFlag.Name)
+	}
+	setDebugTraceConcurrency(ctx, cfg)
 }
 
 // setIPC creates an IPC path configuration from the set command line flags,

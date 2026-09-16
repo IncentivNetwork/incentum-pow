@@ -203,10 +203,7 @@ func (rt ResponseTimeStats) Timeout(failRatio float64) time.Duration {
 	if r < 0 {
 		r = 0
 	}
-	th := StatScaleToTime(r)
-	if th > maxResponseTime {
-		th = maxResponseTime
-	}
+	th := min(StatScaleToTime(r), maxResponseTime)
 	return th
 }
 

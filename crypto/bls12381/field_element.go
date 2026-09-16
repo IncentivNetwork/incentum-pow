@@ -41,10 +41,7 @@ type fe12 [2]fe6
 
 func (fe *fe) setBytes(in []byte) *fe {
 	size := 48
-	l := len(in)
-	if l >= size {
-		l = size
-	}
+	l := min(len(in), size)
 	padded := make([]byte, size)
 	copy(padded[size-l:], in[:])
 	var a int

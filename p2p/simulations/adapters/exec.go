@@ -29,6 +29,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -186,11 +187,8 @@ func (n *ExecNode) Start(snapshots map[string][]byte) (err error) {
 	// expose the admin namespace via websocket if it's not enabled
 	exposed := confCopy.Stack.WSExposeAll
 	if !exposed {
-		for _, api := range confCopy.Stack.WSModules {
-			if api == "admin" {
-				exposed = true
-				break
-			}
+		if slices.Contains(confCopy.Stack.WSModules, "admin") {
+			exposed = true
 		}
 	}
 	if !exposed {

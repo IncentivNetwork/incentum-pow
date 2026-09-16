@@ -64,14 +64,14 @@ func TestTCPPipeBidirections(t *testing.T) {
 	msgs := 50
 	size := 7
 	for i := 0; i < msgs; i++ {
-		msg := []byte(fmt.Sprintf("ping %02d", i))
+		msg := fmt.Appendf(nil, "ping %02d", i)
 		if _, err := c1.Write(msg); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	for i := 0; i < msgs; i++ {
-		expected := []byte(fmt.Sprintf("ping %02d", i))
+		expected := fmt.Appendf(nil, "ping %02d", i)
 		out := make([]byte, size)
 		if _, err := c2.Read(out); err != nil {
 			t.Fatal(err)
@@ -80,7 +80,7 @@ func TestTCPPipeBidirections(t *testing.T) {
 		if !bytes.Equal(expected, out) {
 			t.Fatalf("expected %#v, got %#v", out, expected)
 		} else {
-			msg := []byte(fmt.Sprintf("pong %02d", i))
+			msg := fmt.Appendf(nil, "pong %02d", i)
 			if _, err := c2.Write(msg); err != nil {
 				t.Fatal(err)
 			}
@@ -88,7 +88,7 @@ func TestTCPPipeBidirections(t *testing.T) {
 	}
 
 	for i := 0; i < msgs; i++ {
-		expected := []byte(fmt.Sprintf("pong %02d", i))
+		expected := fmt.Appendf(nil, "pong %02d", i)
 		out := make([]byte, size)
 		if _, err := c1.Read(out); err != nil {
 			t.Fatal(err)
@@ -156,7 +156,7 @@ func TestNetPipeBidirections(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < msgs; i++ {
-			msg := []byte(fmt.Sprintf(pingTemplate, i))
+			msg := fmt.Appendf(nil, pingTemplate, i)
 			if _, err := c1.Write(msg); err != nil {
 				t.Error(err)
 			}
@@ -169,7 +169,7 @@ func TestNetPipeBidirections(t *testing.T) {
 		defer wg.Done()
 
 		for i := 0; i < msgs; i++ {
-			expected := []byte(fmt.Sprintf(pongTemplate, i))
+			expected := fmt.Appendf(nil, pongTemplate, i)
 			out := make([]byte, size)
 			if _, err := c1.Read(out); err != nil {
 				t.Error(err)
@@ -182,7 +182,7 @@ func TestNetPipeBidirections(t *testing.T) {
 
 	// expect to read pings, and respond with pongs to the alternate connection
 	for i := 0; i < msgs; i++ {
-		expected := []byte(fmt.Sprintf(pingTemplate, i))
+		expected := fmt.Appendf(nil, pingTemplate, i)
 
 		out := make([]byte, size)
 		_, err := c2.Read(out)
@@ -193,7 +193,7 @@ func TestNetPipeBidirections(t *testing.T) {
 		if !bytes.Equal(expected, out) {
 			t.Errorf("expected %#v, got %#v", expected, out)
 		} else {
-			msg := []byte(fmt.Sprintf(pongTemplate, i))
+			msg := fmt.Appendf(nil, pongTemplate, i)
 			if _, err := c2.Write(msg); err != nil {
 				t.Fatal(err)
 			}

@@ -106,10 +106,7 @@ func (node *ClientNode) BufferStatus() (uint64, uint64) {
 	now := node.cm.clock.Now()
 	node.update(now)
 	node.cm.updateBuffer(node, 0, now)
-	bv := node.bufValue
-	if bv < 0 {
-		bv = 0
-	}
+	bv := max(node.bufValue, 0)
 	return uint64(bv), node.params.BufLimit
 }
 

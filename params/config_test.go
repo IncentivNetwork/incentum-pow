@@ -591,7 +591,11 @@ func TestMinBaseFeeContractAddrJSON(t *testing.T) {
 			if err != nil {
 				t.Fatalf("marshal: %v", err)
 			}
-			if has := strings.Contains(string(data), "minBaseFeeContractAddr"); has != tc.jsonHas {
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatalf("unmarshal into map: %v", err)
+			}
+			if _, has := raw["minBaseFeeContractAddr"]; has != tc.jsonHas {
 				t.Fatalf("json field presence: got=%v want=%v (json=%s)", has, tc.jsonHas, data)
 			}
 			var out ChainConfig

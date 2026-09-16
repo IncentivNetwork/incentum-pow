@@ -30,7 +30,7 @@ type Prque[P constraints.Ordered, V any] struct {
 
 // New creates a new priority queue.
 func New[P constraints.Ordered, V any](setIndex SetIndexCallback[V]) *Prque[P, V] {
-	return &Prque[P, V]{newSstack[P, V](setIndex)}
+	return &Prque[P, V]{newSstack[P](setIndex)}
 }
 
 // Pushes a value with a given priority into the queue, expanding if necessary.
@@ -73,5 +73,5 @@ func (p *Prque[P, V]) Size() int {
 
 // Clears the contents of the priority queue.
 func (p *Prque[P, V]) Reset() {
-	*p = *New[P, V](p.cont.setIndex)
+	*p = *New[P](p.cont.setIndex)
 }

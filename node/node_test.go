@@ -527,13 +527,14 @@ func TestNodeRPCPrefix(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		name := fmt.Sprintf("http=%s ws=%s", test.httpPrefix, test.wsPrefix)
 		t.Run(name, func(t *testing.T) {
 			cfg := &Config{
 				HTTPHost:       "127.0.0.1",
+				HTTPModules:    []string{"web3"},
 				HTTPPathPrefix: test.httpPrefix,
 				WSHost:         "127.0.0.1",
+				WSModules:      []string{"web3"},
 				WSPathPrefix:   test.wsPrefix,
 			}
 			node, err := New(cfg)
@@ -588,8 +589,10 @@ func createNode(t *testing.T, httpPort, wsPort int) *Node {
 	conf := &Config{
 		HTTPHost:     "127.0.0.1",
 		HTTPPort:     httpPort,
+		HTTPModules:  []string{"web3"},
 		WSHost:       "127.0.0.1",
 		WSPort:       wsPort,
+		WSModules:    []string{"web3"},
 		HTTPTimeouts: rpc.DefaultHTTPTimeouts,
 	}
 	node, err := New(conf)

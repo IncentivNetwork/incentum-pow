@@ -54,10 +54,7 @@ func (t *UpdateTimer) UpdateAt(at mclock.AbsTime, callback func(diff time.Durati
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	diff := time.Duration(at - t.last)
-	if diff < 0 {
-		diff = 0
-	}
+	diff := max(time.Duration(at-t.last), 0)
 	if diff < t.threshold {
 		return false
 	}

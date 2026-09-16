@@ -91,8 +91,6 @@ func MakeProtocols(backend Backend, dnsdisc enode.Iterator) []p2p.Protocol {
 
 	protocols := make([]p2p.Protocol, len(ProtocolVersions))
 	for i, version := range ProtocolVersions {
-		version := version // Closure
-
 		protocols[i] = p2p.Protocol{
 			Name:    ProtocolName,
 			Version: version,
@@ -153,8 +151,8 @@ func HandleMessage(backend Backend, peer *Peer) error {
 		}(start)
 	}
 	// Handle the message depending on its contents
-	switch {
-	case msg.Code == GetAccountRangeMsg:
+	switch msg.Code {
+	case GetAccountRangeMsg:
 		// Decode the account retrieval request
 		var req GetAccountRangePacket
 		if err := msg.Decode(&req); err != nil {
@@ -170,7 +168,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 			Proof:    proofs,
 		})
 
-	case msg.Code == AccountRangeMsg:
+	case AccountRangeMsg:
 		// A range of accounts arrived to one of our previous requests
 		res := new(AccountRangePacket)
 		if err := msg.Decode(res); err != nil {
@@ -186,7 +184,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 
 		return backend.Handle(peer, res)
 
-	case msg.Code == GetStorageRangesMsg:
+	case GetStorageRangesMsg:
 		// Decode the storage retrieval request
 		var req GetStorageRangesPacket
 		if err := msg.Decode(&req); err != nil {
@@ -202,7 +200,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 			Proof: proofs,
 		})
 
-	case msg.Code == StorageRangesMsg:
+	case StorageRangesMsg:
 		// A range of storage slots arrived to one of our previous requests
 		res := new(StorageRangesPacket)
 		if err := msg.Decode(res); err != nil {
@@ -220,7 +218,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 
 		return backend.Handle(peer, res)
 
-	case msg.Code == GetByteCodesMsg:
+	case GetByteCodesMsg:
 		// Decode bytecode retrieval request
 		var req GetByteCodesPacket
 		if err := msg.Decode(&req); err != nil {
@@ -235,7 +233,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 			Codes: codes,
 		})
 
-	case msg.Code == ByteCodesMsg:
+	case ByteCodesMsg:
 		// A batch of byte codes arrived to one of our previous requests
 		res := new(ByteCodesPacket)
 		if err := msg.Decode(res); err != nil {
@@ -245,7 +243,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 
 		return backend.Handle(peer, res)
 
-	case msg.Code == GetTrieNodesMsg:
+	case GetTrieNodesMsg:
 		// Decode trie node retrieval request
 		var req GetTrieNodesPacket
 		if err := msg.Decode(&req); err != nil {
@@ -262,7 +260,7 @@ func HandleMessage(backend Backend, peer *Peer) error {
 			Nodes: nodes,
 		})
 
-	case msg.Code == TrieNodesMsg:
+	case TrieNodesMsg:
 		// A batch of trie nodes arrived to one of our previous requests
 		res := new(TrieNodesPacket)
 		if err := msg.Decode(res); err != nil {

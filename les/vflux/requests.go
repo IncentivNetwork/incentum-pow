@@ -98,9 +98,9 @@ func (i *IntOrInf) BigInt() *big.Int {
 	case IntNegative:
 		return new(big.Int).Neg(&i.Value)
 	case IntPlusInf:
-		panic(nil) // caller should check Inf() before trying to convert to big.Int
+		panic("BigInt called on +Inf") // caller should check Inf() before trying to convert to big.Int
 	case IntMinusInf:
-		panic(nil)
+		panic("BigInt called on -Inf")
 	}
 	return &big.Int{} // invalid type decodes to 0 value
 }

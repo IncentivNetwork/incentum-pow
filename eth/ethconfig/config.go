@@ -98,16 +98,17 @@ func init() {
 			home = user.HomeDir
 		}
 	}
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		Defaults.Ethash.DatasetDir = filepath.Join(home, "Library", "Ethash")
-	} else if runtime.GOOS == "windows" {
+	case "windows":
 		localappdata := os.Getenv("LOCALAPPDATA")
 		if localappdata != "" {
 			Defaults.Ethash.DatasetDir = filepath.Join(localappdata, "Ethash")
 		} else {
 			Defaults.Ethash.DatasetDir = filepath.Join(home, "AppData", "Local", "Ethash")
 		}
-	} else {
+	default:
 		Defaults.Ethash.DatasetDir = filepath.Join(home, ".ethash")
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/big"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -357,12 +358,7 @@ func (s *Ethereum) isLocalBlock(header *types.Header) bool {
 	}
 	// Check whether the given address is specified by `txpool.local`
 	// CLI flag.
-	for _, account := range s.config.TxPool.Locals {
-		if account == author {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.config.TxPool.Locals, author)
 }
 
 // shouldPreserve checks whether we should preserve the given block

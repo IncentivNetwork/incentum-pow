@@ -71,7 +71,6 @@ func TestState(t *testing.T) {
 	} {
 		st.walk(t, dir, func(t *testing.T, name string, test *StateTest) {
 			for _, subtest := range test.Subtests() {
-				subtest := subtest
 				key := fmt.Sprintf("%s/%d", subtest.Fork, subtest.Index)
 
 				t.Run(key+"/trie", func(t *testing.T) {
@@ -164,14 +163,12 @@ func runBenchmarkFile(b *testing.B, path string) {
 		return
 	}
 	for _, t := range m {
-		t := t
 		runBenchmark(b, &t)
 	}
 }
 
 func runBenchmark(b *testing.B, t *StateTest) {
 	for _, subtest := range t.Subtests() {
-		subtest := subtest
 		key := fmt.Sprintf("%s/%d", subtest.Fork, subtest.Index)
 
 		b.Run(key, func(b *testing.B) {

@@ -720,7 +720,7 @@ func TestPendingLogsSubscription(t *testing.T) {
 					return
 				}
 				if !reflect.DeepEqual(fetched[l], tt.expected[l]) {
-					tt.err <- fmt.Errorf("invalid log on index %d for case %d\n", l, i)
+					tt.err <- fmt.Errorf("invalid log on index %d for case %d", l, i)
 					return
 				}
 			}
