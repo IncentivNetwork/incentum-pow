@@ -662,7 +662,8 @@ phase_concurrency() {
 
 	local port=$((BASE_PORT + 2))
 	if ! start_geth concurrency "$port" 0 \
-		--dev --port 0 --authrpc.port 0 --nodiscover --maxpeers 0 \
+		--dev --dev.gaslimit 30000000 --miner.gaslimit 30000000 \
+		--port 0 --authrpc.port 0 --nodiscover --maxpeers 0 \
 		--http --http.api eth,net,web3,debug \
 		--http.debug-profile trace-indexer-v1 \
 		--http.debug-trace.max-concurrency 1; then
@@ -670,40 +671,56 @@ phase_concurrency() {
 		return
 	fi
 
-	local ep="$NODE_HTTP" acc i
+	local ep="$NODE_HTTP" acc tx receipt contract payload i
 	acc=$(rpc "$ep" '{"jsonrpc":"2.0","method":"eth_accounts","params":[],"id":1}' | jq -r '.result[0] // empty')
-	for i in $(seq 1 5); do
-		rpc "$ep" "{\"jsonrpc\":\"2.0\",\"method\":\"eth_sendTransaction\",\"params\":[{\"from\":\"$acc\",\"to\":\"0x00000000000000000000000000000000000000ff\",\"value\":\"0x1\"}],\"id\":1}" >/dev/null
-	done
-	sleep 2
+	# Deploy JUMPDEST; PUSH1 0; JUMP, then mine a call that exhausts 16M gas.
+	# Replaying it holds a slot long enough for overlapping HTTP requests even
+	# on a fast dev node. A plain transfer finishes before contention develops.
+	tx=$(rpc "$ep" "$(jq -nc --arg from "$acc" \
+		'{jsonrpc:"2.0",method:"eth_sendTransaction",params:[{from:$from,gas:"0x20000",
+		data:"0x6004600c60003960046000f35b600056"}],id:1}')" | jq -r '.result // empty')
+	receipt=$(wait_receipt "$ep" "$tx")
+	contract=$(printf '%s' "$receipt" | jq -r '.result.contractAddress // empty')
+	if [ -z "$contract" ] || [ "$(printf '%s' "$receipt" | jq -r '.result.status')" != "0x1" ]; then
+		bad "concurrency fixture deployed"
+		return
+	fi
+	tx=$(rpc "$ep" "$(jq -nc --arg from "$acc" --arg to "$contract" \
+		'{jsonrpc:"2.0",method:"eth_sendTransaction",params:[{from:$from,to:$to,gas:"0xf42400"}],id:1}')" | jq -r '.result // empty')
+	receipt=$(wait_receipt "$ep" "$tx")
+	if ! printf '%s' "$receipt" | jq -e '.result.status == "0x0" and .result.gasUsed == "0xf42400"' >/dev/null; then
+		bad "concurrency fixture consumed its gas budget"
+		return
+	fi
+	payload=$(jq -nc --arg tx "$tx" \
+		'{jsonrpc:"2.0",method:"debug_traceTransaction",params:[$tx,{tracer:"callTracer",timeout:"10s"}],id:1}')
 
-	local out="$WORKDIR/concurrency.out"
-	: >"$out"
 	# Wait on these PIDs specifically: a bare `wait` would also wait for the
-	# node started in the background by start_geth, which never exits.
+	# node. Separate files prevent concurrent response writes from interleaving.
 	local probes=()
-	for i in $(seq 1 40); do
-		(
-			rpc "$ep" '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{"tracer":"callTracer"}],"id":1}'
-			echo
-		) >>"$out" &
+	for i in $(seq 1 8); do
+		rpc "$ep" "$payload" >"$WORKDIR/concurrency.$i.json" &
 		probes+=($!)
 	done
-	wait "${probes[@]}" 2>/dev/null
-
-	if grep -q '"code":-32005' "$out"; then
-		if grep -q 'too many concurrent traces' "$out"; then
-			ok "saturation returns -32005 too many concurrent traces"
-		else
-			bad "saturation returns -32005 too many concurrent traces" \
-				"$(grep -m1 32005 "$out")"
-		fi
+	local transport_failed=0
+	for i in "${probes[@]}"; do
+		wait "$i" || transport_failed=1
+	done
+	if [ "$transport_failed" -eq 0 ] && jq -se '
+		def traced: .error == null and .result.type == "CALL" and
+			.result.error == "out of gas";
+		def saturated: .error.code == -32005 and .error.message == "too many concurrent traces";
+		length == 8 and all(.[]; .jsonrpc == "2.0" and .id == 1 and (traced or saturated)) and
+		any(.[]; traced) and any(.[]; saturated)
+	' "$WORKDIR"/concurrency.*.json >/dev/null; then
+		ok "saturation returns -32005 too many concurrent traces"
 	else
-		# Traces on a tiny dev chain finish in microseconds, so the limiter can
-		# legitimately never be contended. Reported rather than passed quietly.
-		skipped "saturation returns -32005" \
-			"the limiter was never contended; covered by TestTraceLimiter and TestRestrictedDebugAPIConcurrencyLimit"
+		bad "saturation returns -32005 too many concurrent traces" \
+			"expected both completed traces and limiter rejections; acceptance cannot skip contention"
 	fi
+	expect_code "the concurrency slot is released after tracing" "$ep" \
+		'{"jsonrpc":"2.0","method":"debug_traceTransaction","params":["0x0000000000000000000000000000000000000000000000000000000000000000",{"tracer":"callTracer"}],"id":1}' \
+		-32000 'transaction not found'
 }
 
 # ---------------------------------------------------------------------------
