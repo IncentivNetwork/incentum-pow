@@ -120,6 +120,14 @@ func TestDebugProfileFatalStartup(t *testing.T) {
 			want: `empty --ws.api exposes every namespace, including "debug"`,
 		},
 		{
+			name: "ws unknown profile",
+			args: []string{
+				"--ws", "--ws.port", "0", "--ws.api", "eth,debug",
+				"--ws.debug-profile", "trace-indexer-v2",
+			},
+			want: `unknown debug profile "trace-indexer-v2" (known profiles: trace-indexer-v1)`,
+		},
+		{
 			// Both transports misconfigured: HTTP is validated first, so the
 			// operator is told about HTTP rather than being left to discover
 			// the second failure on the next restart.
@@ -229,6 +237,9 @@ func TestDebugProfileStartupWarnings(t *testing.T) {
 			// means startup completed and every warning has been emitted.
 			geth.ExpectRegexp("2")
 			geth.WaitExit()
+			if status := geth.ExitStatus(); status != 0 {
+				t.Fatalf("exit status = %d, want 0", status)
+			}
 
 			stderr := geth.StderrText()
 			if test.want != "" {
