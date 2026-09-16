@@ -26,10 +26,11 @@ So, ahead of each mainnet release:
 2. Merge it, then merge `develop` into `main` through a release-prep branch.
 3. Cut the tag from the resulting merge commit on `main`.
 
-The branch matters as much as the commit. `main` is not protected and the
+The branch matters as much as the commit. No ruleset protects tags, and the
 workflow triggers on any `v*` tag regardless of where it points, so a tag pushed
 from `develop` publishes a mainnet release built from code that never reached
-`main` — and nothing fails to tell you.
+`main` — and nothing fails to tell you. The branch rulesets do not help here:
+they gate what reaches `main`, not where a tag may point.
 
 Verify before tagging, with `main` checked out at the commit you are about to
 tag:
