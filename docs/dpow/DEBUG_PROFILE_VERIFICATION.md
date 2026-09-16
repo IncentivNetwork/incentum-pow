@@ -63,16 +63,46 @@ deadline. `PROBE_SCAN_BLOCKS` defaults to 50; increase it if recent blocks have
 no transactions. The scripts return nonzero on failures. Exit status 0 with
 skipped checks is not evidence that those checks were exercised.
 
-## Devnet acceptance: pending
+## Devnet acceptance
 
-No devnet run was performed during this review: its endpoint and deployment
-revision were not available. The local results above do not satisfy the devnet
-acceptance item in issue #124.
-
-After an authorized devnet run, attach a summary using this format:
+Probed on 2026-09-16 against a devnet node with the profile in force. Records
+the devnet run for the acceptance item in issue #124.
 
 ```text
 Environment: devnet (endpoint omitted)
+Date (UTC): 2026-09-16
+Probe source commit: 0c289c2839ee76e30e030bbb41e63a9e73340ab4
+Node deployment commit: 3ddacd842cdbf50e44ca0028a886ea1e77622b49
+Expected profile: trace-indexer-v1
+Result: 33 passed, 0 failed, 0 skipped
+Exit status: 0
+Real transaction and containing-block traces: verified
+Skipped checks: none
+```
+
+The file executed was byte-identical to `scripts/probe_debug_profile.sh` at the
+probe commit above. The node commit was read from `geth version` on the host,
+not inferred from the probe. The chain held no transaction inside the scanned
+window, so one was submitted to make the functional checks executable.
+
+Two limits on what this run covers:
+
+- The WebSocket half of the PR #119 matrix was not exercised live; it rests on
+  the local runs and the Go tests.
+- The run covers a single node. Not every devnet node is upgraded yet.
+
+## Collecting a shareable run
+
+A traced transaction ages out of the default `PROBE_SCAN_BLOCKS` window of 50
+blocks, after which the three real-trace checks report `SKIP` and the run still
+exits 0. Exit status alone does not separate a full run from one that exercised
+no tracing, so read the skipped count too, and raise the window or submit a
+transaction before probing an idle chain.
+
+Use this format for any further live run:
+
+```text
+Environment: <network> (endpoint omitted)
 Date (UTC): <date>
 Probe source commit: <full SHA>
 Node deployment commit: <full SHA, or explicitly unavailable>
