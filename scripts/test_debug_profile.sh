@@ -253,7 +253,31 @@ attach() {
 # ---------------------------------------------------------------------------
 
 rpc() { # endpoint, payload
-	curl -sS --max-time 30 -H 'Content-Type: application/json' --data "$2" "$1"
+	local body
+	body=$(curl -q -fsS --max-time 35 -H 'Content-Type: application/json' --data "$2" "$1") || return 1
+	# Notification-only batches legitimately have no body. Calls must each
+	# receive exactly one matching JSON-RPC response, including rejected batches.
+	if printf '%s' "$2" | jq -e 'type == "array" and all(.[]; has("id") | not)' >/dev/null; then
+		[ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]
+		return
+	fi
+	printf '%s' "$body" | jq -se --argjson request "$2" '
+		def response:
+			type == "object" and .jsonrpc == "2.0" and
+			(has("result") != has("error")) and
+			(if has("error") then
+				(.error | type == "object") and
+				(.error.code | type == "number") and
+				(.error.message | type == "string")
+			else true end);
+		length == 1 and (.[0] |
+			if ($request | type) == "array" then
+				type == "array" and
+				(map(.id) | sort) == ($request | map(.id) | sort) and
+				all(.[]; response)
+			else response and .id == $request.id end)
+	' >/dev/null || return 1
+	printf '%s' "$body"
 }
 
 expect_code() { # label, endpoint, payload, want_code, [want_msg]
@@ -287,6 +311,7 @@ expect_ok() { # label, endpoint, payload
 
 wait_receipt() { # endpoint, transaction hash
 	local receipt i
+	[[ "$2" =~ ^0x[0-9a-fA-F]{64}$ ]] || return 1
 	for ((i = 0; i < 60; i++)); do
 		receipt=$(rpc "$1" "$(jq -nc --arg tx "$2" \
 			'{jsonrpc:"2.0",method:"eth_getTransactionReceipt",params:[$tx],id:1}')")
