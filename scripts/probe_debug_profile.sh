@@ -279,9 +279,9 @@ echo
 
 # ---------------------------------------------------------------------------
 # Safety gate. Two methods that are harmless to call but must be absent on a
-# profiled transport. If either answers, the profile is NOT in force and this
-# script stops: probing further would mean calling destructive methods against
-# a node that has no protection.
+# profiled transport. If either is reachable, or its rejection cannot be
+# verified, stop: subsequent tracing checks would not verify this profile.
+# All later requests are read-only or omit required arguments as well.
 # ---------------------------------------------------------------------------
 echo "--- Safety gate ---"
 gate_open=0
@@ -300,9 +300,9 @@ if [ "$gate_open" -ne 0 ]; then
 	cat >&2 <<-'EOF'
 
 		  ####################################################################
-		  #  The debug namespace is NOT restricted on this endpoint.         #
-		  #  Stopping here: the remaining checks would call methods that     #
-		  #  can rewind the chain or write files on the node.                #
+		  #  The required debug restriction could not be verified.          #
+		  #  Stopping here: check connectivity and the transport profile.    #
+		  #  No state-changing requests have been sent.                      #
 		  #                                                                  #
 		  #  Start the node with --http.debug-profile trace-indexer-v1       #
 		  #  (see docs/dpow/DPOW_NODE_OPERATOR_GUIDE.md §3.1).               #
@@ -325,8 +325,9 @@ fi
 echo
 
 # ---------------------------------------------------------------------------
-# Method surface. Only non-destructive methods are probed here: the destructive
-# ones are covered by the local container matrix.
+# Method surface. Read-only calls and calls missing required arguments cannot
+# change state even if a method is accidentally exposed. Calls with arguments
+# that could change state are covered only by the isolated local matrix.
 # ---------------------------------------------------------------------------
 echo "--- Rejected methods ---"
 for method in debug_traceCall debug_traceBlockByHash debug_traceBlockFromFile \
