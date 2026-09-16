@@ -332,8 +332,12 @@ phase_admin_absent() {
 	fi
 
 	local m
+	# exportChain and importChain live on eth's AdminAPI rather than node's, but
+	# they are registered under the same namespace and the operator guide names
+	# them among the methods monitor exists to stop granting.
 	for m in admin_nodeInfo admin_peers admin_datadir admin_addPeer \
-		admin_removePeer admin_startHTTP admin_startWS admin_stopWS; do
+		admin_removePeer admin_startHTTP admin_startWS admin_stopWS \
+		admin_exportChain admin_importChain; do
 		expect_method_absent "$m is not served" "$MONITOR_EP" "$m"
 	done
 
@@ -470,7 +474,8 @@ phase_peer_count() {
 		NODE_MAXPEERS=0
 		return
 	fi
-	local a_ep="$NODE_HTTP"
+	local a_ep="$NODE_HTTP" a_container=""
+	[ "$RUNNER" = docker ] && a_container="${NODE_CONTAINERS[-1]}"
 
 	if ! start_geth peer_b "$b_http" 0 "$b_p2p" \
 		--http --http.api eth,net,web3,monitor,admin; then
@@ -484,13 +489,28 @@ phase_peer_count() {
 	local enode
 	enode=$(call "$a_ep" admin_nodeInfo | jq -r '.result.enode // empty')
 	if [ -z "$enode" ]; then
-		skipped "monitor_peerCount rises to 1 once a peer connects" \
+		bad "monitor_peerCount rises to 1 once a peer connects" \
 			"could not read node A's enode"
 		return
 	fi
 
+	# --nat none makes a node advertise itself on 127.0.0.1. Between two
+	# containers that address is each container's own loopback, so node B would
+	# dial itself and the phase could never run. Point the enode at the address
+	# B can actually reach.
+	if [ "$RUNNER" = docker ]; then
+		local a_ip
+		a_ip=$($DOCKER inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$a_container" 2>/dev/null)
+		if [ -z "$a_ip" ]; then
+			bad "monitor_peerCount rises to 1 once a peer connects" \
+				"could not determine the container address of node A"
+			return
+		fi
+		enode=$(printf '%s' "$enode" | sed -E "s#@[^:]+:#@$a_ip:#")
+	fi
+
 	if [ "$(call_with "$b_ep" admin_addPeer "[\"$enode\"]" | jq -r '.result // empty')" != "true" ]; then
-		skipped "monitor_peerCount rises to 1 once a peer connects" \
+		bad "monitor_peerCount rises to 1 once a peer connects" \
 			"node B refused the addPeer request"
 		return
 	fi
@@ -510,9 +530,10 @@ phase_peer_count() {
 	done
 
 	if [ "$a_peers" != 1 ] || [ "$b_peers" != 1 ]; then
-		# Genuinely an environment problem: the p2p connection never formed, so
-		# there is nothing to read. Reported as unexercised, never as a pass.
-		skipped "monitor_peerCount rises to 1 once a peer connects" \
+		# This is the only check that distinguishes a real peer count from a
+		# constant 0, so it is not allowed to quietly not run. A SKIP here would
+		# leave the run green with the interesting check never executed.
+		bad "monitor_peerCount rises to 1 once a peer connects" \
 			"the two nodes did not peer within 30s (admin_peers A=$a_peers B=$b_peers)"
 		return
 	fi
@@ -538,7 +559,7 @@ phase_peer_count() {
 
 	# And the count follows the connection back down, which a constant cannot.
 	if [ "$(call_with "$b_ep" admin_removePeer "[\"$enode\"]" | jq -r '.result // empty')" != "true" ]; then
-		skipped "monitor_peerCount falls back to 0 once the peer leaves" \
+		bad "monitor_peerCount falls back to 0 once the peer leaves" \
 			"node B refused the removePeer request"
 		return
 	fi
@@ -550,7 +571,7 @@ phase_peer_count() {
 		waited=$((waited + 1))
 	done
 	if [ "$b_peers" != 0 ]; then
-		skipped "monitor_peerCount falls back to 0 once the peer leaves" \
+		bad "monitor_peerCount falls back to 0 once the peer leaves" \
 			"the connection was still up after 30s (admin_peers=$b_peers)"
 		return
 	fi

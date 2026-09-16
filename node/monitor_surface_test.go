@@ -6,11 +6,14 @@
 package node
 
 import (
+	"bytes"
+	"encoding/json"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -96,6 +99,50 @@ func TestMonitorNamespaceHasNoSubscriptions(t *testing.T) {
 			if method.Type.Out(j) == subscription {
 				t.Errorf("%s is a subscription; the monitor namespace must work over HTTP", method.Name)
 			}
+		}
+	}
+}
+
+// TestMonitorNodeInfoWithoutEthProtocol pins the shape the operator guide
+// documents for a node that does not run the eth subprotocol: network and
+// difficulty stay present, as 0 and null.
+//
+// Every other test — here and in api_test.go — registers a fake eth protocol,
+// so the branch that leaves these two fields at their zero values is never
+// exercised. A monitoring stack parses this payload, and "field is absent"
+// and "field is null" are different failures on that side.
+func TestMonitorNodeInfoWithoutEthProtocol(t *testing.T) {
+	stack, err := New(&Config{P2P: p2p.Config{NoDiscovery: true, ListenAddr: "127.0.0.1:0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stack.Close()
+
+	// Deliberately no RegisterProtocols: there is no eth protocol to extract.
+	if err := stack.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := (&monitorAPI{stack}).NodeInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Network != 0 {
+		t.Errorf("network = %d, want 0 without the eth protocol", info.Network)
+	}
+	if info.Difficulty != nil {
+		t.Errorf("difficulty = %v, want nil without the eth protocol", info.Difficulty)
+	}
+
+	// The documented wire shape, not just the Go zero values: both keys must
+	// still be serialised.
+	encoded, err := json.Marshal(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"network":0`, `"difficulty":null`} {
+		if !bytes.Contains(encoded, []byte(want)) {
+			t.Errorf("monitor_nodeInfo payload missing %s; got %s", want, encoded)
 		}
 	}
 }

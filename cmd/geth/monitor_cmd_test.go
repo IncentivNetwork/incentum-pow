@@ -133,6 +133,9 @@ func assertAdminAbsent(t *testing.T, client *rpc.Client) {
 	for _, method := range []string{
 		"admin_nodeInfo", "admin_peers", "admin_datadir",
 		"admin_addPeer", "admin_removePeer", "admin_startHTTP", "admin_startWS",
+		// Served by eth's AdminAPI, registered under the same namespace, and
+		// named in the operator guide as part of what monitor replaces.
+		"admin_exportChain", "admin_importChain",
 	} {
 		err := client.Call(new(json.RawMessage), method)
 		if err == nil {

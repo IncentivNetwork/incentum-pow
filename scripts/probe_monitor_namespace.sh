@@ -117,9 +117,15 @@ echo
 
 # ---------------------------------------------------------------------------
 echo "--- monitor_nodeInfo ---"
+# result stays defined even when the call fails: the cross-check below reads it,
+# and aborting there under `set -u` would kill the run on exactly the
+# combination this probe exists to report.
+result=""
 info=$(call monitor_nodeInfo)
 if ! printf '%s' "$info" | jq -e 'has("result")' >/dev/null 2>&1; then
-	bad "monitor_nodeInfo answers" "$info"
+	# Only the error, never the body: a response can carry node identity.
+	bad "monitor_nodeInfo answers" \
+		"$(printf '%s' "$info" | jq -r '"code \(.error.code // "none"): \(.error.message // "no result and no error")"' 2>/dev/null || echo "unparseable response")"
 else
 	ok "monitor_nodeInfo answers"
 
@@ -130,32 +136,44 @@ else
 	# would store that as if it were a reading. Each field is checked for its
 	# JSON type and for a value that could actually have come from a running
 	# node.
-	check_field() { # label, jq predicate
+	# On failure only the shape is reported — the JSON type and whether the
+	# value was empty. A failing run is the one most worth attaching to a
+	# ticket, so it must not be the one that leaks node identity.
+	check_field() { # label, jq predicate, field path
 		if printf '%s' "$result" | jq -e "$2" >/dev/null 2>&1; then
 			ok "$1"
-		else
-			bad "$1" "$(printf '%s' "$result" | jq -c '{name,ip,listenAddr,ports,network,difficulty}')"
+			return
 		fi
+		bad "$1" "$(printf '%s' "$result" |
+			jq -r --arg f "$3" 'getpath($f | split(".")) as $v |
+				"\($f): type=\($v | type)" +
+				(if ($v | type) == "string" then ", length=\($v | length)"
+				 # A non-positive number is the failure worth naming and reveals
+				 # nothing; any other value is only described, since a port or a
+				 # network id is itself node detail.
+				 elif ($v | type) == "number" and $v <= 0 then ", value=\($v)"
+				 elif ($v | type) == "number" then ", outside the expected range"
+				 else "" end)' 2>/dev/null || echo "$3: could not be read")"
 	}
 
 	check_field "nodeInfo.name is a non-empty string" \
-		'(.name | type) == "string" and (.name | length) > 0'
+		'(.name | type) == "string" and (.name | length) > 0' name
 	check_field "nodeInfo.ip is a non-empty string" \
-		'(.ip | type) == "string" and (.ip | length) > 0'
+		'(.ip | type) == "string" and (.ip | length) > 0' ip
 	check_field "nodeInfo.listenAddr is a non-empty string" \
-		'(.listenAddr | type) == "string" and (.listenAddr | length) > 0'
+		'(.listenAddr | type) == "string" and (.listenAddr | length) > 0' listenAddr
 	# A node that is actually listening reports a real port, not 0.
 	check_field "nodeInfo.ports.listener is a port number" \
-		'(.ports.listener | type) == "number" and .ports.listener > 0 and .ports.listener < 65536'
+		'(.ports.listener | type) == "number" and .ports.listener > 0 and .ports.listener < 65536' ports.listener
 	# Discovery may legitimately be off, so only the type is required.
 	check_field "nodeInfo.ports.discovery is a number" \
-		'(.ports.discovery | type) == "number" and .ports.discovery >= 0'
+		'(.ports.discovery | type) == "number" and .ports.discovery >= 0' ports.discovery
 	check_field "nodeInfo.network is a positive number" \
-		'(.network | type) == "number" and .network > 0'
+		'(.network | type) == "number" and .network > 0' network
 	# difficulty is a *big.Int, which marshals as a bare JSON number. A
 	# monitoring stack parsing it as one breaks if that ever becomes a string.
 	check_field "nodeInfo.difficulty is a non-negative JSON number" \
-		'(.difficulty | type) == "number" and .difficulty >= 0'
+		'(.difficulty | type) == "number" and .difficulty >= 0' difficulty
 fi
 echo
 
@@ -164,7 +182,8 @@ echo "--- monitor_peerCount ---"
 peers=$(call monitor_peerCount)
 peer_count=$(printf '%s' "$peers" | jq -r 'if (.result | type) == "number" and .result >= 0 then .result else empty end')
 if [ -z "$peer_count" ]; then
-	bad "monitor_peerCount answers with a non-negative number" "$peers"
+	bad "monitor_peerCount answers with a non-negative number" \
+		"$(printf '%s' "$peers" | jq -r '"code \(.error.code // "none"): \(.error.message // "result was \(.result | type)")"' 2>/dev/null || echo "unparseable response")"
 else
 	ok "monitor_peerCount answers with a non-negative number ($peer_count)"
 fi
@@ -191,23 +210,28 @@ else
 	fi
 
 	admin_info=$(call admin_nodeInfo | jq -c '.result // empty')
-	if [ -z "$admin_info" ]; then
+	if [ -z "$result" ]; then
+		skipped "monitor_nodeInfo agrees with admin_nodeInfo" "monitor_nodeInfo did not answer"
+	elif [ -z "$admin_info" ]; then
 		skipped "monitor_nodeInfo agrees with admin_nodeInfo" "admin_nodeInfo did not answer"
 	else
+		# Only the names of the differing fields are reported. The values are
+		# the node's identity, and this comparison is most interesting exactly
+		# when it fails.
 		mismatch=""
 		for field in name ip listenAddr; do
 			a=$(printf '%s' "$admin_info" | jq -r --arg f "$field" '.[$f] // empty')
 			m=$(printf '%s' "$result" | jq -r --arg f "$field" '.[$f] // empty')
-			[ "$a" != "$m" ] && mismatch="$mismatch $field(admin=$a monitor=$m)"
+			[ "$a" != "$m" ] && mismatch="$mismatch $field"
 		done
 		a=$(printf '%s' "$admin_info" | jq -r '.ports.listener // empty')
 		m=$(printf '%s' "$result" | jq -r '.ports.listener // empty')
-		[ "$a" != "$m" ] && mismatch="$mismatch ports.listener(admin=$a monitor=$m)"
+		[ "$a" != "$m" ] && mismatch="$mismatch ports.listener"
 
 		if [ -z "$mismatch" ]; then
 			ok "monitor_nodeInfo agrees with admin_nodeInfo on every shared field"
 		else
-			bad "monitor_nodeInfo agrees with admin_nodeInfo" "differs:$mismatch"
+			bad "monitor_nodeInfo agrees with admin_nodeInfo" "fields that differ:$mismatch"
 		fi
 	fi
 fi
