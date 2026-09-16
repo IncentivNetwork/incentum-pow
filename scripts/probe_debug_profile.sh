@@ -190,12 +190,11 @@ detect_batch_limit() {
 	fi
 	msg=$(printf '%s' "$resp" |
 		jq -r 'if type == "array" then ([.[] | .error.message] | map(select(. != null)) | first) else .error.message end // empty' 2>/dev/null)
-	case "$msg" in
-	*"exceed the limit of "*) BATCH_LIMIT="${msg##*exceed the limit of }" ;;
-	esac
-	case "$BATCH_LIMIT" in
-	'' | *[!0-9]*) BATCH_LIMIT=0 ;;
-	esac
+	# Only a cap below the request size can reject this batch. Bound the
+	# untrusted value before arithmetic, whose diagnostics could disclose it.
+	if [[ "$msg" =~ ^batch\ too\ large:\ 101\ requests\ exceed\ the\ limit\ of\ ([1-9][0-9]?|100)$ ]]; then
+		BATCH_LIMIT="${BASH_REMATCH[1]}"
+	fi
 	if [ "$BATCH_LIMIT" -gt 0 ] && [ "$BATCH_LIMIT" -le 100 ]; then
 		printf '%s' "$resp" | jq -e --arg msg "batch too large: 101 requests exceed the limit of $BATCH_LIMIT" \
 			'all(.[]; .error.code == -32600 and .error.message == $msg)' >/dev/null && return 0
