@@ -122,6 +122,10 @@ call() { # endpoint, method
 	rpc "$1" "{\"jsonrpc\":\"2.0\",\"method\":\"$2\",\"params\":[],\"id\":1}"
 }
 
+call_with() { # endpoint, method, params-json
+	rpc "$1" "{\"jsonrpc\":\"2.0\",\"method\":\"$2\",\"params\":$3,\"id\":1}"
+}
+
 # start_geth starts a node. $1 label, $2 host HTTP port, $3 host WS port (0 when
 # WS is unused), $4 host p2p port, rest are geth flags — which must NOT include
 # --http.port/--ws.port/--port: under docker the node listens on fixed ports
@@ -143,15 +147,21 @@ start_geth() {
 	[ "$ws_port" != 0 ] && NODE_WS="ws://127.0.0.1:$ws_port"
 	NODE_P2P="$p2p_port"
 
+	# NODE_MAXPEERS lets the peering phase raise the limit; every other phase
+	# wants an isolated node.
 	local inert=(--networkid 1337 --syncmode full --cache 16
-		--maxpeers 0 --authrpc.port 0 --nodiscover --nat none)
+		--maxpeers "${NODE_MAXPEERS:-0}" --authrpc.port 0 --nodiscover --nat none)
 
 	if [ "$RUNNER" = docker ]; then
 		local name="monitorns-$label"
-		local ports=(-p "$http_port:8545" -p "$p2p_port:$p2p_port")
+		# Published ports are bound to loopback explicitly. Docker's default is
+		# every host interface, and one of the nodes below is deliberately
+		# started with admin in its module list — that control node must not be
+		# reachable from outside this machine for the length of the run.
+		local ports=(-p "127.0.0.1:$http_port:8545" -p "127.0.0.1:$p2p_port:$p2p_port")
 		local listen=(--http.port 8545 --port "$p2p_port")
 		if [ "$ws_port" != 0 ]; then
-			ports+=(-p "$ws_port:8546")
+			ports+=(-p "127.0.0.1:$ws_port:8546")
 			listen+=(--ws.port 8546)
 		fi
 		$DOCKER rm -f "$name" >/dev/null 2>&1
@@ -436,6 +446,124 @@ phase_minimum_privilege() {
 }
 
 # ---------------------------------------------------------------------------
+# Phase 6 — peerCount with a peer actually connected
+#
+# Every other phase runs on an isolated node, where the correct answer is 0.
+# An implementation that ignored the p2p server and returned a constant 0 would
+# satisfy all of them. This is the only check that distinguishes a real reading
+# from a plausible-looking constant, so it connects two nodes and expects the
+# count to move.
+# ---------------------------------------------------------------------------
+
+phase_peer_count() {
+	section "Phase 6: peerCount with a connected peer"
+
+	local a_http=$((BASE_PORT + 6)) a_p2p=$((BASE_PORT + 106))
+	local b_http=$((BASE_PORT + 7)) b_p2p=$((BASE_PORT + 107))
+
+	# admin is needed on both: one to read its enode, the other to dial it.
+	# These are throwaway local nodes and, under docker, bound to loopback.
+	NODE_MAXPEERS=5
+	if ! start_geth peer_a "$a_http" 0 "$a_p2p" \
+		--http --http.api eth,net,web3,monitor,admin; then
+		bad "peer node A did not start" "$(node_log | tail -3)"
+		NODE_MAXPEERS=0
+		return
+	fi
+	local a_ep="$NODE_HTTP"
+
+	if ! start_geth peer_b "$b_http" 0 "$b_p2p" \
+		--http --http.api eth,net,web3,monitor,admin; then
+		bad "peer node B did not start" "$(node_log | tail -3)"
+		NODE_MAXPEERS=0
+		return
+	fi
+	local b_ep="$NODE_HTTP"
+	NODE_MAXPEERS=0
+
+	local enode
+	enode=$(call "$a_ep" admin_nodeInfo | jq -r '.result.enode // empty')
+	if [ -z "$enode" ]; then
+		skipped "monitor_peerCount rises to 1 once a peer connects" \
+			"could not read node A's enode"
+		return
+	fi
+
+	if [ "$(call_with "$b_ep" admin_addPeer "[\"$enode\"]" | jq -r '.result // empty')" != "true" ]; then
+		skipped "monitor_peerCount rises to 1 once a peer connects" \
+			"node B refused the addPeer request"
+		return
+	fi
+
+	# Whether the nodes peered is established from admin_peers, not from the
+	# method under test. Polling monitor_peerCount itself would make an
+	# implementation that always returns 0 indistinguishable from two nodes that
+	# never connected — it would time out and be written off as an environment
+	# problem, which is exactly the hole this phase exists to close.
+	local waited=0 a_peers=-1 b_peers=-1
+	while [ "$waited" -lt 60 ]; do
+		a_peers=$(call "$a_ep" admin_peers | jq -r 'if (.result | type) == "array" then (.result | length) else -1 end')
+		b_peers=$(call "$b_ep" admin_peers | jq -r 'if (.result | type) == "array" then (.result | length) else -1 end')
+		[ "$a_peers" = 1 ] && [ "$b_peers" = 1 ] && break
+		sleep 0.5
+		waited=$((waited + 1))
+	done
+
+	if [ "$a_peers" != 1 ] || [ "$b_peers" != 1 ]; then
+		# Genuinely an environment problem: the p2p connection never formed, so
+		# there is nothing to read. Reported as unexercised, never as a pass.
+		skipped "monitor_peerCount rises to 1 once a peer connects" \
+			"the two nodes did not peer within 30s (admin_peers A=$a_peers B=$b_peers)"
+		return
+	fi
+
+	# The connection exists. From here a wrong count is the method's fault.
+	local a_count b_count
+	a_count=$(call "$a_ep" monitor_peerCount | jq -r 'if (.result | type) == "number" then .result else -1 end')
+	b_count=$(call "$b_ep" monitor_peerCount | jq -r 'if (.result | type) == "number" then .result else -1 end')
+
+	# Exactly one, not merely non-zero: there is exactly one connection.
+	if [ "$a_count" = 1 ]; then
+		ok "monitor_peerCount is 1 on node A once peered"
+	else
+		bad "monitor_peerCount is 1 on node A once peered" \
+			"admin_peers reports 1 connection, monitor_peerCount reports $a_count"
+	fi
+	if [ "$b_count" = 1 ]; then
+		ok "monitor_peerCount is 1 on node B once peered"
+	else
+		bad "monitor_peerCount is 1 on node B once peered" \
+			"admin_peers reports 1 connection, monitor_peerCount reports $b_count"
+	fi
+
+	# And the count follows the connection back down, which a constant cannot.
+	if [ "$(call_with "$b_ep" admin_removePeer "[\"$enode\"]" | jq -r '.result // empty')" != "true" ]; then
+		skipped "monitor_peerCount falls back to 0 once the peer leaves" \
+			"node B refused the removePeer request"
+		return
+	fi
+	waited=0
+	while [ "$waited" -lt 60 ]; do
+		b_peers=$(call "$b_ep" admin_peers | jq -r 'if (.result | type) == "array" then (.result | length) else -1 end')
+		[ "$b_peers" = 0 ] && break
+		sleep 0.5
+		waited=$((waited + 1))
+	done
+	if [ "$b_peers" != 0 ]; then
+		skipped "monitor_peerCount falls back to 0 once the peer leaves" \
+			"the connection was still up after 30s (admin_peers=$b_peers)"
+		return
+	fi
+	b_count=$(call "$b_ep" monitor_peerCount | jq -r 'if (.result | type) == "number" then .result else -1 end')
+	if [ "$b_count" = 0 ]; then
+		ok "monitor_peerCount falls back to 0 once the peer leaves"
+	else
+		bad "monitor_peerCount falls back to 0 once the peer leaves" \
+			"admin_peers reports no connections, monitor_peerCount reports $b_count"
+	fi
+}
+
+# ---------------------------------------------------------------------------
 
 echo "=== monitor namespace verification ==="
 prepare_runner
@@ -445,6 +573,7 @@ phase_admin_absent
 phase_not_listed
 phase_transports
 phase_minimum_privilege
+phase_peer_count
 
 # The stopped-node behaviour of both methods (ErrNodeStopped) cannot be reached
 # over a transport: the transport is only open while the node is running.

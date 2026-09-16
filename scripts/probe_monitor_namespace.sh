@@ -4,11 +4,15 @@
 # LIVE node.
 #
 # The namespace exists so monitoring can be served without exposing admin. This
-# script checks that it is enabled, that it answers with the documented payload,
-# and — where admin happens to still be exposed — that it reports the same
-# values monitoring used to take from admin. Both monitor methods are read-only
-# and cheap, so this is safe to run against a production node at any time; no
-# method it calls changes node state.
+# script checks that it is enabled and that it answers with the documented
+# payload — values and types, not just keys — and it treats a still-reachable
+# admin namespace as a failure rather than a note, since that is the condition
+# the namespace was introduced to remove. Where admin is reachable it also
+# reports whether monitor agrees with the readings it replaced.
+#
+# Both monitor methods are read-only and cheap, so this is safe to run against a
+# production node at any time; no method it calls changes node state. Nothing
+# identifying is printed, so a run can be attached to a public discussion.
 #
 # Usage:
 #   ./scripts/probe_monitor_namespace.sh http://host:8545
@@ -67,19 +71,17 @@ call() { # method -> raw response
 	rpc_call "{\"jsonrpc\":\"2.0\",\"method\":\"$1\",\"params\":[],\"id\":1}"
 }
 
-echo "=== Probing $ENDPOINT ==="
+# Nothing identifying is printed: the endpoint can carry credentials, and the
+# chain id and client version are exactly the metadata that must not travel with
+# an attached run. The result of each check is enough to act on.
+echo "=== Probing the configured endpoint ==="
 echo
 
 # ---------------------------------------------------------------------------
-echo "--- Node ---"
-chain_id=$(call eth_chainId | jq -r '.result // empty')
-if [ -z "$chain_id" ]; then
-	echo "  node did not answer eth_chainId; is $ENDPOINT reachable?" >&2
+if [ -z "$(call eth_chainId | jq -r '.result // empty')" ]; then
+	echo "  the endpoint did not answer eth_chainId; check that it is reachable" >&2
 	exit 2
 fi
-echo "  chainId: $chain_id"
-echo "  client:  $(call web3_clientVersion | jq -r '.result // empty')"
-echo
 
 # ---------------------------------------------------------------------------
 # Gate. Everything below assumes the namespace is served here. If it is not,
@@ -100,12 +102,16 @@ if ! printf '%s' "$modules" | jq -e 'has("monitor")' >/dev/null 2>&1; then
 fi
 ok "rpc_modules advertises monitor"
 
+# The namespace exists so that monitoring can be served without admin. A probe
+# that passed while admin was still reachable would not be checking that, so
+# this is a failed security condition rather than advice.
 admin_exposed=0
 if printf '%s' "$modules" | jq -e 'has("admin")' >/dev/null 2>&1; then
 	admin_exposed=1
-	printf '  \033[33mWARN\033[0m admin is exposed on this endpoint as well.\n'
-	printf '       The monitor namespace exists so monitoring does not need it;\n'
-	printf '       nothing below requires admin either.\n'
+	bad "admin is not exposed" \
+		"admin is served here too; monitoring no longer needs it, and it grants control of the node"
+else
+	ok "admin is not exposed"
 fi
 echo
 
@@ -118,47 +124,49 @@ else
 	ok "monitor_nodeInfo answers"
 
 	result=$(printf '%s' "$info" | jq -c '.result')
-	for field in name ip listenAddr ports network difficulty; do
-		if printf '%s' "$result" | jq -e --arg f "$field" 'has($f)' >/dev/null 2>&1; then
-			ok "nodeInfo carries $field"
-		else
-			bad "nodeInfo carries $field" "$result"
-		fi
-	done
-	for field in listener discovery; do
-		if printf '%s' "$result" | jq -e --arg f "$field" '.ports | has($f)' >/dev/null 2>&1; then
-			ok "nodeInfo carries ports.$field"
-		else
-			bad "nodeInfo carries ports.$field" "$result"
-		fi
-	done
 
+	# Presence is not enough. A live node can answer with the right keys and
+	# useless contents — null, an empty string, port 0 — and a monitoring stack
+	# would store that as if it were a reading. Each field is checked for its
+	# JSON type and for a value that could actually have come from a running
+	# node.
+	check_field() { # label, jq predicate
+		if printf '%s' "$result" | jq -e "$2" >/dev/null 2>&1; then
+			ok "$1"
+		else
+			bad "$1" "$(printf '%s' "$result" | jq -c '{name,ip,listenAddr,ports,network,difficulty}')"
+		fi
+	}
+
+	check_field "nodeInfo.name is a non-empty string" \
+		'(.name | type) == "string" and (.name | length) > 0'
+	check_field "nodeInfo.ip is a non-empty string" \
+		'(.ip | type) == "string" and (.ip | length) > 0'
+	check_field "nodeInfo.listenAddr is a non-empty string" \
+		'(.listenAddr | type) == "string" and (.listenAddr | length) > 0'
+	# A node that is actually listening reports a real port, not 0.
+	check_field "nodeInfo.ports.listener is a port number" \
+		'(.ports.listener | type) == "number" and .ports.listener > 0 and .ports.listener < 65536'
+	# Discovery may legitimately be off, so only the type is required.
+	check_field "nodeInfo.ports.discovery is a number" \
+		'(.ports.discovery | type) == "number" and .ports.discovery >= 0'
+	check_field "nodeInfo.network is a positive number" \
+		'(.network | type) == "number" and .network > 0'
 	# difficulty is a *big.Int, which marshals as a bare JSON number. A
 	# monitoring stack parsing it as one breaks if that ever becomes a string.
-	if [ "$(printf '%s' "$result" | jq -r '.difficulty | type')" = "number" ]; then
-		ok "difficulty is a JSON number, not a string"
-	else
-		bad "difficulty is a JSON number, not a string" \
-			"type is $(printf '%s' "$result" | jq -r '.difficulty | type')"
-	fi
-
-	if [ "$(printf '%s' "$result" | jq -r '.network')" != "0" ]; then
-		ok "network is populated from the eth protocol"
-	else
-		bad "network is populated from the eth protocol" \
-			"network is 0; the eth protocol info was not extracted"
-	fi
+	check_field "nodeInfo.difficulty is a non-negative JSON number" \
+		'(.difficulty | type) == "number" and .difficulty >= 0'
 fi
 echo
 
 # ---------------------------------------------------------------------------
 echo "--- monitor_peerCount ---"
 peers=$(call monitor_peerCount)
-peer_count=$(printf '%s' "$peers" | jq -r 'if (.result | type) == "number" then .result else empty end')
+peer_count=$(printf '%s' "$peers" | jq -r 'if (.result | type) == "number" and .result >= 0 then .result else empty end')
 if [ -z "$peer_count" ]; then
-	bad "monitor_peerCount answers with a number" "$peers"
+	bad "monitor_peerCount answers with a non-negative number" "$peers"
 else
-	ok "monitor_peerCount answers with a number ($peer_count)"
+	ok "monitor_peerCount answers with a non-negative number ($peer_count)"
 fi
 echo
 
