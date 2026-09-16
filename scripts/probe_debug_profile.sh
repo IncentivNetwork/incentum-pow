@@ -24,7 +24,8 @@
 #   ./scripts/probe_debug_profile.sh http://host:8545
 #
 # Environment:
-#   PROBE_TIMEOUT      per-request timeout in seconds (default 20)
+#   PROBE_TIMEOUT      per-request timeout in seconds (default 35, allowing
+#                      the profile's 30-second whole-request deadline)
 #   PROBE_UA           User-Agent to send; unset means curl's own
 #   PROBE_SCAN_BLOCKS  how far back to look for a transaction to trace
 #                      (default 50)
@@ -45,7 +46,7 @@ if [ -z "$ENDPOINT" ]; then
 	exit 2
 fi
 
-TIMEOUT="${PROBE_TIMEOUT:-20}"
+TIMEOUT="${PROBE_TIMEOUT:-35}"
 PROBE_UA="${PROBE_UA:-}"
 SCAN_BLOCKS="${PROBE_SCAN_BLOCKS:-50}"
 if [[ ! "$SCAN_BLOCKS" =~ ^[1-9][0-9]{0,5}$ ]]; then
