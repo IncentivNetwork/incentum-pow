@@ -171,7 +171,7 @@ Two paths: installing the pre-built release artifact (recommended) or building f
 
 **Install pre-built binary (recommended)**
 
-CI publishes a GitHub Release for each `v*-dpow-mainnet` tag containing a static `linux/amd64` tarball and its SHA-256 checksum file. Download both, verify, extract, and install:
+CI publishes a GitHub Release for each `v*` tag containing a static `linux/amd64` tarball and its SHA-256 checksum file. Release tags are named `v<version>-<theme>-mainnet`, so the theme varies between releases — `v1.11.8-dpow-mainnet` and `v1.11.9-dmbf-mainnet` were both published by the same workflow. Download both files, verify, extract, and install:
 
 ```bash
 RELEASE_TAG="<the-actual-release-tag>"   # e.g. v1.11.8-dpow-mainnet

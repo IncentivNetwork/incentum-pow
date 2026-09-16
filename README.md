@@ -63,6 +63,10 @@ or, to build the full suite of utilities:
 make all
 ```
 
+Cutting a release is documented separately in [Release process](docs/release-process.md),
+including the version-bump rule that keeps `geth version` and the release tag in
+agreement.
+
 ## Executables
 
 The go-ethereum project comes with several wrappers/executables found in the `cmd`
