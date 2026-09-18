@@ -366,10 +366,15 @@ func TestGraphQLConcurrentResolvers(t *testing.T) {
 
 func createNode(t *testing.T) *node.Node {
 	stack, err := node.New(&node.Config{
-		HTTPHost:     "127.0.0.1",
-		HTTPPort:     0,
-		WSHost:       "127.0.0.1",
-		WSPort:       0,
+		HTTPHost: "127.0.0.1",
+		HTTPPort: 0,
+		WSHost:   "127.0.0.1",
+		WSPort:   0,
+		// An empty module list registers every namespace, debug included, and
+		// is rejected at startup. These tests exercise GraphQL rather than
+		// JSON-RPC, so any explicit namespace will do.
+		HTTPModules:  []string{"web3"},
+		WSModules:    []string{"web3"},
 		HTTPTimeouts: node.DefaultConfig.HTTPTimeouts,
 	})
 	if err != nil {
