@@ -85,9 +85,11 @@ is what makes that instruction impossible to satisfy: the operator does the
 right check, sees a mismatch, and has no way to tell a stale tag from a wrong
 download.
 
-Note that `.github/workflows/build.yml` runs tests on pull requests into `main`
-and on `v*` tags only. A version-bump PR opened against `develop` gets no CI, so
-run the suite locally before merging it:
+Note that `.github/workflows/build.yml` runs the linter, tests and `pr-build` on
+pull requests into `main` and `develop`. The `release` job remains separate and
+runs only for pushed `v*` tags.
+
+For a targeted local preflight before opening a version-bump PR:
 
 ```bash
 go run build/ci.go test ./params/... ./cmd/geth/...

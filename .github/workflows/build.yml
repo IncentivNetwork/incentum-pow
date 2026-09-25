@@ -3,7 +3,7 @@ on:
   push:
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
 
 permissions:
   contents: read
