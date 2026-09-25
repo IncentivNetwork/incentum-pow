@@ -54,6 +54,28 @@ v1.11.7-dpow-mainnet     v1.11.8-dpow-mainnet     v1.11.9-dmbf-mainnet
 The theme is free-form and is not matched by anything — CI triggers on `v*`, and
 the version part is the half that has to agree with `params/version.go`.
 
+### Tag type and publication
+
+Release tags must be **annotated tags**, with a tagger and a message. A plain
+`git tag <name>` creates a lightweight tag and loses that release metadata.
+Create and verify the tag locally before publishing it:
+
+```bash
+tag=v1.11.11-example-mainnet
+git tag -a "$tag" -m "Release $tag" <main-merge-commit>
+test "$(git cat-file -t "refs/tags/$tag")" = tag
+git rev-parse "$tag^{}" # must print the intended merge commit on main
+git push origin "refs/tags/$tag"
+```
+
+Push the tag only after both checks pass. Never move, delete or force-push a
+published release tag: pushing a replacement `v*` tag re-runs the release job
+and can replace assets that operators have already downloaded. If a published
+tag is wrong, preserve it as historical evidence and cut a new release.
+
+`v1.11.10-rpc-mainnet` is a historical exception: it is a lightweight tag, but
+it points at the verified release commit and must not be rewritten.
+
 ## Where the version comes from
 
 `params/version.go` defines four constants and everything else derives from
