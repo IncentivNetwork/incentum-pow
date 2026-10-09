@@ -61,6 +61,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		Checkpoint              *params.TrustedCheckpoint      `toml:",omitempty"`
 		CheckpointOracle        *params.CheckpointOracleConfig `toml:",omitempty"`
 		OverrideShanghai        *uint64                        `toml:",omitempty"`
+		OverrideWebAuthnStrict  *uint64                        `toml:",omitempty"`
 	}
 	var enc Config
 	enc.Genesis = c.Genesis
@@ -106,6 +107,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.Checkpoint = c.Checkpoint
 	enc.CheckpointOracle = c.CheckpointOracle
 	enc.OverrideShanghai = c.OverrideShanghai
+	enc.OverrideWebAuthnStrict = c.OverrideWebAuthnStrict
 	return &enc, nil
 }
 
@@ -155,6 +157,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		Checkpoint              *params.TrustedCheckpoint      `toml:",omitempty"`
 		CheckpointOracle        *params.CheckpointOracleConfig `toml:",omitempty"`
 		OverrideShanghai        *uint64                        `toml:",omitempty"`
+		OverrideWebAuthnStrict  *uint64                        `toml:",omitempty"`
 	}
 	var dec Config
 	if err := unmarshal(&dec); err != nil {
@@ -288,6 +291,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.OverrideShanghai != nil {
 		c.OverrideShanghai = dec.OverrideShanghai
+	}
+	if dec.OverrideWebAuthnStrict != nil {
+		c.OverrideWebAuthnStrict = dec.OverrideWebAuthnStrict
 	}
 	return nil
 }

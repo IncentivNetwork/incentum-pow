@@ -161,6 +161,11 @@ func TestNodeStatusIntegrationSingleNodeMining(t *testing.T) {
 	ethConfig := ethconfig.Config{
 		Genesis: genesis,
 		Ethash: ethash.Config{
+			// A test-sized DAG. The full one does not finish inside this test's own
+			// two-minute timeout on CI hardware — it timed out at 120.03s twice when this
+			// line was not here — and what the test is about is the status a node reports
+			// while mining, not the cost of real proof of work.
+			PowMode:     ethash.ModeTest,
 			CachesInMem: 1,
 		},
 	}

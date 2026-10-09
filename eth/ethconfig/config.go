@@ -207,6 +207,19 @@ type Config struct {
 
 	// OverrideShanghai (TODO: remove after the fork)
 	OverrideShanghai *uint64 `toml:",omitempty"`
+
+	// OverrideWebAuthnStrict (TODO: remove after the fork)
+	OverrideWebAuthnStrict *uint64 `toml:",omitempty"`
+}
+
+// ChainOverrides collects the fork overrides this configuration asks for. Both the
+// full and the light client build their overrides here, so a new override cannot
+// reach one of them and silently be ignored by the other.
+func (c *Config) ChainOverrides() core.ChainOverrides {
+	return core.ChainOverrides{
+		OverrideShanghai:       c.OverrideShanghai,
+		OverrideWebAuthnStrict: c.OverrideWebAuthnStrict,
+	}
 }
 
 // CreateConsensusEngine creates a consensus engine for the given chain configuration.

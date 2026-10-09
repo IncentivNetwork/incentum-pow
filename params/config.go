@@ -271,6 +271,7 @@ var (
 		MinerRegistryAddress:          nil,
 		IrregularStateChangeHeight:    nil,
 		ShanghaiTime:                  newUint64(1755203160),
+		WebAuthnStrictTime:            newUint64(1854446400), // 2028-10-06 12:00:00 UTC; activates unless rescheduled
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
@@ -303,7 +304,7 @@ var (
 		FastBlock:                  big.NewInt(0),
 		ZeroRewardBlock:            big.NewInt(0),
 		MergeNetsplitBlock:         nil,
-		DPoWTime:                   newUint64(1781182800), // 2026-06-11 13:00:00 UTC (16:00 EEST Kyiv)
+		DPoWTime:                   newUint64(1781182800), // 2026-06-11 13:00:00 UTC
 		MinerRegistryAddress:       newAddress(common.HexToAddress("0xbe73e1F106Bd96538Be2a30F2eE94264850aFd7E")),
 		DPoWMaturityTime:           86400,
 		DPoWMaturityBlocks:         17280,
@@ -327,7 +328,11 @@ var (
 		// 12 600 gwei (= legacy MinBaseFeeUpdated, zero fee-market jump),
 		// 24-hour timelock, 13 000-block activation delay, governance =
 		// existing DPoW Governance Safe 0x10D9dEEb09bA23b2bD9739F698b3dFa9D8F95Ad4.
-		DynamicMinBaseFeeTime:         newUint64(1782259200), // 2026-06-24 00:00:00 UTC
+		DynamicMinBaseFeeTime: newUint64(1782259200), // 2026-06-24 00:00:00 UTC
+		// Set by the operator for 2026-10-09 00:00:00 UTC. A bundled time
+		// activates on its own, so every mainnet node has to carry this release before
+		// then; docs/webauthn/rollout.md has the gates and the roll-call.
+		WebAuthnStrictTime:            newUint64(1791504000), // 2026-10-09 00:00:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
@@ -374,7 +379,7 @@ var (
 		// DPoWTime. The brief "DPoW off" window between binary upgrade and
 		// activation is acceptable because the devnet fleet is small, fully
 		// operator-controlled, and has no rogue miner that could exploit it.
-		// See DPOW-008-9 (#95) for the full rationale.
+		// See DPOW-008-9 for the full rationale.
 		DPoWTime:                   newUint64(1781614800), // 2026-06-16 13:00:00 UTC
 		MinerRegistryAddress:       newAddress(common.HexToAddress("0xdb6EEC53d173554730e342d6703c4AD3fD78604b")),
 		DPoWMaturityTime:           300,
@@ -399,6 +404,7 @@ var (
 		// MinBaseFeeUpdated), 10-minute timelock, 100-block activation delay,
 		// governance = deployer EOA 0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b.
 		DynamicMinBaseFeeTime:         newUint64(1782142800), // 2026-06-22 15:40:00 UTC
+		WebAuthnStrictTime:            newUint64(1791291600), // 2026-10-06 13:00:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
 		TerminalTotalDifficulty:       nil,
@@ -674,6 +680,30 @@ type ChainConfig struct {
 	// ordered (block forks first, then time forks).
 	DynamicMinBaseFeeTime *uint64 `json:"dynamicMinBaseFeeTime,omitempty"`
 
+	// WebAuthnStrictTime is the Unix timestamp at which the WebAuthn precompile
+	// (0x111) switches to canonical-input parsing. nil = never activates,
+	// 0 = already activated.
+	//
+	// Before activation the precompile locates r,s,x,y purely from the lengths
+	// declared inside its input and accepts any input at least long enough to hold
+	// them, so bytes past the last field are ignored; it also re-serialises those
+	// four words through big.Int and builds its message buffer by appending into
+	// the caller-supplied input slice. From activation onwards the input must end
+	// exactly at the last field, the four words are taken verbatim from the input,
+	// and the message is hashed as a stream, so no buffer is built at all. See
+	// core/vm/contracts.go
+	// (webAuthnVerify.Run).
+	//
+	// This changes the value a 0x111 call returns for non-canonically encoded
+	// input, so it is a consensus change: every node must run a binary carrying
+	// this timestamp before it fires, or it will split from the network.
+	//
+	// Timestamp-based for the same reason as DPoWTime and DynamicMinBaseFeeTime:
+	// this is a post-Shanghai fork, so it must be expressed as a timestamp to keep
+	// forkid chronologically ordered (block forks first, then time forks) — see
+	// CheckConfigForkOrder.
+	WebAuthnStrictTime *uint64 `json:"webauthnStrictTime,omitempty"`
+
 	CancunTime *uint64 `json:"cancunTime,omitempty"` // Cancun switch time (nil = no fork, 0 = already on cancun)
 	PragueTime *uint64 `json:"pragueTime,omitempty"` // Prague switch time (nil = no fork, 0 = already on prague)
 
@@ -812,6 +842,9 @@ func (c *ChainConfig) Description() string {
 	if c.DynamicMinBaseFeeTime != nil {
 		banner += fmt.Sprintf(" - DynamicMinBaseFee:           @%-10v (%s)\n", *c.DynamicMinBaseFeeTime, formatTimestampFork(*c.DynamicMinBaseFeeTime))
 	}
+	if c.WebAuthnStrictTime != nil {
+		banner += fmt.Sprintf(" - WebAuthnStrict:              @%-10v (%s)\n", *c.WebAuthnStrictTime, formatTimestampFork(*c.WebAuthnStrictTime))
+	}
 	if c.CancunTime != nil {
 		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, formatTimestampFork(*c.CancunTime))
 	}
@@ -906,6 +939,38 @@ func (c *ChainConfig) IsMinBaseFeeChange(num *big.Int) bool {
 // IsDynamicMinBaseFee returns whether time is either equal to the Dynamic Min Base Fee fork timestamp or greater.
 func (c *ChainConfig) IsDynamicMinBaseFee(time uint64) bool {
 	return isTimestampForked(c.DynamicMinBaseFeeTime, time)
+}
+
+// IsWebAuthnStrict returns whether time is either equal to the WebAuthnStrict fork
+// time or greater, i.e. whether the 0x111 precompile must require canonically
+// encoded input.
+func (c *ChainConfig) IsWebAuthnStrict(time uint64) bool {
+	return isTimestampForked(c.WebAuthnStrictTime, time)
+}
+
+// BundledIncentivConfig returns the configuration this binary ships for the Incentiv
+// network with the given genesis hash and chain id, or nil for any other chain.
+//
+// Both have to match. The chain id alone would claim any chain that happens to use one
+// of these ids and hand it a schedule built for a different network; the genesis hash
+// alone would not separate mainnet from devnet, which share one.
+//
+// Note what this does and does not exclude. A chain initialised from the genesis.json
+// in TESTNET_V2_DEPLOYMENT.md hashes to IncentivTestnetGenesisHash — the config fields
+// of a genesis do not enter its block hash — so it matches, and it should: by its
+// genesis and chain id it *is* that network, the same way a chain built from Ethereum's
+// genesis is Ethereum. What stays outside is a chain with its own genesis, whatever
+// chain id it chose.
+func BundledIncentivConfig(genesisHash common.Hash, chainID *big.Int) *ChainConfig {
+	if chainID == nil {
+		return nil
+	}
+	for _, n := range incentivNetworks {
+		if n.genesis == genesisHash && n.config.ChainID != nil && n.config.ChainID.Cmp(chainID) == 0 {
+			return n.config
+		}
+	}
+	return nil
 }
 
 // IsArrowGlacier returns whether num is either equal to the Arrow Glacier (EIP-4345) fork block or greater.
@@ -1046,6 +1111,59 @@ func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64, time u
 	return lasterr
 }
 
+// incentivNetworks is the one table of networks this binary ships a schedule for.
+// Both lookups below read it, so they cannot come to disagree about what is ours.
+var incentivNetworks = []struct {
+	genesis common.Hash
+	config  *ChainConfig
+}{
+	{IncentivMainnetGenesisHash, IncentivMainnetChainConfig},
+	{IncentivTestnetGenesisHash, IncentivTestnetChainConfig},
+	{IncentivDevnetGenesisHash, IncentivDevnetChainConfig},
+}
+
+// IsIncentivGenesisHash reports whether hash is the genesis of one of the Incentiv
+// networks. It cannot say which: mainnet and devnet share a genesis, and the chain id
+// is what separates them.
+func IsIncentivGenesisHash(hash common.Hash) bool {
+	for _, n := range incentivNetworks {
+		if n.genesis == hash {
+			return true
+		}
+	}
+	return false
+}
+
+// HistoricalForksCompatible reports whether a and b agree about the block-numbered
+// settings for every block at or below head.
+// checkCompatible does not compare these, so a difference in them would be applied
+// with no error and no rewind — silently changing how already-validated history is
+// re-validated. Anything that swaps one config for another has to check them itself.
+func HistoricalForksCompatible(a, b *ChainConfig, head uint64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	// isForkBlockIncompatible is the same test checkCompatible applies to the forks it
+	// does know: a difference matters only once one of the two settings has taken
+	// effect. A setting both configs place ahead of the head changes no block that
+	// exists, so adopting across it is safe — and it is how this chain has shipped
+	// these settings, as a value some releases ahead of every node.
+	headNumber := new(big.Int).SetUint64(head)
+	for _, pair := range [][2]*big.Int{
+		{a.FeePoolBlock, b.FeePoolBlock},
+		{a.MinBaseFeeBlock, b.MinBaseFeeBlock},
+		{a.MinBaseFeeChangeHeight, b.MinBaseFeeChangeHeight},
+		{a.ZeroRewardBlock, b.ZeroRewardBlock},
+		{a.FastBlock, b.FastBlock},
+		{a.IrregularStateChangeHeight, b.IrregularStateChangeHeight},
+	} {
+		if isForkBlockIncompatible(pair[0], pair[1], headNumber) {
+			return false
+		}
+	}
+	return true
+}
+
 // CheckConfigForkOrder checks that we don't "skip" any forks, geth isn't pluggable enough
 // to guarantee that forks can be implemented in a different order than on official networks
 func (c *ChainConfig) CheckConfigForkOrder() error {
@@ -1075,6 +1193,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "shanghaiTime", timestamp: c.ShanghaiTime},
 		{name: "dpowTime", timestamp: c.DPoWTime, optional: true},
 		{name: "dynamicMinBaseFeeTime", timestamp: c.DynamicMinBaseFeeTime, optional: true},
+		{name: "webauthnStrictTime", timestamp: c.WebAuthnStrictTime, optional: true},
 		{name: "cancunTime", timestamp: c.CancunTime, optional: true},
 		{name: "pragueTime", timestamp: c.PragueTime, optional: true},
 	} {
@@ -1201,6 +1320,9 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 				c.GetMinBaseFeeContractAddr(), newcfg.GetMinBaseFeeContractAddr()),
 			c.DynamicMinBaseFeeTime, newcfg.DynamicMinBaseFeeTime)
 	}
+	if isForkTimestampIncompatible(c.WebAuthnStrictTime, newcfg.WebAuthnStrictTime, headTimestamp) {
+		return newTimestampCompatError(WebAuthnStrictCompatWhat, c.WebAuthnStrictTime, newcfg.WebAuthnStrictTime)
+	}
 	if isForkTimestampIncompatible(c.CancunTime, newcfg.CancunTime, headTimestamp) {
 		return newTimestampCompatError("Cancun fork timestamp", c.CancunTime, newcfg.CancunTime)
 	}
@@ -1271,6 +1393,12 @@ func configTimestampEqual(x, y *uint64) bool {
 	}
 	return *x == *y
 }
+
+// WebAuthnStrictCompatWhat is the What a ConfigCompatError carries when the two configs
+// disagree about webauthnStrictTime. It is exported so that a caller deciding what to tell
+// an operator can tell that disagreement from an older fork's, rather than matching on the
+// text and silently falling into the wrong advice if it ever changes.
+const WebAuthnStrictCompatWhat = "WebAuthnStrict fork timestamp"
 
 // ConfigCompatError is raised if the locally-stored blockchain is initialised with a
 // ChainConfig that would alter the past.
@@ -1389,6 +1517,7 @@ type Rules struct {
 	IsByzantium, IsConstantinople, IsPetersburg, IsIstanbul bool
 	IsBerlin, IsLondon                                      bool
 	IsMerge, IsShanghai, IsCancun, IsPrague                 bool
+	IsWebAuthnStrict                                        bool
 }
 
 // Rules ensures c's ChainID is not nil.
@@ -1413,5 +1542,10 @@ func (c *ChainConfig) Rules(num *big.Int, isMerge bool, timestamp uint64) Rules 
 		IsShanghai:       c.IsShanghai(timestamp),
 		IsCancun:         c.IsCancun(timestamp),
 		IsPrague:         c.IsPrague(timestamp),
+		// The WebAuthnStrict precompile set derives from the Berlin set, and
+		// CheckConfigForkOrder never compares block forks with timestamped ones, so
+		// a config can arm this fork below berlinBlock. Gate it here rather than
+		// hand out Berlin pricing early on such a chain.
+		IsWebAuthnStrict: c.IsBerlin(num) && c.IsWebAuthnStrict(timestamp),
 	}
 }

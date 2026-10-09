@@ -505,8 +505,8 @@ func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
 	// on operator nodes today: no DPoW code at all, so none of the DPoW-related
 	// fields are present in the embedded ChainConfig. The maturity values are
 	// also zeroed (despite not affecting forkid) to keep the simulation honest.
-	// The dynamic-min-base-fee fork added later is zeroed too, because the
-	// v1.11.6-stable binary predates that feature as well.
+	// The dynamic-min-base-fee and WebAuthnStrict forks added later are zeroed
+	// too, because the v1.11.6-stable binary predates those features as well.
 	preDPoW := *cfg
 	preDPoW.DPoWTime = nil
 	preDPoW.MinerRegistryAddress = nil
@@ -514,6 +514,7 @@ func TestIncentivMainnetDPoWForkIDs(t *testing.T) {
 	preDPoW.DPoWMaturityBlocks = 0
 	preDPoW.DynamicMinBaseFeeTime = nil
 	preDPoW.MinBaseFeeContractAddr = nil
+	preDPoW.WebAuthnStrictTime = nil
 
 	preDPoWID := NewID(&preDPoW, genesis, preHead, preTime)
 	newBinaryID := NewID(cfg, genesis, preHead, preTime)

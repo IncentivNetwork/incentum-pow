@@ -41,8 +41,17 @@ type (
 )
 
 func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
+	// Newest fork first, as elsewhere in this switch. WebAuthnStrict derives from
+	// the Berlin set, so it must stay above the block-based cases and any set added
+	// later has to go above it — otherwise this case shadows it once the timestamp
+	// passes. Reaching it before Berlin would hand out Berlin pricing early;
+	// Rules.IsWebAuthnStrict requires IsBerlin as well, so that cannot happen here
+	// whatever a config says, and params.TestIncentivBerlinPrecedesWebAuthnStrict
+	// pins the bundled configs to the same ordering.
 	var precompiles map[common.Address]PrecompiledContract
 	switch {
+	case evm.chainRules.IsWebAuthnStrict:
+		precompiles = PrecompiledContractsWebAuthnStrict
 	case evm.chainRules.IsBerlin:
 		precompiles = PrecompiledContractsBerlin
 	case evm.chainRules.IsIstanbul:
@@ -219,6 +228,16 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	}
 
 	if isPrecompile {
+		// A precompile must not write to the buffer it is handed. At depth 0 that
+		// buffer is the transaction's own calldata — state_transition.go passes
+		// msg.Data, which is tx.Data(), without copying — and calldata has to stay
+		// exactly as it was signed. Hand a copy down at this depth. Nothing inside
+		// the EVM can observe a write here, so the state transition is unchanged;
+		// deeper calls keep aliasing the caller's memory, where a write is
+		// observable and so belongs to consensus.
+		if evm.depth == 0 {
+			input = common.CopyBytes(input)
+		}
 		ret, gas, err = RunPrecompiledContract(p, input, gas)
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
