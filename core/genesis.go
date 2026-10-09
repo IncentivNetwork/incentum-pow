@@ -23,7 +23,9 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -302,6 +304,85 @@ func (e *GenesisMismatchError) Error() string {
 // ChainOverrides contains the changes to chain config.
 type ChainOverrides struct {
 	OverrideShanghai *uint64
+
+	// OverrideWebAuthnStrict reschedules or arms the WebAuthnStrict fork without a
+	// new binary, on any chain including one this binary ships a schedule for, and
+	// takes precedence over that schedule. It cannot turn the fork off: a *uint64
+	// carries no value meaning "never", and 0 is rejected by CheckConfigForkOrder for
+	// preceding the timestamp fork before it in the ordering — dynamicMinBaseFeeTime on
+	// mainnet and devnet, shanghaiTime on testnet. Postponing it far enough is the only
+	// lever.
+	OverrideWebAuthnStrict *uint64
+}
+
+// apply returns config with the requested fork overrides applied. It copies rather
+// than writing through the pointer, because the configs it is handed are shared:
+// configOrDefault returns package-level values such as params.AllEthashProtocolChanges,
+// and the private-network branch hands it the very config CheckCompatible is about to
+// compare against. With no overrides it returns its argument unchanged, as upstream
+// does, because callers are handed the configuration they passed and some of them go
+// on to mutate it.
+func (o *ChainOverrides) apply(config *params.ChainConfig) *params.ChainConfig {
+	if config == nil || !hasOverrides(o) {
+		return config
+	}
+	cpy := *config
+	if o.OverrideShanghai != nil {
+		cpy.ShanghaiTime = o.OverrideShanghai
+	}
+	if o.OverrideWebAuthnStrict != nil {
+		cpy.WebAuthnStrictTime = o.OverrideWebAuthnStrict
+	}
+	return &cpy
+}
+
+// incentivBundledConfig reports the configuration this binary ships for the Incentiv
+// network that the stored genesis hash and chain id identify together, and whether one
+// was found but must not be used.
+//
+// Two bounds, both on the head. checkCompatible does not compare the block-numbered
+// settings, so adopting a config that disagrees about those would apply them to history
+// that never followed them, with no error and no rewind — but only a setting at or below
+// the head rewrites a block that exists, and this chain ships those settings as a value
+// some releases ahead of every node. And a difference checkCompatible *does* object to is
+// not taken either: adopting it would hand NewBlockChain a ConfigCompatError, which it
+// acts on by rewinding the chain. Nobody asked for that by starting without a network
+// flag, so an implicit adoption never rewinds; accepting one is what the flag is for. The
+// bound is on the adoption, not on the whole start: an override is applied over the
+// stored config afterwards, and one naming a timestamp already behind the head does
+// produce a rewind — which is the operator asking for it in as many words.
+func incentivBundledConfig(storedcfg *params.ChainConfig, ghash common.Hash, head *types.Header, overrides *ChainOverrides) (adopt *params.ChainConfig, refusal configRefusal, cause string) {
+	if storedcfg == nil || head == nil {
+		return nil, refusalNone, ""
+	}
+	bundled := params.BundledIncentivConfig(ghash, storedcfg.ChainID)
+	if bundled == nil {
+		return nil, refusalNone, ""
+	}
+	// The candidate is the bundled schedule as this node would run it. An override is
+	// part of that: comparing the un-overridden schedule reports a difference the node
+	// would never have had, and the warning built on it told a healthy node it would
+	// not activate.
+	candidate := overrides.apply(bundled)
+	// Both answers, always: which refusal fires is decided by the block-numbered
+	// comparison first, but a caller describing a history refusal needs to know whether
+	// taking the schedule under a network flag would *also* rewind the chain. It often
+	// would — the documented testnet genesis.json carries no shanghaiTime — and saying
+	// "the flag does not rewind this datadir" on the strength of the block-numbered
+	// settings alone was wrong for exactly that case.
+	compat := storedcfg.CheckCompatible(candidate, head.Number.Uint64(), head.Time)
+	if compat != nil {
+		// What disagreed decides what to tell the operator: this fork's timestamp is one
+		// thing, an older fork the stored config never had is another.
+		cause = compat.What
+	}
+	if !params.HistoricalForksCompatible(storedcfg, candidate, head.Number.Uint64()) {
+		return nil, refusalHistory, cause
+	}
+	if compat != nil {
+		return nil, refusalRewind, cause
+	}
+	return bundled, refusalNone, ""
 }
 
 // SetupGenesisBlock writes or updates the genesis block in db.
@@ -321,16 +402,66 @@ func SetupGenesisBlock(db ethdb.Database, triedb *trie.Database, genesis *Genesi
 	return SetupGenesisBlockWithOverride(db, triedb, genesis, nil)
 }
 
+// SameChainID reports whether two chain ids are the same, nil included. A chain id is
+// not a fork block, so this is a plain comparison rather than checkCompatible's; the
+// setup path and the read-only chain commands both decide the wrong-network case with it.
+func SameChainID(a, b *big.Int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Cmp(b) == 0
+}
+
+// webAuthnStrictRefusalWindow is how far ahead of a network's bundled activation a
+// refused schedule stops being a warning and becomes a failed start. A node that keeps a
+// configuration without the fork follows a different chain from activation, so it must
+// not be left running into it looking healthy. A network whose activation is still far
+// off — testnet's is in 2028, and its window is yet to be agreed — gets the warning it
+// always got, so a stand that ran on the previous release does not stop on this one for
+// a fork two years away.
+const webAuthnStrictRefusalWindow = 30 * 24 * 60 * 60
+
+// startupClock is what the refusal below reads the wall clock from. A variable so a test
+// can place the clock near an activation that its synthetic head is far from.
+var startupClock = time.Now
+
+// webAuthnStrictActivationNear reports whether bundled's activation is within
+// webAuthnStrictRefusalWindow of now, or already behind it. "Now" is the later of the
+// head's timestamp and the wall clock: a node restored from an old backup has a head
+// weeks behind, and the activation it would miss is measured from today, not from where
+// its chain stopped. The consensus rules themselves are still chosen by block time; only
+// this start-up guard reads the clock.
+func webAuthnStrictActivationNear(bundled *params.ChainConfig, headTime uint64) bool {
+	if bundled == nil || bundled.WebAuthnStrictTime == nil {
+		return false
+	}
+	now := headTime
+	if wall := startupClock().Unix(); wall > 0 && uint64(wall) > now {
+		now = uint64(wall)
+	}
+	return now+webAuthnStrictRefusalWindow >= *bundled.WebAuthnStrictTime
+}
+
+// hasOverrides reports whether any fork override was actually requested.
+func hasOverrides(overrides *ChainOverrides) bool {
+	return overrides != nil && *overrides != ChainOverrides{}
+}
+
+// checkConfigInvariants runs the chain-config checks that every startup path has to
+// pass, on the configuration that path actually ended up with.
+func checkConfigInvariants(config *params.ChainConfig) error {
+	if err := config.CheckConfigForkOrder(); err != nil {
+		return err
+	}
+	if err := config.CheckDPoWConfig(); err != nil {
+		return err
+	}
+	return config.CheckMinBaseFeeConfig()
+}
+
 func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, genesis *Genesis, overrides *ChainOverrides) (*params.ChainConfig, common.Hash, error) {
 	if genesis != nil && genesis.Config == nil {
 		return params.AllEthashProtocolChanges, common.Hash{}, errGenesisNoConfig
-	}
-	applyOverrides := func(config *params.ChainConfig) {
-		if config != nil {
-			if overrides != nil && overrides.OverrideShanghai != nil {
-				config.ShanghaiTime = overrides.OverrideShanghai
-			}
-		}
 	}
 	// Just commit the new block if there is no stored genesis block.
 	stored := rawdb.ReadCanonicalHash(db, 0)
@@ -341,12 +472,40 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 		} else {
 			log.Info("Writing custom genesis block")
 		}
+		// Check the override before committing, so a bad one leaves no database behind.
+		// Only the override needs checking here: Commit runs the same three checks on
+		// genesis.Config, which is what cfg is when there is nothing to override.
+		cfg := overrides.apply(genesis.Config)
+		if hasOverrides(overrides) {
+			if err := checkConfigInvariants(cfg); err != nil {
+				return cfg, common.Hash{}, err
+			}
+		}
 		block, err := genesis.Commit(db, triedb)
 		if err != nil {
 			return genesis.Config, common.Hash{}, err
 		}
-		applyOverrides(genesis.Config)
-		return genesis.Config, block.Hash(), nil
+		if hasOverrides(overrides) {
+			// Commit wrote genesis.Config; the overridden one has to replace it.
+			rawdb.WriteChainConfig(db, block.Hash(), cfg)
+		}
+		return cfg, block.Hash(), nil
+	}
+	// A chain id is not a schedule. CheckCompatible reports a changed one as an
+	// incompatibility at block 0, which the guard at the end of this function discards,
+	// so a genesis specification naming another chain id used to be written over the
+	// stored one with no error and no rewind — and the branch just below, which
+	// re-commits a genesis whose state is missing, wrote it without any comparison at
+	// all. Incentiv mainnet and devnet share a genesis hash, so the wrong network flag is
+	// exactly such a specification. Checked here, before anything is written, and only
+	// for a specification of the stored genesis: a different genesis is a different
+	// chain altogether, which the branches below report as the mismatch it is.
+	if genesis != nil && genesis.ToBlock().Hash() == stored {
+		if storedcfg := rawdb.ReadChainConfig(db, stored); storedcfg != nil && !SameChainID(genesis.Config.ChainID, storedcfg.ChainID) {
+			return genesis.Config, stored, fmt.Errorf("this database holds chain %v and the genesis specification names chain %v; "+
+				"a chain id cannot change on a database that already has one. Incentiv mainnet and devnet share a genesis hash, "+
+				"so check the network flag", storedcfg.ChainID, genesis.Config.ChainID)
+		}
 	}
 	// We have the genesis block in database(perhaps in ancient database)
 	// but the corresponding state is missing.
@@ -360,12 +519,20 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 		if hash != stored {
 			return genesis.Config, hash, &GenesisMismatchError{stored, hash}
 		}
+		cfg := overrides.apply(genesis.Config)
+		if hasOverrides(overrides) {
+			if err := checkConfigInvariants(cfg); err != nil {
+				return cfg, hash, err
+			}
+		}
 		block, err := genesis.Commit(db, triedb)
 		if err != nil {
 			return genesis.Config, hash, err
 		}
-		applyOverrides(genesis.Config)
-		return genesis.Config, block.Hash(), nil
+		if hasOverrides(overrides) {
+			rawdb.WriteChainConfig(db, block.Hash(), cfg)
+		}
+		return cfg, block.Hash(), nil
 	}
 	// Check whether the genesis block is already written.
 	if genesis != nil {
@@ -375,48 +542,125 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 		}
 	}
 	// Get the existing chain configuration.
-	newcfg := genesis.configOrDefault(stored)
-	applyOverrides(newcfg)
-	if err := newcfg.CheckConfigForkOrder(); err != nil {
-		return newcfg, common.Hash{}, err
-	}
-	if err := newcfg.CheckDPoWConfig(); err != nil {
-		return newcfg, common.Hash{}, err
-	}
-	if err := newcfg.CheckMinBaseFeeConfig(); err != nil {
-		return newcfg, common.Hash{}, err
-	}
 	storedcfg := rawdb.ReadChainConfig(db, stored)
 	if storedcfg == nil {
 		log.Warn("Found genesis block without chain config")
+		newcfg := overrides.apply(genesis.configOrDefault(stored))
+		// newcfg is configOrDefault's guess, and for an Incentiv genesis that is
+		// AllEthashProtocolChanges — chain id 1337, with none of this chain's forks.
+		// Writing it would hand the node a schedule from a different network. The
+		// genesis hash cannot say which Incentiv network this is, since mainnet and
+		// devnet share one, so there is nothing to fall back to: refuse and let the
+		// operator name it.
+		if genesis == nil && params.IsIncentivGenesisHash(stored) {
+			return newcfg, common.Hash{}, fmt.Errorf("genesis %s belongs to an Incentiv network but the database holds no chain config; "+
+				"start with the network flag (--incentiv-mainnet, --incentiv-testnet or --incentiv-devnet) so the right schedule is written", stored)
+		}
+		if err := checkConfigInvariants(newcfg); err != nil {
+			return newcfg, common.Hash{}, err
+		}
 		rawdb.WriteChainConfig(db, stored, newcfg)
 		return newcfg, stored, nil
 	}
 	storedData, _ := json.Marshal(storedcfg)
-	// Special case: if a private network is being used (no genesis and also no
-	// mainnet hash in the database), we must not apply the `configOrDefault`
-	// chain config as that would be AllProtocolChanges (applying any new fork
-	// on top of an existing private network genesis block). In that case, only
-	// apply the overrides.
-	if genesis == nil && stored != params.MainnetGenesisHash {
-		newcfg = storedcfg
-		applyOverrides(newcfg)
-		if err := newcfg.CheckConfigForkOrder(); err != nil {
-			return newcfg, common.Hash{}, err
+	head := rawdb.ReadHeadHeader(db)
+	if head == nil {
+		return storedcfg, stored, fmt.Errorf("missing head header")
+	}
+	// Which configuration a start settles on is decided in one place, ConfigOrStored,
+	// so that the read-only chain commands cannot resolve it differently from the node.
+	// The branches it covers are the ones this function used to spell out here: a
+	// genesis specification answers for itself, the real mainnet hash takes
+	// configOrDefault, an Incentiv genesis takes the bundled schedule unless the stored
+	// config disagrees about history, and anything else keeps what the database says.
+	newcfg, decision := genesis.ConfigOrStored(storedcfg, stored, head, overrides)
+	switch {
+	case decision.BundledRefused:
+		// The refusal says the bundled schedule was not taken. It does not say what the
+		// node will run, and those are different questions: an override is applied over
+		// the stored config afterwards, and the stored config may already carry a
+		// timestamp of its own. Both were being reported as "kept the stored config, so
+		// webauthnStrict will not activate here", which is false whenever the resolved
+		// value is set — and the advice that went with it, restart with the network flag,
+		// would then replace a timestamp the node is deliberately carrying with the
+		// bundled one and move it off the fleet's schedule. So the line reports the
+		// resolved value.
+		message := "Stored chain config disagrees with the schedule this binary ships for this network"
+		if decision.RefusedForRewind {
+			message = "This binary's schedule for this network was not taken because it would rewind the chain"
 		}
-		if err := newcfg.CheckDPoWConfig(); err != nil {
-			return newcfg, common.Hash{}, err
+		source := "the stored config, kept whole"
+		if overrides != nil && overrides.OverrideWebAuthnStrict != nil {
+			source = "--override.webauthnstrict, applied over the stored config"
 		}
-		if err := newcfg.CheckMinBaseFeeConfig(); err != nil {
-			return newcfg, common.Hash{}, err
+		// The remedy follows the reason before it follows the resolved timestamp. A
+		// history refusal is not fixed by the network flag at all: the flag writes those
+		// settings over blocks already mined without rewinding, which is what
+		// docs/webauthn/rollout.md means by "not a repair". And a rewind refusal caused
+		// by some *older* fork is not about this one, so the node is on an incompatible
+		// configuration whatever its webauthnStrictTime says.
+		var fix string
+		switch {
+		case decision.RefusedForHistory:
+			fix = "resync from genesis under the network flag. The flag does not undo what is already there: CheckCompatible does not compare these settings, so no rewind is computed from them and they are applied to blocks already mined as they are"
+			if decision.RewindCause != "" {
+				fix += ". That start would still rewind the chain, because the two configurations also disagree about " + decision.RewindCause + ". That rewind drops the blocks above its target, so it undoes this for those and leaves it standing for any below — and on a chain whose whole history is above the target it undoes all of it"
+			}
+		case decision.RewindCause != params.WebAuthnStrictCompatWhat:
+			fix = "restart with the network flag, which does take the schedule and rewinds to before the fork named in cause. This node disagrees with the network about that fork, not about webauthnStrict, so the timestamp above does not settle it"
+		case newcfg.WebAuthnStrictTime == nil:
+			fix = "restart with the network flag, which does take the schedule: it rewinds to before the fork that had already fired and re-syncs from there, and is how a node that reached this release late catches up"
+		default:
+			fix = "nothing further, if this is deliberate: the node will activate at the timestamp above, and starting it with its network flag would replace that with the schedule this binary ships — which is the right move only if the timestamp above is the one that is wrong"
 		}
+		log.Warn(message,
+			"chain", storedcfg.ChainID, "genesis", stored,
+			"webauthnStrictTime", forkTimeForLog(newcfg.WebAuthnStrictTime),
+			"source", source,
+			"cause", refusalCauseForLog(decision),
+			"fix", fix)
+		if newcfg.WebAuthnStrictTime == nil && webAuthnStrictActivationNear(params.BundledIncentivConfig(stored, storedcfg.ChainID), head.Time) {
+			// Warned, and then refused. A node that keeps a configuration without the
+			// fork follows a different chain from activation, and a start that only
+			// warned left it running and looking healthy until then. Only once the
+			// activation is near, though: further out the warning stands, and the
+			// operator has the time it names. An operator who means to activate at
+			// another time says so with --override.webauthnstrict, which the line above
+			// would then report as the resolved timestamp; the override cannot turn the
+			// fork off, and a timestamp already behind the head rewinds the chain.
+			return newcfg, stored, fmt.Errorf("%s, and this node would run without webauthnStrictTime, so it would not activate the fork with the rest of its network "+
+				"(cause: %s; fix: %s; to activate at a different time deliberately, pass --override.webauthnstrict=<future timestamp>, "+
+				"which cannot turn the fork off and rewinds the chain if the timestamp has passed; a private stand gets a chain id of its own and a resync)",
+				message, refusalCauseForLog(decision), fix)
+		}
+	case decision.BundledAdopted && storedcfg.WebAuthnStrictTime != nil &&
+		(overrides == nil || overrides.OverrideWebAuthnStrict == nil) &&
+		(newcfg.WebAuthnStrictTime == nil || *newcfg.WebAuthnStrictTime != *storedcfg.WebAuthnStrictTime):
+		// Correcting a drifted timestamp is what the adoption is for, but one of the
+		// timestamps it corrects is an override's: the earlier start wrote it, this start
+		// has no flag, and the node moves back to the bundled schedule. That is the
+		// documented behaviour, and it must not be silent, because the fleet may be
+		// waiting on the stored timestamp.
+		log.Warn("Stored WebAuthnStrict timestamp replaced by the schedule this binary ships",
+			"chain", storedcfg.ChainID, "genesis", stored,
+			"stored", *storedcfg.WebAuthnStrictTime,
+			"webauthnStrictTime", forkTimeForLog(newcfg.WebAuthnStrictTime),
+			"note", "an --override.webauthnstrict that is no longer on the command line is not carried over; pass it again if this node is meant to stay on the stored timestamp")
+	case decision.FromGenesis && !params.HistoricalForksCompatible(storedcfg, newcfg, head.Number.Uint64()):
+		// The flag wins, which is what it is for, but it is worth saying what part of
+		// that nothing else will report.
+		log.Warn("Network flag replaces block-numbered settings this database disagrees with",
+			"chain", storedcfg.ChainID, "genesis", stored,
+			"note", "CheckCompatible does not compare these, so no rewind is computed from them and they take effect for blocks already mined as they are. A rewind on this start, if there is one, comes from a timestamp fork instead: it drops the blocks above its own target, so it clears this for those and leaves it standing for any below")
+	}
+	// Validate the config that will actually be used, whichever branch produced it.
+	// Running this on configOrDefault's result instead would check AllEthashProtocolChanges
+	// rather than this chain, and reject overrides that are valid for it.
+	if err := checkConfigInvariants(newcfg); err != nil {
+		return newcfg, common.Hash{}, err
 	}
 	// Check config compatibility and write the config. Compatibility errors
 	// are returned to the caller unless we're already at block zero.
-	head := rawdb.ReadHeadHeader(db)
-	if head == nil {
-		return newcfg, stored, fmt.Errorf("missing head header")
-	}
 	compatErr := storedcfg.CheckCompatible(newcfg, head.Number.Uint64(), head.Time)
 	if compatErr != nil && ((head.Number.Uint64() != 0 && compatErr.RewindToBlock != 0) || (head.Time != 0 && compatErr.RewindToTime != 0)) {
 		return newcfg, stored, compatErr
@@ -462,6 +706,114 @@ func LoadCliqueConfig(db ethdb.Database, genesis *Genesis) (*params.CliqueConfig
 	// In this case the default chain config(mainnet) will be used,
 	// namely ethash is the specified consensus engine, return nil.
 	return nil, nil
+}
+
+// configRefusal says why an Incentiv network's bundled schedule was not taken. The two
+// reasons want different things said about them: one is a chain that is not following this
+// network at all, the other is a chain that is but has arrived at this binary late.
+type configRefusal int
+
+const (
+	// refusalNone: nothing was refused — either the schedule was taken, or this genesis
+	// is not one of ours.
+	refusalNone configRefusal = iota
+	// refusalHistory: the stored config disagrees about a block-numbered setting that is
+	// already at or below the head. checkCompatible does not compare those, so adopting
+	// would apply them to blocks already mined with no error and no rewind.
+	refusalHistory
+	// refusalRewind: checkCompatible itself objects, so adopting would hand NewBlockChain
+	// a ConfigCompatError and it would rewind the chain. A start without a network flag
+	// does not ask for that.
+	refusalRewind
+)
+
+// refusalCauseForLog names what the two configurations disagreed about, so the remedy on
+// the same line can be checked against it.
+func refusalCauseForLog(d ConfigDecision) string {
+	if !d.RefusedForHistory {
+		return d.RewindCause
+	}
+	cause := "block-numbered settings CheckCompatible does not compare"
+	if d.RewindCause != "" {
+		cause += " (and " + d.RewindCause + ")"
+	}
+	return cause
+}
+
+// forkTimeForLog renders a fork timestamp for an operator reading a log line. "unset" is
+// the case that matters: it is the one where the node will not activate.
+func forkTimeForLog(t *uint64) string {
+	if t == nil {
+		return "unset"
+	}
+	return strconv.FormatUint(*t, 10)
+}
+
+// ConfigDecision says how ConfigOrStored reached the configuration it returned. A caller
+// that wants to say something about that — a log line, a refusal — has to be told rather
+// than work it out again: the setup path used to re-derive it and got the network-flag
+// case backwards, warning that the stored config had been kept while the flag's schedule
+// was being written.
+type ConfigDecision struct {
+	// FromGenesis: a genesis specification answered, which is a start with a network
+	// flag. The stored configuration played no part.
+	FromGenesis bool
+	// BundledAdopted: this binary's schedule for an Incentiv network was taken over the
+	// stored configuration.
+	BundledAdopted bool
+	// BundledRefused: one was available and was not taken, because the stored
+	// configuration disagrees with it about blocks that already exist. The stored
+	// configuration was kept whole.
+	BundledRefused bool
+	// RefusedForRewind narrows BundledRefused to the case where taking the schedule
+	// would have rewound the chain — which is what a node that reached this binary after
+	// a fork fired looks like, and is fixed by starting it with its network flag.
+	RefusedForRewind bool
+	// RefusedForHistory narrows BundledRefused to a disagreement about the block-numbered
+	// settings checkCompatible does not compare. The network flag is *not* a repair for
+	// that one: it writes those settings over blocks already mined without rewinding, so
+	// the two refusals need different advice.
+	RefusedForHistory bool
+	// RewindCause is the ConfigCompatError's What for a RefusedForRewind, so a caller can
+	// tell a webauthnStrictTime disagreement from an older fork's.
+	RewindCause string
+}
+
+// ConfigOrStored returns the chain configuration a startup would settle on for this
+// genesis specification, given what the database already holds, the head it holds and
+// the overrides it would run with, along with how it got there. It is what the read-only
+// chain commands compare against, so that they can refuse before the setup path tries to
+// persist a change they cannot make. The overrides belong in the comparison because the
+// setup path applies them too: a command run without the override the node runs with
+// would otherwise report a difference that is its own doing. head must not be nil.
+func (g *Genesis) ConfigOrStored(storedcfg *params.ChainConfig, ghash common.Hash, head *types.Header, overrides *ChainOverrides) (*params.ChainConfig, ConfigDecision) {
+	if g != nil {
+		return overrides.apply(g.Config), ConfigDecision{FromGenesis: true}
+	}
+	if storedcfg == nil {
+		return nil, ConfigDecision{}
+	}
+	// The stored config is reused only on the chains the setup path treats as private,
+	// which is every genesis but the real mainnet one. With that hash it takes
+	// configOrDefault's answer instead, so resolving to the stored config here would
+	// miss a rewrite it is about to make.
+	if ghash == params.MainnetGenesisHash {
+		return overrides.apply(g.configOrDefault(ghash)), ConfigDecision{}
+	}
+	adopt, refusal, cause := incentivBundledConfig(storedcfg, ghash, head, overrides)
+	if adopt != nil {
+		// Copy: adopt is a package-level configuration, and what this returns may be
+		// held, and mutated, for the life of the process. overrides.apply copies only
+		// when there is something to apply.
+		cpy := *adopt
+		return overrides.apply(&cpy), ConfigDecision{BundledAdopted: true}
+	}
+	return overrides.apply(storedcfg), ConfigDecision{
+		BundledRefused:    refusal != refusalNone,
+		RefusedForRewind:  refusal == refusalRewind,
+		RefusedForHistory: refusal == refusalHistory,
+		RewindCause:       cause,
+	}
 }
 
 func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
@@ -533,13 +885,7 @@ func (g *Genesis) Commit(db ethdb.Database, triedb *trie.Database) (*types.Block
 	if config == nil {
 		config = params.AllEthashProtocolChanges
 	}
-	if err := config.CheckConfigForkOrder(); err != nil {
-		return nil, err
-	}
-	if err := config.CheckDPoWConfig(); err != nil {
-		return nil, err
-	}
-	if err := config.CheckMinBaseFeeConfig(); err != nil {
+	if err := checkConfigInvariants(config); err != nil {
 		return nil, err
 	}
 	if config.Clique != nil && len(block.Extra()) < 32+crypto.SignatureLength {

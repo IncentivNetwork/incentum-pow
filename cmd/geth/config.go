@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/scwallet"
 	"github.com/ethereum/go-ethereum/accounts/usbwallet"
 	"github.com/ethereum/go-ethereum/cmd/utils"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
@@ -155,13 +156,33 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 	return stack, cfg
 }
 
-// makeFullNode loads geth configuration and creates the Ethereum backend.
-func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
-	stack, cfg := makeConfigNode(ctx)
+// chainOverrides returns the fork overrides a chain command runs with: the node's
+// configuration, TOML included, with the command line folded in. Both `geth import` and
+// `geth export` go through here, so neither can end up resolving a different schedule
+// from the node's.
+func chainOverrides(ctx *cli.Context, cfg *gethConfig) core.ChainOverrides {
+	applyOverrideFlags(ctx, cfg)
+	return cfg.Eth.ChainOverrides()
+}
+
+// applyOverrideFlags folds the fork-override command-line flags into cfg, on top of
+// whatever the TOML config already set. Both the node and the chain commands go
+// through here, so an override cannot reach one and be ignored by the other.
+func applyOverrideFlags(ctx *cli.Context, cfg *gethConfig) {
 	if ctx.IsSet(utils.OverrideShanghai.Name) {
 		v := ctx.Uint64(utils.OverrideShanghai.Name)
 		cfg.Eth.OverrideShanghai = &v
 	}
+	if ctx.IsSet(utils.OverrideWebAuthnStrict.Name) {
+		v := ctx.Uint64(utils.OverrideWebAuthnStrict.Name)
+		cfg.Eth.OverrideWebAuthnStrict = &v
+	}
+}
+
+// makeFullNode loads geth configuration and creates the Ethereum backend.
+func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
+	stack, cfg := makeConfigNode(ctx)
+	applyOverrideFlags(ctx, &cfg)
 	backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
 
 	// Configure log filter RPC API.
@@ -187,6 +208,9 @@ func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 // dumpConfig is the dumpconfig command.
 func dumpConfig(ctx *cli.Context) error {
 	_, cfg := makeConfigNode(ctx)
+	// The override flags too, or the TOML this writes is missing the override the node
+	// was started with — and a node later started from that TOML drops it.
+	applyOverrideFlags(ctx, &cfg)
 	comment := ""
 
 	if cfg.Eth.Genesis != nil {

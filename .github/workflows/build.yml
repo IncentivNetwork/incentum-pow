@@ -46,6 +46,12 @@ jobs:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
+      # core/vm/harvest_script_test.go runs a Node script and fails rather than skips when
+      # CI is set, so node is a declared dependency of the test job instead of something
+      # the runner image happens to carry.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
 
       - name: Run Tests (shard ${{ matrix.shard }}/${{ env.TOTAL_SHARDS }})
         env:
