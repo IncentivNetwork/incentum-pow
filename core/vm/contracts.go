@@ -50,7 +50,7 @@ var PrecompiledContractsHomestead = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{3}):                                  &ripemd160hash{},
 	common.BytesToAddress([]byte{4}):                                  &dataCopy{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
-	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
+	webAuthnVerifyAddress():                                           &webAuthnVerify{},
 }
 
 // PrecompiledContractsByzantium contains the default set of pre-compiled Ethereum
@@ -65,7 +65,7 @@ var PrecompiledContractsByzantium = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{7}):                                  &bn256ScalarMulByzantium{},
 	common.BytesToAddress([]byte{8}):                                  &bn256PairingByzantium{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
-	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
+	webAuthnVerifyAddress():                                           &webAuthnVerify{},
 }
 
 // PrecompiledContractsIstanbul contains the default set of pre-compiled Ethereum
@@ -81,7 +81,7 @@ var PrecompiledContractsIstanbul = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{8}):                                  &bn256PairingIstanbul{},
 	common.BytesToAddress([]byte{9}):                                  &blake2F{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
-	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
+	webAuthnVerifyAddress():                                           &webAuthnVerify{},
 }
 
 // PrecompiledContractsBerlin contains the default set of pre-compiled Ethereum
@@ -97,7 +97,7 @@ var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{8}):                                  &bn256PairingIstanbul{},
 	common.BytesToAddress([]byte{9}):                                  &blake2F{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
-	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
+	webAuthnVerifyAddress():                                           &webAuthnVerify{},
 }
 
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
@@ -113,14 +113,23 @@ var PrecompiledContractsBLS = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{17}):                                 &bls12381MapG1{},
 	common.BytesToAddress([]byte{18}):                                 &bls12381MapG2{},
 	common.HexToAddress("0x0000000000000000000000000000000000000100"): &p256Verify{},
-	common.HexToAddress("0x0000000000000000000000000000000000000111"): &webAuthnVerify{},
+	webAuthnVerifyAddress():                                           &webAuthnVerify{},
 }
 
+// PrecompiledContractsWebAuthnStrict contains the set of pre-compiled contracts
+// used from the WebAuthnStrict fork onwards. It is the Berlin set with the
+// canonical-input WebAuthn parser in place of the pre-fork one; it is built in
+// init so the two sets cannot drift apart. CheckConfigForkOrder does not compare
+// block forks with timestamped ones, so it cannot establish that Berlin precedes
+// this fork; params.Rules gates IsWebAuthnStrict on IsBerlin instead.
+var PrecompiledContractsWebAuthnStrict = map[common.Address]PrecompiledContract{}
+
 var (
-	PrecompiledAddressesBerlin    []common.Address
-	PrecompiledAddressesIstanbul  []common.Address
-	PrecompiledAddressesByzantium []common.Address
-	PrecompiledAddressesHomestead []common.Address
+	PrecompiledAddressesWebAuthnStrict []common.Address
+	PrecompiledAddressesBerlin         []common.Address
+	PrecompiledAddressesIstanbul       []common.Address
+	PrecompiledAddressesByzantium      []common.Address
+	PrecompiledAddressesHomestead      []common.Address
 )
 
 func init() {
@@ -136,11 +145,20 @@ func init() {
 	for k := range PrecompiledContractsBerlin {
 		PrecompiledAddressesBerlin = append(PrecompiledAddressesBerlin, k)
 	}
+	for k, v := range PrecompiledContractsBerlin {
+		PrecompiledContractsWebAuthnStrict[k] = v
+	}
+	PrecompiledContractsWebAuthnStrict[webAuthnVerifyAddress()] = &webAuthnVerify{strictInput: true}
+	for k := range PrecompiledContractsWebAuthnStrict {
+		PrecompiledAddressesWebAuthnStrict = append(PrecompiledAddressesWebAuthnStrict, k)
+	}
 }
 
 // ActivePrecompiles returns the precompiles enabled with the current configuration.
 func ActivePrecompiles(rules params.Rules) []common.Address {
 	switch {
+	case rules.IsWebAuthnStrict:
+		return PrecompiledAddressesWebAuthnStrict
 	case rules.IsBerlin:
 		return PrecompiledAddressesBerlin
 	case rules.IsIstanbul:
@@ -1087,7 +1105,18 @@ func (c *p256Verify) Run(input []byte) ([]byte, error) {
 	return nil, nil
 }
 
-type webAuthnVerify struct{}
+type webAuthnVerify struct {
+	// strictInput selects the canonical-input parser, which is active from the
+	// WebAuthnStrict fork onwards (params.Rules.IsWebAuthnStrict). Both
+	// behaviours have to stay in the binary: blocks mined before activation are
+	// replayed with the pre-fork parser.
+	strictInput bool
+}
+
+// webAuthnVerifyAddress is shared by the pre-fork and strict precompile sets.
+func webAuthnVerifyAddress() common.Address {
+	return common.BytesToAddress([]byte{0x01, 0x11})
+}
 
 const (
 	flagUP = 0x01 // User Present
@@ -1124,14 +1153,28 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 	}
 	clientDataJSONLen := binary.BigEndian.Uint32(input[offset : offset+4])
 
-	// Check for overflow and bounds
+	// Bounds. The third term cannot fire: || only reaches it once the first term has
+	// bounded clientDataJSONLen by len(input), and the 8KB cap above bounds that and
+	// offset with it, so the sum cannot wrap a uint32. It is left in place rather than
+	// removed — this is the pre-fork path, and a dead guard is cheaper than a change to
+	// one.
 	if clientDataJSONLen > uint32(len(input)) || int(offset+4+clientDataJSONLen) > len(input) || offset+4+clientDataJSONLen < offset {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 	clientDataJSON := string(input[offset+4 : offset+4+clientDataJSONLen])
 
 	offset = offset + 4 + clientDataJSONLen
-	if int(offset+136) > len(input) {
+	// offset+136 is where a canonically encoded input ends. Callers hand this
+	// precompile message ‖ payload ‖ publicKey.x ‖ publicKey.y concatenated with no
+	// delimiter, and r, s, x and y are located from the lengths declared inside the
+	// payload. Ending here is what ties those declared lengths to the bytes the
+	// caller appended: accept a longer input and the four words the parser reads
+	// need no longer be the last four words of the input.
+	if c.strictInput {
+		if int(offset+136) != len(input) {
+			return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
+		}
+	} else if int(offset+136) > len(input) {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 	challengeLocation := binary.BigEndian.Uint32(input[offset : offset+4])
@@ -1142,10 +1185,8 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 		return common.LeftPadBytes(common.Big0.Bytes(), 32), nil
 	}
 
-	r := new(big.Int).SetBytes(input[offset+8 : offset+40])
-	s := new(big.Int).SetBytes(input[offset+40 : offset+72])
-	x := new(big.Int).SetBytes(input[offset+72 : offset+104])
-	y := new(big.Int).SetBytes(input[offset+104 : offset+136])
+	// r ‖ s ‖ x ‖ y, four 32-byte big-endian words laid out back to back.
+	words := input[offset+8 : offset+136]
 
 	// 1. Check authenticatorData flags
 	if len(authenticatorData) < 37 {
@@ -1179,19 +1220,43 @@ func (c *webAuthnVerify) Run(input []byte) ([]byte, error) {
 
 	// 4. Calculate message hash using SHA256 instead of Keccak256
 	clientDataJSONHash := sha256.Sum256([]byte(clientDataJSON))
-	// Concatenate authenticatorData and clientDataJSONHash
-	messageData := append(authenticatorData, clientDataJSONHash[:]...)
-	// Calculate final SHA256 hash
-	messageHashArray := sha256.Sum256(messageData)
-	messageHash := messageHashArray[:]
 
 	// 5. Verify signature using P256 precompiled (0x100)
 	p256Input := make([]byte, 160)
-	copy(p256Input[0:32], messageHash)
-	copy(p256Input[32:64], r.Bytes())
-	copy(p256Input[64:96], s.Bytes())
-	copy(p256Input[96:128], x.Bytes())
-	copy(p256Input[128:160], y.Bytes())
+	if c.strictInput {
+		// Hash authenticatorData ‖ clientDataJSONHash without materialising the
+		// concatenation. The pre-fork branch appends to authenticatorData, which is
+		// a sub-slice of input with spare capacity, so it writes the hash over the
+		// bytes that follow it in the caller's buffer — the calling contract's
+		// memory.
+		h := sha256.New()
+		h.Write(authenticatorData)
+		h.Write(clientDataJSONHash[:])
+		h.Sum(p256Input[:0])
+
+		// Copy the words verbatim. The pre-fork branch re-serialises them through
+		// big.Int, which drops leading zero bytes, and then copies left-aligned, so
+		// a word whose top byte is zero — roughly one in 256 per word — is shifted
+		// up a byte and an otherwise valid signature is rejected.
+		copy(p256Input[32:160], words)
+	} else {
+		// Read the words before the append below, which writes into input. The two
+		// regions cannot overlap for any input that reaches this point, but keeping
+		// the original order means that does not have to be relied on.
+		r := new(big.Int).SetBytes(words[0:32])
+		s := new(big.Int).SetBytes(words[32:64])
+		x := new(big.Int).SetBytes(words[64:96])
+		y := new(big.Int).SetBytes(words[96:128])
+
+		messageData := append(authenticatorData, clientDataJSONHash[:]...)
+		messageHash := sha256.Sum256(messageData)
+
+		copy(p256Input[0:32], messageHash[:])
+		copy(p256Input[32:64], r.Bytes())
+		copy(p256Input[64:96], s.Bytes())
+		copy(p256Input[96:128], x.Bytes())
+		copy(p256Input[128:160], y.Bytes())
+	}
 
 	p256Verifier := &p256Verify{}
 	result, err := p256Verifier.Run(p256Input)

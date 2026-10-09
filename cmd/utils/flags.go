@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -284,6 +285,11 @@ var (
 	OverrideShanghai = &cli.Uint64Flag{
 		Name:     "override.shanghai",
 		Usage:    "Manually specify the Shanghai fork timestamp, overriding the bundled setting",
+		Category: flags.EthCategory,
+	}
+	OverrideWebAuthnStrict = &cli.Uint64Flag{
+		Name:     "override.webauthnstrict",
+		Usage:    "Manually specify the WebAuthnStrict fork timestamp, overriding the bundled setting",
 		Category: flags.EthCategory,
 	}
 	// Light server and client settings
@@ -2262,6 +2268,23 @@ func SplitTagsFlag(tagsFlag string) map[string]string {
 	return tagsMap
 }
 
+// sameChainConfig reports whether two chain configurations are identical, by the same
+// JSON comparison SetupGenesisBlockWithOverride uses to decide whether to rewrite one.
+func sameChainConfig(a, b *params.ChainConfig) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	ja, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	jb, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(ja, jb)
+}
+
 // MakeChainDatabase open an LevelDB using the flags passed to the client and will hard crash if it fails.
 func MakeChainDatabase(ctx *cli.Context, stack *node.Node, readonly bool) ethdb.Database {
 	var (
@@ -2347,8 +2370,11 @@ func MakeGenesis(ctx *cli.Context) *core.Genesis {
 	return genesis
 }
 
-// MakeChain creates a chain manager from set command line flags.
-func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockChain, ethdb.Database) {
+// MakeChain opens the chain for the chain commands. overrides must be the same fork
+// overrides the node itself runs with — they come from the node configuration, TOML
+// included, not from the command line alone — because NewBlockChain rewinds and
+// rewrites the stored config when they disagree.
+func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool, overrides *core.ChainOverrides) (*core.BlockChain, ethdb.Database) {
 	var (
 		gspec   = MakeGenesis(ctx)
 		chainDb = MakeChainDatabase(ctx, stack, readonly)
@@ -2394,8 +2420,52 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockCh
 	}
 	vmcfg := vm.Config{EnablePreimageRecording: ctx.Bool(VMEnableDebugFlag.Name)}
 
+	// A read-only open cannot persist a chain config, and it cannot rewind either. The
+	// setup path does both whenever the config it settles on differs from the stored
+	// one, and left alone the failure surfaces as a log.Crit from inside rawdb. Resolve
+	// the same configuration it would, overrides included, and refuse here, where the
+	// message can say which start would fix it.
+	if readonly {
+		if stored := rawdb.ReadCanonicalHash(chainDb, 0); stored != (common.Hash{}) {
+			storedcfg := rawdb.ReadChainConfig(chainDb, stored)
+			// Which start writes the configuration. Naming a network flag is only
+			// useful advice on a chain that has one.
+			startOnce := "Start the node once so the configuration is written, then re-run this command."
+			if params.IsIncentivGenesisHash(stored) {
+				startOnce = "Start the node once with its network flag (--incentiv-mainnet, --incentiv-testnet or --incentiv-devnet) so the configuration is written, then re-run this command."
+			}
+			head := rawdb.ReadHeadHeader(chainDb)
+			switch {
+			case gspec != nil && gspec.ToBlock().Hash() != stored:
+				// A genesis specification for a different chain is not a schedule
+				// difference. Leave it to the setup path, which reports the mismatch
+				// and names both hashes; the messages below would instead send the
+				// operator to start the node with the flag that is the mistake.
+			case gspec != nil && gspec.Config != nil && storedcfg != nil && !core.SameChainID(gspec.Config.ChainID, storedcfg.ChainID):
+				// Incentiv mainnet and devnet share a genesis hash, so the case above
+				// does not catch that pair. Starting the node with the wrong one of
+				// them is not harmless: checkCompatible reports the chain-id change as
+				// an incompatibility at block 0, which the setup path discards, and the
+				// stored chain id is replaced without an error or a rewind. So this must
+				// not fall through to a message that offers the network flags.
+				Fatalf("This database holds chain %v and the flag names chain %v. Incentiv mainnet and devnet share a genesis hash, so the hash alone cannot tell them apart. Re-run with the flag for chain %v, or with none.",
+					storedcfg.ChainID, gspec.Config.ChainID, storedcfg.ChainID)
+			case storedcfg == nil:
+				Fatalf("This database has no chain configuration yet. %s", startOnce)
+			case head == nil:
+				Fatalf("This database has no head header, so the configuration a start would settle on cannot be worked out. Start the node once, then re-run this command.")
+			default:
+				wanted, _ := gspec.ConfigOrStored(storedcfg, stored, head, overrides)
+				if sameChainConfig(storedcfg, wanted) {
+					break
+				}
+				Fatalf("The chain configuration in this database differs from the one this binary would apply, and a read-only command cannot update it. %s", startOnce)
+			}
+		}
+	}
+
 	// Disable transaction indexing/unindexing by default.
-	chain, err := core.NewBlockChain(chainDb, cache, gspec, nil, engine, vmcfg, nil, nil)
+	chain, err := core.NewBlockChain(chainDb, cache, gspec, overrides, engine, vmcfg, nil, nil)
 	if err != nil {
 		Fatalf("Can't create BlockChain: %v", err)
 	}

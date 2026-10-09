@@ -94,6 +94,8 @@ if one is set.  Otherwise it prints the genesis from the datadir.`,
 			utils.MetricsInfluxDBBucketFlag,
 			utils.MetricsInfluxDBOrganizationFlag,
 			utils.TxLookupLimitFlag,
+			utils.OverrideShanghai,
+			utils.OverrideWebAuthnStrict,
 		}, utils.DatabasePathFlags),
 		Description: `
 The import command imports blocks from an RLP-encoded form. The form can be one file
@@ -110,6 +112,8 @@ processing will proceed even if an individual RLP-file import failure occurs.`,
 		Flags: flags.Merge([]cli.Flag{
 			utils.CacheFlag,
 			utils.SyncModeFlag,
+			utils.OverrideShanghai,
+			utils.OverrideWebAuthnStrict,
 		}, utils.DatabasePathFlags),
 		Description: `
 Requires a first argument of the file to write to.
@@ -254,10 +258,11 @@ func importChain(ctx *cli.Context) error {
 	// Start system runtime metrics collection
 	go metrics.CollectProcessMetrics(3 * time.Second)
 
-	stack, _ := makeConfigNode(ctx)
+	stack, cfg := makeConfigNode(ctx)
 	defer stack.Close()
 
-	chain, db := utils.MakeChain(ctx, stack, false)
+	overrides := chainOverrides(ctx, &cfg)
+	chain, db := utils.MakeChain(ctx, stack, false, &overrides)
 	defer db.Close()
 
 	// Start periodically gathering memory profiles
@@ -329,10 +334,16 @@ func exportChain(ctx *cli.Context) error {
 		utils.Fatalf("This command requires an argument.")
 	}
 
-	stack, _ := makeConfigNode(ctx)
+	stack, cfg := makeConfigNode(ctx)
 	defer stack.Close()
 
-	chain, _ := utils.MakeChain(ctx, stack, true)
+	// The database is opened read-only, so nothing here may change the stored chain
+	// config. The overrides are passed all the same: MakeChain compares the schedule
+	// the node would run with against the stored one and refuses if they differ, and
+	// leaving them out would make an override the node does run with look like a
+	// difference this command had found.
+	overrides := chainOverrides(ctx, &cfg)
+	chain, _ := utils.MakeChain(ctx, stack, true, &overrides)
 	start := time.Now()
 
 	var err error
