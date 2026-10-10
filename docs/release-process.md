@@ -62,13 +62,15 @@ Create and verify the tag locally before publishing it:
 
 ```bash
 tag=v1.11.11-example-mainnet
-git tag -a "$tag" -m "Release $tag" <main-merge-commit>
-test "$(git cat-file -t "refs/tags/$tag")" = tag
-git rev-parse "$tag^{}" # must print the intended merge commit on main
-git push origin "refs/tags/$tag"
+merge_commit=$(git rev-parse HEAD) # main checked out at the merge commit, as above
+git tag -a "$tag" -m "Release $tag" "$merge_commit"
+test "$(git cat-file -t "refs/tags/$tag")" = tag &&
+  test "$(git rev-parse "$tag^{commit}")" = "$merge_commit" &&
+  git push origin "refs/tags/$tag"
 ```
 
-Push the tag only after both checks pass. Never move, delete or force-push a
+The push runs only if both checks pass: the tag is an annotated tag object, and
+it resolves to the commit that was verified. Never move, delete or force-push a
 published release tag: pushing a replacement `v*` tag re-runs the release job
 and can replace assets that operators have already downloaded. If a published
 tag is wrong, preserve it as historical evidence and cut a new release.
