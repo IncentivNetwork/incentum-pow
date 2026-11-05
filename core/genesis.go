@@ -340,11 +340,12 @@ func (o *ChainOverrides) apply(config *params.ChainConfig) *params.ChainConfig {
 // network that the stored genesis hash and chain id identify together, and whether one
 // was found but must not be used.
 //
-// Two bounds, both on the head. checkCompatible does not compare the block-numbered
-// settings, so adopting a config that disagrees about those would apply them to history
-// that never followed them, with no error and no rewind — but only a setting at or below
-// the head rewrites a block that exists, and this chain ships those settings as a value
-// some releases ahead of every node. And a difference checkCompatible *does* object to is
+// Two bounds, both on the head. Apart from irregularStateChangeHeight2, checkCompatible
+// does not compare the block-numbered settings, so adopting a config that disagrees about
+// those would apply them to history that never followed them, with no error and no
+// rewind — but only a setting at or below the head rewrites a block that exists, and this
+// chain ships those settings as a value some releases ahead of every node. And a
+// difference checkCompatible *does* object to is
 // not taken either: adopting it would hand NewBlockChain a ConfigCompatError, which it
 // acts on by rewinding the chain. Nobody asked for that by starting without a network
 // flag, so an implicit adoption never rewinds; accepting one is what the flag is for. The
@@ -718,8 +719,9 @@ const (
 	// is not one of ours.
 	refusalNone configRefusal = iota
 	// refusalHistory: the stored config disagrees about a block-numbered setting that is
-	// already at or below the head. checkCompatible does not compare those, so adopting
-	// would apply them to blocks already mined with no error and no rewind.
+	// already at or below the head. Apart from irregularStateChangeHeight2, checkCompatible
+	// does not compare those, so adopting would apply them to blocks already mined with no
+	// error and no rewind.
 	refusalHistory
 	// refusalRewind: checkCompatible itself objects, so adopting would hand NewBlockChain
 	// a ConfigCompatError and it would rewind the chain. A start without a network flag
@@ -770,9 +772,10 @@ type ConfigDecision struct {
 	// a fork fired looks like, and is fixed by starting it with its network flag.
 	RefusedForRewind bool
 	// RefusedForHistory narrows BundledRefused to a disagreement about the block-numbered
-	// settings checkCompatible does not compare. The network flag is *not* a repair for
-	// that one: it writes those settings over blocks already mined without rewinding, so
-	// the two refusals need different advice.
+	// settings HistoricalForksCompatible compares. Apart from irregularStateChangeHeight2,
+	// checkCompatible does not compare them, and for those the network flag is *not* a
+	// repair: it writes them over blocks already mined without rewinding, so the two
+	// refusals need different advice.
 	RefusedForHistory bool
 	// RewindCause is the ConfigCompatError's What for a RefusedForRewind, so a caller can
 	// tell a webauthnStrictTime disagreement from an older fork's.
