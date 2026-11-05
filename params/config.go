@@ -270,6 +270,7 @@ var (
 		DPoWTime:                      nil,
 		MinerRegistryAddress:          nil,
 		IrregularStateChangeHeight:    nil,
+		IrregularStateChangeHeight2:   nil,
 		ShanghaiTime:                  newUint64(1755203160),
 		WebAuthnStrictTime:            newUint64(1854446400), // 2028-10-06 12:00:00 UTC; activates unless rescheduled
 		CancunTime:                    nil,
@@ -328,7 +329,8 @@ var (
 		// 12 600 gwei (= legacy MinBaseFeeUpdated, zero fee-market jump),
 		// 24-hour timelock, 13 000-block activation delay, governance =
 		// existing DPoW Governance Safe 0x10D9dEEb09bA23b2bD9739F698b3dFa9D8F95Ad4.
-		DynamicMinBaseFeeTime: newUint64(1782259200), // 2026-06-24 00:00:00 UTC
+		DynamicMinBaseFeeTime:       newUint64(1782259200), // 2026-06-24 00:00:00 UTC
+		IrregularStateChangeHeight2: big.NewInt(6676700),
 		// Set by the operator for 2026-10-09 00:00:00 UTC. A bundled time
 		// activates on its own, so every mainnet node has to carry this release before
 		// then; docs/webauthn/rollout.md has the gates and the roll-call.
@@ -404,6 +406,7 @@ var (
 		// MinBaseFeeUpdated), 10-minute timelock, 100-block activation delay,
 		// governance = deployer EOA 0xd2CC08D9AFaBb57BdF2216ED15fceaa9993F3B7b.
 		DynamicMinBaseFeeTime:         newUint64(1782142800), // 2026-06-22 15:40:00 UTC
+		IrregularStateChangeHeight2:   nil,
 		WebAuthnStrictTime:            newUint64(1791291600), // 2026-10-06 13:00:00 UTC
 		CancunTime:                    nil,
 		PragueTime:                    nil,
@@ -649,6 +652,8 @@ type ChainConfig struct {
 	DPoWMaturityBlocks uint64 `json:"dpowMaturityBlocks,omitempty"`
 
 	IrregularStateChangeHeight *big.Int `json:"irregularStateChangeHeight,omitempty"` // Irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
+
+	IrregularStateChangeHeight2 *big.Int `json:"irregularStateChangeHeight2,omitempty"` // Second irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
 
 	// MinBaseFeeContractAddr is the address of the on-chain MinBaseFeeGovernor
 	// contract. Must be set when DynamicMinBaseFeeTime is non-nil.
@@ -1063,6 +1068,14 @@ func (c *ChainConfig) IsIrregularStateChange(num *big.Int) bool {
 	return c.IrregularStateChangeHeight.Cmp(num) == 0
 }
 
+// IsIrregularStateChange2 returns whether num is equal to the second irregular state change height.
+func (c *ChainConfig) IsIrregularStateChange2(num *big.Int) bool {
+	if c.IrregularStateChangeHeight2 == nil || num == nil {
+		return false
+	}
+	return c.IrregularStateChangeHeight2.Cmp(num) == 0
+}
+
 // IsTerminalPoWBlock returns whether the given block is the last block of PoW stage.
 func (c *ChainConfig) IsTerminalPoWBlock(parentTotalDiff *big.Int, totalDiff *big.Int) bool {
 	if c.TerminalTotalDifficulty == nil {
@@ -1136,9 +1149,10 @@ func IsIncentivGenesisHash(hash common.Hash) bool {
 
 // HistoricalForksCompatible reports whether a and b agree about the block-numbered
 // settings for every block at or below head.
-// checkCompatible does not compare these, so a difference in them would be applied
-// with no error and no rewind — silently changing how already-validated history is
-// re-validated. Anything that swaps one config for another has to check them itself.
+// checkCompatible compares irregularStateChangeHeight2 (a one-shot correction) but not the
+// others, so a difference in the others would be applied with no error and no rewind —
+// silently changing how already-validated history is re-validated. Anything that swaps
+// one config for another has to check them itself.
 func HistoricalForksCompatible(a, b *ChainConfig, head uint64) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -1156,6 +1170,7 @@ func HistoricalForksCompatible(a, b *ChainConfig, head uint64) bool {
 		{a.ZeroRewardBlock, b.ZeroRewardBlock},
 		{a.FastBlock, b.FastBlock},
 		{a.IrregularStateChangeHeight, b.IrregularStateChangeHeight},
+		{a.IrregularStateChangeHeight2, b.IrregularStateChangeHeight2},
 	} {
 		if isForkBlockIncompatible(pair[0], pair[1], headNumber) {
 			return false
@@ -1289,6 +1304,17 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if isForkBlockIncompatible(c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock, headNumber) {
 		return newBlockCompatError("Merge netsplit fork block", c.MergeNetsplitBlock, newcfg.MergeNetsplitBlock)
+	}
+	// IrregularStateChangeHeight2 is a one-shot correction height. Unlike the
+	// first correction (long past, so a stored config missing it must not force a
+	// multi-million-block rewind), a node that imported this height under a config
+	// without it rewinds and re-applies it the next time it starts with
+	// --incentiv-mainnet. A flagless start keeps its stored config (see
+	// TestNoFlagStartNeverRewinds), so late-upgraded nodes must be restarted with the flag.
+	// Keep this check after activation: without it such a node gets no rewind at all and
+	// keeps its uncorrected state.
+	if isForkBlockIncompatible(c.IrregularStateChangeHeight2, newcfg.IrregularStateChangeHeight2, headNumber) {
+		return newBlockCompatError("Second irregular state change height", c.IrregularStateChangeHeight2, newcfg.IrregularStateChangeHeight2)
 	}
 	if isForkTimestampIncompatible(c.ShanghaiTime, newcfg.ShanghaiTime, headTimestamp) {
 		return newTimestampCompatError("Shanghai fork timestamp", c.ShanghaiTime, newcfg.ShanghaiTime)

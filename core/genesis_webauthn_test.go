@@ -38,8 +38,8 @@ import (
 
 // mainnetTestHead is past every block-numbered setting IncentivMainnetChainConfig
 // carries, so a disagreement about one of them is a disagreement about history rather
-// than about a block still ahead of the node. mainnetEarlyHead is below the highest of
-// them (irregularStateChangeHeight, 2429000) and above the ones at block 0.
+// than about a block still ahead of the node. mainnetEarlyHead is below both irregular
+// state change heights (2429000 is the lower one) and above the settings at block 0.
 const (
 	mainnetTestHead  = uint64(9_000_000)
 	mainnetEarlyHead = uint64(1_000_000)
@@ -553,8 +553,8 @@ func TestBundledConfigNotAdoptedAcrossHistoricalForks(t *testing.T) {
 	}
 
 	// Every field HistoricalForksCompatible compares gets its own case. Covering one of
-	// them and assuming the rest is how three of the six came to be droppable
-	// without a single test noticing. Mainnet sets all six, so nil is a real
+	// them and assuming the rest is how three of the original six came to be droppable
+	// without a single test noticing. Mainnet sets all of them, so nil is a real
 	// disagreement and also the realistic one — it is what a config written from a
 	// bare genesis.json looks like.
 	for _, tc := range []struct {
@@ -567,6 +567,7 @@ func TestBundledConfigNotAdoptedAcrossHistoricalForks(t *testing.T) {
 		{"zeroRewardBlock", func(c *params.ChainConfig) { c.ZeroRewardBlock = nil }},
 		{"fastBlock", func(c *params.ChainConfig) { c.FastBlock = nil }},
 		{"irregularStateChangeHeight", func(c *params.ChainConfig) { c.IrregularStateChangeHeight = nil }},
+		{"irregularStateChangeHeight2", func(c *params.ChainConfig) { c.IrregularStateChangeHeight2 = nil }},
 		// Not only a missing setting: one that is set to a different block has to
 		// stop the adoption too, which nil-only cases would never exercise.
 		{"fastBlock moved", func(c *params.ChainConfig) { c.FastBlock = big.NewInt(999_999) }},
@@ -611,6 +612,7 @@ func TestBundledConfigAdoptedForSettingsAheadOfHead(t *testing.T) {
 	stored.MinBaseFeeBlock = nil
 	stored.MinBaseFeeChangeHeight = nil
 	stored.IrregularStateChangeHeight = nil
+	stored.IrregularStateChangeHeight2 = nil
 
 	db := rawdb.NewMemoryDatabase()
 	tdb := trie.NewDatabase(db)
@@ -631,6 +633,9 @@ func TestBundledConfigAdoptedForSettingsAheadOfHead(t *testing.T) {
 	if got.MinBaseFeeBlock == nil {
 		t.Error("minBaseFeeBlock was not adopted, so a release shipping one ahead of the head would not reach this node")
 	}
+	if got.IrregularStateChangeHeight2 == nil {
+		t.Error("irregularStateChangeHeight2 was not adopted, so a future correction height would not reach a flagless node below it")
+	}
 
 	// The same configuration, once the head is past those blocks, is a disagreement
 	// about history and must be refused. Without that contrast this test would pass
@@ -648,7 +653,7 @@ func TestBundledConfigAdoptedForSettingsAheadOfHead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no-flag start failed: %v", err)
 	}
-	if got.WebAuthnStrictTime != nil || got.MinBaseFeeBlock != nil {
+	if got.WebAuthnStrictTime != nil || got.MinBaseFeeBlock != nil || got.IrregularStateChangeHeight2 != nil {
 		t.Error("with the head past those blocks the bundled config was adopted anyway")
 	}
 }
@@ -714,6 +719,7 @@ func TestConfigOrStoredAnswersForTheOverrides(t *testing.T) {
 		{"zeroRewardBlock", func(c *params.ChainConfig) { c.ZeroRewardBlock = nil }},
 		{"fastBlock", func(c *params.ChainConfig) { c.FastBlock = nil }},
 		{"irregularStateChangeHeight", func(c *params.ChainConfig) { c.IrregularStateChangeHeight = nil }},
+		{"irregularStateChangeHeight2", func(c *params.ChainConfig) { c.IrregularStateChangeHeight2 = nil }},
 	} {
 		t.Run(tc.field, func(t *testing.T) {
 			disagreeing := stored
