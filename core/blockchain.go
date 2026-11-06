@@ -308,10 +308,20 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	if !bc.HasState(head.Root) {
 		// Head state is missing, before the state recovery, find out the
 		// disk layer point of snapshot(if it's enabled). Make sure the
-		// rewound point is lower than disk layer.
+		// rewound point is lower than disk layer, if that layer is on the
+		// head's chain.
 		var diskRoot common.Hash
 		if bc.cacheConfig.SnapshotLimit > 0 {
 			diskRoot = rawdb.ReadSnapshotRoot(bc.db)
+		}
+		// The repair only ever passes the head's ancestors. The disk layer can be elsewhere: on
+		// a side chain, since it follows whichever block ran last, on a chain a reorg left, or
+		// above a head that a previous crash rewound. Waiting for that root would end at genesis,
+		// so the rewind stops at the nearest state instead. Whether the layer is kept is decided
+		// where the snapshot is loaded.
+		if diskRoot != (common.Hash{}) && !bc.rootOnChain(head, diskRoot) {
+			log.Warn("Snapshot disk root is not on the head chain, not rewinding past it", "snaproot", diskRoot)
+			diskRoot = common.Hash{}
 		}
 		if diskRoot != (common.Hash{}) {
 			log.Warn("Head state missing, repairing", "number", head.Number, "hash", head.Hash(), "snaproot", diskRoot)
@@ -393,8 +403,17 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 
 		head := bc.CurrentBlock()
 		if layer := rawdb.ReadSnapshotRecoveryNumber(bc.db); layer != nil && *layer >= head.Number.Uint64() {
-			log.Warn("Enabling snapshot recovery", "chainhead", head.Number, "diskbase", *layer)
-			recover = true
+			// The number outlives the recovery it was written for. It still holds only while
+			// the canonical chain leads from the head to the disk layer. If a reorg or a
+			// side chain left the layer behind, recovery stays off, snapshot.New rejects the
+			// layer and rebuilds, and the rebuild deletes the number. Deleting it here would
+			// write to a database that a read-only command has opened.
+			if bc.layerAboveHead(head, *layer, rawdb.ReadSnapshotRoot(bc.db)) {
+				log.Warn("Enabling snapshot recovery", "chainhead", head.Number, "diskbase", *layer)
+				recover = true
+			} else {
+				log.Warn("Snapshot recovery number is stale, ignoring it", "number", *layer)
+			}
 		}
 		snapconfig := snapshot.Config{
 			CacheSize:  bc.cacheConfig.SnapshotLimit,
@@ -439,6 +458,46 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		go bc.maintainTxIndex()
 	}
 	return bc, nil
+}
+
+// rootOnChain reports whether the header or one of its ancestors has the given state root.
+// A gap in the headers ends the search, and the root counts as not found.
+func (bc *BlockChain) rootOnChain(header *types.Header, root common.Hash) bool {
+	for header != nil {
+		if header.Root == root {
+			return true
+		}
+		if header.Number.Sign() == 0 {
+			return false
+		}
+		number, hash := header.Number.Uint64()-1, header.ParentHash
+		if header = bc.GetHeader(hash, number); header == nil {
+			log.Error("Missing header in the middle, snapshot root not found", "number", number, "hash", hash)
+		}
+	}
+	return false
+}
+
+// layerAboveHead reports whether the canonical chain leads from the head up to a header
+// at the given height that has the given state root. The canonical index above the head
+// is only as good as its links: a chain that extends the head overwrites the index one
+// height at a time and leaves the entries of the old chain above it, so every entry has
+// to be the parent of the next one, down to the head.
+func (bc *BlockChain) layerAboveHead(head *types.Header, number uint64, root common.Hash) bool {
+	header := bc.GetHeaderByNumber(number)
+	if header == nil || header.Root != root {
+		return false
+	}
+	for header.Number.Uint64() > head.Number.Uint64() {
+		height := header.Number.Uint64() - 1
+		if bc.GetCanonicalHash(height) != header.ParentHash {
+			return false
+		}
+		if header = bc.GetHeader(header.ParentHash, height); header == nil {
+			return false
+		}
+	}
+	return header.Hash() == head.Hash()
 }
 
 // empty returns an indicator whether the blockchain is empty.
