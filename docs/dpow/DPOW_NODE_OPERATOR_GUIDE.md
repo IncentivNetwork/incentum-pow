@@ -42,13 +42,13 @@ Before activation, every node's service file must be hardened. This is not optio
 
 - [ ] `--http.addr 127.0.0.1` — HTTP RPC bound to localhost (or behind an authenticated reverse proxy / IP allowlist; never `0.0.0.0` on a public interface).
 - [ ] `--ws.addr 127.0.0.1` — same for WebSocket RPC.
-- [ ] **No** `--unlock` — Ethash mining does not need an unlocked etherbase; the etherbase only receives rewards, it signs nothing.
+- [ ] **No** `--unlock` — Ethash mining does not need an unlocked etherbase. Until the chain reaches a signer threshold nothing is signed on the node. Past it a producer signs with a key the engine loads itself, which never goes through the account manager: the key listed for its coinbase, or else the etherbase key itself (`DPOW_MINER_SIGNATURE.md`).
 - [ ] **No** `--allow-insecure-unlock`.
 - [ ] **No** `--rpc.allow-unprotected-txs`.
 - [ ] `--txpool.pricelimit <wei>` — set a minimum gas price so zero-fee spam transactions propagated over P2P are rejected on entry. Pick a value above zero but below the normal transaction-fee level of the network; tune it to the network's actual fee policy (`1000000000` = 1 Gwei is a reasonable starting point, not a universal constant).
 - [ ] **No** `debug` in `--http.api` / `--ws.api` — unless the node indexes for a block explorer, in which case use the restricted profile described below.
 
-> Miners sign their `approve` / `stake` / `requestUnstake` transactions **externally** (with `cast --keystore` or a hardware wallet) and submit them over local IPC or a restricted RPC. The node itself never needs an unlocked account. See `DPOW_MINER_ONBOARDING.md`.
+> Miners sign their `approve` / `stake` / `requestUnstake` transactions **externally** (with `cast --keystore` or a hardware wallet) and submit them over local IPC or a restricted RPC. The node itself never needs an unlocked account. See `DPOW_MINER_ONBOARDING.md`. A dedicated signer key is not one of these accounts: it holds no funds and no stake. A coinbase signing with its own key, listed or not, uses one of them, because staking is self-only. That key has to be on the host in a keystore file to mine past the threshold, so a coinbase kept in a hardware wallet cannot do so unless a release lists a dedicated signer for it.
 
 #### The `debug` namespace on HTTP / WS
 
@@ -121,6 +121,9 @@ Group=ubuntu
 Restart=on-failure
 RestartSec=15
 WorkingDirectory=/mnt/data/node
+LimitCORE=0
+LoadCredential=miner-signer-key:<absolute path of the signer keystore file>
+LoadCredential=miner-signer-password:<absolute path of the signer password file>
 ExecStart=/mnt/data/node/client/build/bin/geth \
   --datadir /mnt/data/node/data \
   --http \
@@ -135,17 +138,17 @@ ExecStart=/mnt/data/node/client/build/bin/geth \
   --txpool.pricelimit 1000000000 \
   --mine \
   --miner.threads 4 \
-  --miner.etherbase 0x<MINER_COINBASE>
-StandardOutput=append:/var/log/geth.log
-StandardError=append:/var/log/geth.log
+  --miner.etherbase 0x<MINER_COINBASE> \
+  --miner.signerkey ${CREDENTIALS_DIRECTORY}/miner-signer-key \
+  --miner.signerpassword ${CREDENTIALS_DIRECTORY}/miner-signer-password
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-> The `/mnt/data/node/...` paths and the `User` / `Group` shown are an example layout — set `WorkingDirectory`, `ExecStart`, `--datadir`, and `User` / `Group` to your node's actual install. systemd does not expand shell variables, so these must be absolute paths.
+> The `/mnt/data/node/...` paths and the `User` / `Group` shown are an example layout — set `WorkingDirectory`, `ExecStart`, `--datadir`, and `User` / `Group` to your node's actual install. systemd does not expand shell variables, so these must be absolute paths. `${CREDENTIALS_DIRECTORY}` is the exception: systemd sets it itself for a unit with `LoadCredential=`, whose sources must be absolute paths too. A unit that keeps `StandardOutput=append:` logs to that file, so the §4.5 and §5.1 checks read nothing on it.
 
-An RPC or archive node uses the same flags minus `--mine`, `--miner.threads`, `--miner.etherbase`.
+An RPC or archive node uses the same flags minus `--mine`, `--miner.threads`, `--miner.etherbase`, `--miner.signerkey`, `--miner.signerpassword`, and drops the two `LoadCredential=` lines: a unit whose credential source is missing fails before geth runs.
 
 > If the network requires external HTTP access (block explorer, monitoring), do not reopen `0.0.0.0`. Use an SSH tunnel, a private network interface, or an authenticated reverse proxy with an IP allowlist.
 
@@ -219,10 +222,10 @@ sudo systemctl daemon-reload
 
 The DPoW activation parameters live in the binary's built-in network `ChainConfig` — they are not in any TOML file, so `geth dumpconfig` does **not** show them. Verify from a running node instead.
 
-At startup geth logs a one-line consensus banner:
+At startup geth logs a one-line consensus banner. Read it after the start in §4.6, because until then the journal holds the banner of the binary before it:
 
 ```bash
-sudo journalctl -u incentum.service | grep -i "Consensus:"
+sudo journalctl -u incentum.service | grep -i "Consensus:" | tail -1
 # DPoW-enabled binary with activation set:
 #   Consensus: Ethash + DPoW (authorized mining, activates at timestamp <DPoWTime> / <RFC3339 UTC>)
 # DPoW code present but inactive (DPoWTime = nil):
@@ -288,7 +291,8 @@ At the first block with `block.timestamp ≥ DPoWTime`:
 
 # consensus errors in the last 15 minutes
 sudo journalctl -u incentum.service --since "15 min ago" \
-  | grep -ciE 'DPoW|unauthorized|not yet mature|BAD BLOCK|panic'
+  | grep -iE 'DPoW|unauthorized|not yet mature|BAD BLOCK|panic' \
+  | grep -cvE 'Consensus: | - DPoW: +@'
 ```
 
 Expected after activation: the latest block's `miner` is always a staked, authorized address; the consensus-error count is `0`.

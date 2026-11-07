@@ -22,6 +22,7 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -176,6 +177,7 @@ func testBlockChainImport(chain types.Blocks, blockchain *BlockChain) error {
 		blockchain.chainmu.MustLock()
 		rawdb.WriteTd(blockchain.db, block.Hash(), block.NumberU64(), new(big.Int).Add(block.Difficulty(), blockchain.GetTd(block.ParentHash(), block.NumberU64()-1)))
 		rawdb.WriteBlock(blockchain.db, block)
+		rawdb.WriteReceipts(blockchain.db, block.Hash(), block.NumberU64(), receipts)
 		statedb.Commit(false)
 		blockchain.chainmu.Unlock()
 	}
@@ -2083,6 +2085,386 @@ func TestPrunedImportSideWithMerging(t *testing.T) {
 	testSideImport(t, 10, 0, 1)
 	testSideImport(t, 1, 10, 1)
 	testSideImport(t, 1, -10, 1)
+}
+
+// A side block with pruned ancestors is stored unexecuted. The root it claims can name a state
+// that is there for another reason, and neither its children nor the reorg may rely on that:
+// the fork has to execute from the last block that was executed itself.
+func TestSideBlockClaimingAnotherState(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		key, _ = crypto.GenerateKey()
+		addr   = crypto.PubkeyToAddress(key.PublicKey)
+		gspec  = &Genesis{
+			Config:  params.TestChainConfig,
+			Alloc:   GenesisAlloc{addr: {Balance: big.NewInt(math.MaxInt64)}},
+			BaseFee: big.NewInt(params.InitialBaseFee),
+		}
+		signer = types.LatestSigner(gspec.Config)
+	)
+	transfer := func(b *BlockGen, to common.Address) {
+		tx, err := types.SignTx(types.NewTransaction(b.TxNonce(addr), to, common.Big1, params.TxGas, b.BaseFee(), nil), signer, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.AddTx(tx)
+	}
+	genDb, blocks, _ := GenerateChainWithGenesis(gspec, engine, TriesInMemory+10, func(_ int, b *BlockGen) {
+		transfer(b, common.Address{1})
+	})
+	head := blocks[len(blocks)-1]
+	chain, err := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer chain.Stop()
+	if n, err := chain.InsertChain(blocks); err != nil {
+		t.Fatalf("block %d: %v", n, err)
+	}
+	// A side block on the genesis state gets executed, and its state stays around.
+	side, _ := GenerateChain(gspec.Config, gspec.ToBlock(), engine, genDb, 1, func(_ int, b *BlockGen) {
+		transfer(b, common.Address{2})
+	})
+	if n, err := chain.InsertChain(side); err != nil {
+		t.Fatalf("side block %d: %v", n, err)
+	}
+	if !chain.HasState(side[0].Root()) {
+		t.Fatal("the state of the side block is gone")
+	}
+	// A block on a pruned ancestor claims it.
+	base := blocks[5]
+	if chain.HasState(base.Root()) {
+		t.Fatalf("the state of #%d is still there", base.NumberU64())
+	}
+	fork, _ := GenerateChain(gspec.Config, base, engine, genDb, 1, nil)
+	header := fork[0].Header()
+	header.Root = side[0].Root()
+	claiming := types.NewBlockWithHeader(header)
+	if n, err := chain.InsertChain(types.Blocks{claiming}); err != nil {
+		t.Fatalf("claiming block %d: %v", n, err)
+	}
+	if chain.HasBlockAndState(claiming.Hash(), claiming.NumberU64()) {
+		t.Fatal("a block that was never executed counts as having its state")
+	}
+	// Its children, valid on the claimed state, are not executed on it.
+	children, _ := GenerateChain(gspec.Config, claiming, engine, genDb, TriesInMemory+10, func(i int, b *BlockGen) {
+		b.OffsetTime(-9) // Each block heavier than a canonical one
+		if i == 0 {
+			transfer(b, common.Address{3}) // A root of its own
+		}
+	})
+	if n, err := chain.InsertChain(children[:1]); err != nil {
+		t.Fatalf("child %d: %v", n, err)
+	}
+	if chain.HasBlockAndState(children[0].Hash(), children[0].NumberU64()) {
+		t.Fatal("the child was executed on the claimed state")
+	}
+	// Once the fork is heavier it executes, which shows the claim false.
+	if _, err := chain.InsertChain(children[1:]); err == nil || !strings.Contains(err.Error(), "invalid merkle root") {
+		t.Fatalf("got %v, want an invalid merkle root", err)
+	}
+	// Delivered again every block is stored, and none of them counts as known.
+	if _, err := chain.InsertChain(children[1:]); err == nil || !strings.Contains(err.Error(), "invalid merkle root") {
+		t.Fatalf("second delivery: got %v, want an invalid merkle root", err)
+	}
+	// The paths that set a head from outside hold it to the same test.
+	if _, err := chain.SetCanonical(claiming); err == nil || !strings.Contains(err.Error(), "invalid merkle root") {
+		t.Fatalf("SetCanonical: got %v, want an invalid merkle root", err)
+	}
+	if err := chain.InsertBlockWithoutSetHead(children[0]); err == nil || !strings.Contains(err.Error(), "invalid merkle root") {
+		t.Fatalf("InsertBlockWithoutSetHead: got %v, want an invalid merkle root", err)
+	}
+	if have := chain.CurrentBlock().Hash(); have != head.Hash() {
+		t.Fatalf("head %x, want %x", have, head.Hash())
+	}
+}
+
+// A side chain falling to the minimum difficulty can be lighter than the head and still far
+// above it. Executing it leaves the state of the head alone, and a restart keeps the head.
+func TestLightSideChainKeepsHeadState(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		key, _ = crypto.GenerateKey()
+		addr   = crypto.PubkeyToAddress(key.PublicKey)
+		gspec  = &Genesis{
+			Config:     params.TestChainConfig,
+			Alloc:      GenesisAlloc{addr: {Balance: big.NewInt(math.MaxInt64)}},
+			BaseFee:    big.NewInt(params.InitialBaseFee),
+			Difficulty: new(big.Int).Mul(params.GenesisDifficulty, big.NewInt(16)),
+			Timestamp:  uint64(time.Now().Add(-240 * time.Hour).Unix()),
+		}
+		signer = types.LatestSigner(gspec.Config)
+	)
+	genDb, canon, _ := GenerateChainWithGenesis(gspec, engine, 32, func(_ int, b *BlockGen) {
+		tx, err := types.SignTx(types.NewTransaction(b.TxNonce(addr), common.Address{1}, common.Big1, params.TxGas, b.BaseFee(), nil), signer, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.AddTx(tx)
+	})
+	head := canon[len(canon)-1]
+	side, _ := GenerateChain(gspec.Config, gspec.ToBlock(), engine, genDb, len(canon)+TriesInMemory+5, func(i int, b *BlockGen) {
+		b.SetCoinbase(common.Address{2})
+		if i < 64 {
+			b.OffsetTime(990) // Long gaps bring the difficulty down
+		}
+	})
+	db := rawdb.NewMemoryDatabase()
+	chain, err := NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := chain.InsertChain(canon); err != nil {
+		t.Fatalf("block %d: %v", n, err)
+	}
+	if n, err := chain.InsertChain(side); err != nil {
+		t.Fatalf("side block %d: %v", n, err)
+	}
+	tip := side[len(side)-1]
+	if chain.GetTd(tip.Hash(), tip.NumberU64()).Cmp(chain.GetTd(head.Hash(), head.NumberU64())) >= 0 {
+		t.Fatal("the side chain is not lighter than the head")
+	}
+	if have := chain.CurrentBlock().Hash(); have != head.Hash() {
+		t.Fatalf("head %x, want %x", have, head.Hash())
+	}
+	if _, err := chain.StateAt(head.Root()); err != nil {
+		t.Fatalf("the state of the head is gone: %v", err)
+	}
+	chain.Stop()
+
+	restarted, err := NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Stop()
+	if have := restarted.CurrentBlock().Hash(); have != head.Hash() {
+		t.Fatalf("head %x after a restart, want %x", have, head.Hash())
+	}
+}
+
+// A lighter side chain above the head keeps the states it needs to go on and no more, however
+// far it runs ahead, and the head keeps its own. It can still take over once it is heavier.
+func TestLightSideChainDropsOldStates(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		key, _ = crypto.GenerateKey()
+		addr   = crypto.PubkeyToAddress(key.PublicKey)
+		gspec  = &Genesis{
+			Config:     params.TestChainConfig,
+			Alloc:      GenesisAlloc{addr: {Balance: big.NewInt(math.MaxInt64)}},
+			BaseFee:    big.NewInt(params.InitialBaseFee),
+			Difficulty: new(big.Int).Mul(params.GenesisDifficulty, big.NewInt(16)),
+			Timestamp:  uint64(time.Now().Add(-240 * time.Hour).Unix()),
+		}
+		signer = types.LatestSigner(gspec.Config)
+	)
+	spend := func(b *BlockGen, to common.Address) {
+		tx, err := types.SignTx(types.NewTransaction(b.TxNonce(addr), to, common.Big1, params.TxGas, b.BaseFee(), nil), signer, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.AddTx(tx)
+	}
+	genDb, canon, _ := GenerateChainWithGenesis(gspec, engine, TriesInMemory+8, func(_ int, b *BlockGen) {
+		spend(b, common.Address{1})
+	})
+	side, _ := GenerateChain(gspec.Config, gspec.ToBlock(), engine, genDb, len(canon)+2*TriesInMemory+64, func(i int, b *BlockGen) {
+		b.SetCoinbase(common.Address{2})
+		if i < 16 {
+			b.OffsetTime(990) // Long gaps bring the difficulty down
+		}
+		spend(b, common.Address{2})
+	})
+	headTD := new(big.Int).Set(gspec.Difficulty)
+	for _, block := range canon {
+		headTD.Add(headTD, block.Difficulty())
+	}
+	// How much of the side chain stays lighter than the head.
+	light, td := 0, new(big.Int).Set(gspec.Difficulty)
+	for _, block := range side {
+		if td.Add(td, block.Difficulty()).Cmp(headTD) >= 0 {
+			break
+		}
+		light++
+	}
+	if light < len(canon)+TriesInMemory+8 || light == len(side) {
+		t.Fatalf("%d of %d side blocks are lighter than the head at %d, which tests nothing", light, len(side), len(canon))
+	}
+	chain, err := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := chain.InsertChain(canon); err != nil {
+		t.Fatalf("block %d: %v", n, err)
+	}
+	if n, err := chain.InsertChain(side[:light]); err != nil {
+		t.Fatalf("side block %d: %v", n, err)
+	}
+	head := canon[len(canon)-1]
+	if have := chain.CurrentBlock().Hash(); have != head.Hash() {
+		t.Fatalf("head %x, want %x", have, head.Hash())
+	}
+	// The head keeps its window...
+	for _, offset := range []int{0, 1, 64, TriesInMemory - 2} {
+		if block := canon[len(canon)-1-offset]; !chain.HasState(block.Root()) {
+			t.Errorf("the state of canonical block %d, %d below the head, is gone", block.NumberU64(), offset)
+		}
+	}
+	// ...and the side chain the same number of states, counted from its own tip.
+	tip := light - 1
+	for _, offset := range []int{0, 1, TriesInMemory - 1} {
+		if block := side[tip-offset]; !chain.HasState(block.Root()) {
+			t.Errorf("the state of side block %d, %d below its tip, is gone", block.NumberU64(), offset)
+		}
+	}
+	for _, offset := range []int{TriesInMemory, TriesInMemory + 1, 2 * TriesInMemory} {
+		if block := side[tip-offset]; chain.HasState(block.Root()) {
+			t.Errorf("the state of side block %d, %d below its tip, is still held", block.NumberU64(), offset)
+		}
+	}
+	if have, limit := chain.triegc.Size(), 2*TriesInMemory+1; have > limit {
+		t.Errorf("%d states held, want %d at most", have, limit)
+	}
+	// The side chain goes on from what it kept and takes over.
+	if n, err := chain.InsertChain(side[light:]); err != nil {
+		t.Fatalf("side block %d: %v", light+n, err)
+	}
+	last := side[len(side)-1]
+	if have := chain.CurrentBlock().Hash(); have != last.Hash() {
+		t.Fatalf("head %x, want the side tip %x", have, last.Hash())
+	}
+	if !chain.HasState(last.Root()) {
+		t.Error("the state of the new head is gone")
+	}
+	chain.Stop()
+	// Every reference taken was given back exactly once.
+	if nodes, _ := chain.triedb.Size(); nodes != 0 {
+		t.Errorf("%v of trie nodes left after a full cleanup", nodes)
+	}
+}
+
+// With a head below TriesInMemory a lighter side chain far above it is still bounded by the
+// block it ends on, not by the head: it keeps no more than TriesInMemory states behind its tip
+// and answers to the memory limit, while the head keeps every state it has.
+func TestLightSideChainAboveLowHead(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		key, _ = crypto.GenerateKey()
+		addr   = crypto.PubkeyToAddress(key.PublicKey)
+		gspec  = &Genesis{
+			Config:     params.TestChainConfig,
+			Alloc:      GenesisAlloc{addr: {Balance: big.NewInt(math.MaxInt64)}},
+			BaseFee:    big.NewInt(params.InitialBaseFee),
+			Difficulty: new(big.Int).Mul(params.GenesisDifficulty, big.NewInt(16)),
+			Timestamp:  uint64(time.Now().Add(-240 * time.Hour).Unix()),
+		}
+		signer = types.LatestSigner(gspec.Config)
+	)
+	spend := func(b *BlockGen, to common.Address) {
+		tx, err := types.SignTx(types.NewTransaction(b.TxNonce(addr), to, common.Big1, params.TxGas, b.BaseFee(), nil), signer, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.AddTx(tx)
+	}
+	genDb, canon, _ := GenerateChainWithGenesis(gspec, engine, 32, func(_ int, b *BlockGen) {
+		spend(b, common.Address{1})
+	})
+	side, _ := GenerateChain(gspec.Config, gspec.ToBlock(), engine, genDb, len(canon)+TriesInMemory+5, func(i int, b *BlockGen) {
+		b.SetCoinbase(common.Address{2})
+		if i < 64 {
+			b.OffsetTime(990) // Long gaps bring the difficulty down
+		}
+		spend(b, common.Address{2})
+	})
+	head, tip := canon[len(canon)-1], side[len(side)-1]
+	if head.NumberU64() >= TriesInMemory || tip.NumberU64() <= TriesInMemory {
+		t.Fatalf("the head at %d and the tip at %d are not on either side of %d", head.NumberU64(), tip.NumberU64(), TriesInMemory)
+	}
+	insert := func(t *testing.T, cache *CacheConfig) *BlockChain {
+		t.Helper()
+		chain, err := NewBlockChain(rawdb.NewMemoryDatabase(), cache, gspec, nil, engine, vm.Config{}, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(chain.Stop)
+		if n, err := chain.InsertChain(canon); err != nil {
+			t.Fatalf("block %d: %v", n, err)
+		}
+		if n, err := chain.InsertChain(side); err != nil {
+			t.Fatalf("side block %d: %v", n, err)
+		}
+		if chain.GetTd(tip.Hash(), tip.NumberU64()).Cmp(chain.GetTd(head.Hash(), head.NumberU64())) >= 0 {
+			t.Fatal("the side chain is not lighter than the head")
+		}
+		if have := chain.CurrentBlock().Hash(); have != head.Hash() {
+			t.Fatalf("head %x, want %x", have, head.Hash())
+		}
+		return chain
+	}
+	t.Run("states", func(t *testing.T) {
+		chain := insert(t, nil)
+
+		// The side chain keeps the states of the TriesInMemory blocks up to its tip...
+		for _, offset := range []int{0, 1, TriesInMemory - 1} {
+			if block := side[len(side)-1-offset]; !chain.HasState(block.Root()) {
+				t.Errorf("the state of side block %d, %d below its tip, is gone", block.NumberU64(), offset)
+			}
+		}
+		// ...and none below them, though the head is nowhere near.
+		for _, offset := range []int{TriesInMemory, TriesInMemory + 1, len(side) - 1} {
+			if block := side[len(side)-1-offset]; chain.HasState(block.Root()) {
+				t.Errorf("the state of side block %d, %d below its tip, is still held", block.NumberU64(), offset)
+			}
+		}
+		// The canonical chain keeps all of its own.
+		for _, block := range canon {
+			if !chain.HasState(block.Root()) {
+				t.Errorf("the state of canonical block %d is gone", block.NumberU64())
+			}
+		}
+		if have, limit := chain.triegc.Size(), len(canon)+TriesInMemory+1; have > limit {
+			t.Errorf("%d states held, want %d at most", have, limit)
+		}
+	})
+	t.Run("memory limit", func(t *testing.T) {
+		cache := *defaultCacheConfig
+		cache.TrieDirtyLimit = 0 // Whatever is dirty is over the limit
+		chain := insert(t, &cache)
+		if nodes, _ := chain.triedb.Size(); nodes != 0 {
+			t.Errorf("%v of dirty trie nodes held over a limit of zero", nodes)
+		}
+	})
+}
+
+// A snap sync that delivers a block stored earlier as a side block writes its receipts.
+func TestInsertReceiptChainOverSideBlock(t *testing.T) {
+	gspec := &Genesis{Config: params.TestChainConfig, BaseFee: big.NewInt(params.InitialBaseFee)}
+	_, blocks, receipts := GenerateChainWithGenesis(gspec, ethash.NewFaker(), 3, nil)
+
+	db := rawdb.NewMemoryDatabase()
+	chain, err := NewBlockChain(db, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer chain.Stop()
+
+	headers := make([]*types.Header, len(blocks))
+	for i, block := range blocks {
+		headers[i] = block.Header()
+	}
+	if n, err := chain.InsertHeaderChain(headers, 1); err != nil {
+		t.Fatalf("header %d: %v", n, err)
+	}
+	rawdb.WriteBlock(db, blocks[0])
+	if n, err := chain.InsertReceiptChain(blocks, receipts, 0); err != nil {
+		t.Fatalf("block %d: %v", n, err)
+	}
+	for _, block := range blocks {
+		if !rawdb.HasReceipts(db, block.Hash(), block.NumberU64()) {
+			t.Fatalf("block %d has no receipts", block.NumberU64())
+		}
+	}
 }
 
 func TestInsertKnownHeaders(t *testing.T)      { testInsertKnownChainData(t, "headers") }

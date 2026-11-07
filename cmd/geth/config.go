@@ -177,6 +177,10 @@ func applyOverrideFlags(ctx *cli.Context, cfg *gethConfig) {
 		v := ctx.Uint64(utils.OverrideWebAuthnStrict.Name)
 		cfg.Eth.OverrideWebAuthnStrict = &v
 	}
+	if ctx.IsSet(utils.OverrideMinerSignerTD.Name) {
+		v := ctx.Uint64(utils.OverrideMinerSignerTD.Name)
+		cfg.Eth.OverrideMinerSignerTD = &v
+	}
 }
 
 // makeFullNode loads geth configuration and creates the Ethereum backend.

@@ -22,7 +22,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -313,6 +315,17 @@ type ChainOverrides struct {
 	// mainnet and devnet, shanghaiTime on testnet. Postponing it far enough is the only
 	// lever.
 	OverrideWebAuthnStrict *uint64
+
+	// OverrideMinerSignerTD moves the total difficulty the first miner signer epoch starts
+	// at, to hold the rule back when the producers are not ready for it. It keeps the
+	// bundled signer list and cannot turn the rule off. It is safe only while no signed
+	// block exists and every node runs the same value, geth import included. A value above
+	// the head rewinds nothing, so a node whose threshold was raised past its head rejects
+	// signed blocks and stops there. At or below the head rewindInvalidMinerSignature judges
+	// the first block past the value and rewinds below it if it fails, which lowering the
+	// value does, and so does dropping the flag where the start then replaces the stored
+	// threshold with a bundled or genesis one. Elsewhere the stored value stays.
+	OverrideMinerSignerTD *uint64
 }
 
 // apply returns config with the requested fork overrides applied. It copies rather
@@ -333,7 +346,23 @@ func (o *ChainOverrides) apply(config *params.ChainConfig) *params.ChainConfig {
 	if o.OverrideWebAuthnStrict != nil {
 		cpy.WebAuthnStrictTime = o.OverrideWebAuthnStrict
 	}
+	if o.OverrideMinerSignerTD != nil && len(cpy.MinerSignerEpochs) > 0 {
+		cpy.MinerSignerEpochs = slices.Clone(cpy.MinerSignerEpochs)
+		cpy.MinerSignerEpochs[0].TD = new(big.Int).SetUint64(*o.OverrideMinerSignerTD)
+	}
 	return &cpy
+}
+
+// changedMinerSignerEpoch returns the index of the first epoch of stored that now changes or no
+// longer has, or -1 if there is none. Appending an epoch is how one is added, so more epochs after
+// the stored ones are no change.
+func changedMinerSignerEpoch(stored, now []params.MinerSignerEpoch) int {
+	for i, epoch := range stored {
+		if i >= len(now) || epoch.TD.Cmp(now[i].TD) != 0 || !maps.Equal(epoch.Signers, now[i].Signers) {
+			return i
+		}
+	}
+	return -1
 }
 
 // incentivBundledConfig reports the configuration this binary ships for the Incentiv
@@ -348,7 +377,9 @@ func (o *ChainOverrides) apply(config *params.ChainConfig) *params.ChainConfig {
 // difference checkCompatible *does* object to is
 // not taken either: adopting it would hand NewBlockChain a ConfigCompatError, which it
 // acts on by rewinding the chain. Nobody asked for that by starting without a network
-// flag, so an implicit adoption never rewinds; accepting one is what the flag is for. The
+// flag, so an implicit adoption never rewinds; accepting one is what the flag is for.
+// Miner signer epochs are outside this: checkCompatible does not compare them, so adopting
+// a bundled threshold at or below the head goes through rewindInvalidMinerSignature. The
 // bound is on the adoption, not on the whole start: an override is applied over the
 // stored config afterwards, and one naming a timestamp already behind the head does
 // produce a rewind — which is the operator asking for it in as many words.
@@ -457,10 +488,19 @@ func checkConfigInvariants(config *params.ChainConfig) error {
 	if err := config.CheckDPoWConfig(); err != nil {
 		return err
 	}
+	if err := config.CheckMinerSignerConfig(); err != nil {
+		return err
+	}
 	return config.CheckMinBaseFeeConfig()
 }
 
-func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, genesis *Genesis, overrides *ChainOverrides) (*params.ChainConfig, common.Hash, error) {
+func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, genesis *Genesis, overrides *ChainOverrides) (config *params.ChainConfig, _ common.Hash, _ error) {
+	// Said here and not in apply, which a start runs more than once.
+	defer func() {
+		if overrides != nil && overrides.OverrideMinerSignerTD != nil && len(config.MinerSignerEpochs) == 0 {
+			log.Warn("Ignoring --override.minersignertd: this chain lists no miner signers")
+		}
+	}()
 	if genesis != nil && genesis.Config == nil {
 		return params.AllEthashProtocolChanges, common.Hash{}, errGenesisNoConfig
 	}
@@ -474,7 +514,7 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 			log.Info("Writing custom genesis block")
 		}
 		// Check the override before committing, so a bad one leaves no database behind.
-		// Only the override needs checking here: Commit runs the same three checks on
+		// Only the override needs checking here: Commit runs the same checks on
 		// genesis.Config, which is what cfg is when there is nothing to override.
 		cfg := overrides.apply(genesis.Config)
 		if hasOverrides(overrides) {
@@ -659,6 +699,22 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 	// rather than this chain, and reject overrides that are valid for it.
 	if err := checkConfigInvariants(newcfg); err != nil {
 		return newcfg, common.Hash{}, err
+	}
+	// One of the thresholds a start replaces can be an override's: the earlier start wrote it and
+	// this one has no flag. And a release can change an epoch, which is a mistake, because nodes
+	// syncing from scratch verify history against it. Either way the effect shows only when the
+	// chain gets there, on one coinbase's blocks or with the node leaving the fleet, so this is the
+	// time to say so. The override this start was given is applied first: it is no change.
+	was := overrides.apply(storedcfg).MinerSignerEpochs
+	if i := changedMinerSignerEpoch(was, newcfg.MinerSignerEpochs); i >= 0 {
+		var threshold *big.Int
+		if i < len(newcfg.MinerSignerEpochs) {
+			threshold = newcfg.MinerSignerEpochs[i].TD
+		}
+		log.Warn("Stored miner signer epochs replaced",
+			"chain", storedcfg.ChainID, "genesis", stored,
+			"epoch", i, "stored", was[i].TD, "threshold", threshold,
+			"note", "the threshold or the signers of this epoch changed. An --override.minersignertd that is no longer on the command line is not carried over: pass it again if this node is meant to stay on the stored value. Otherwise this binary or the genesis file changed the epoch, which should only ever append one")
 	}
 	// Check config compatibility and write the config. Compatibility errors
 	// are returned to the caller unless we're already at block zero.

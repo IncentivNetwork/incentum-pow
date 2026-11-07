@@ -296,6 +296,51 @@ func TestReorgShortHeaders(t *testing.T) {
 	testReorg(t, []int{1, 2, 3, 4}, []int{1, 10}, 11)
 }
 
+// A client that crossed a miner signer threshold on an older binary holds headers the network
+// rejects, and their total difficulty can keep them ahead of the honest chain. Opening the chain
+// rewinds below the crossing, as the start of a full node does.
+func TestNewLightChainRewindsInvalidSignerCrossing(t *testing.T) {
+	db, old, err := newCanonical(8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var headers []*types.Header
+	for number := uint64(1); number <= 8; number++ {
+		headers = append(headers, old.GetHeaderByNumber(number))
+	}
+	last, crossing := headers[7], headers[4]
+	td := old.GetTd(crossing.Hash(), crossing.Number.Uint64())
+	old.Stop()
+
+	open := func(threshold *big.Int) *LightChain {
+		t.Helper()
+		config := *params.TestChainConfig
+		config.MinerSignerEpochs = []params.MinerSignerEpoch{{TD: threshold, Signers: map[common.Address]common.Address{{1}: {2}}}}
+		engine := ethash.NewTester(nil, false)
+		t.Cleanup(func() { engine.Close() })
+		chain, err := NewLightChain(&dummyOdr{db: db, indexerConfig: TestClientIndexerConfig}, &config, engine, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(chain.Stop)
+		return chain
+	}
+	// With the threshold still ahead there is nothing to judge.
+	if head := open(new(big.Int).Add(old.GetTd(last.Hash(), last.Number.Uint64()), common.Big1)).CurrentHeader(); head.Hash() != last.Hash() {
+		t.Fatalf("threshold above the head: head #%d", head.Number)
+	}
+	chain := open(td)
+	if head := chain.CurrentHeader(); head.Hash() != headers[3].Hash() {
+		t.Fatalf("threshold on an unsigned block: head #%d, want #%d", head.Number, headers[3].Number)
+	}
+	if have := rawdb.ReadHeadHeaderHash(db); have != headers[3].Hash() {
+		t.Fatalf("the stored head is %x", have)
+	}
+	if chain.GetHeaderByHash(crossing.Hash()) != nil {
+		t.Fatal("the invalid crossing is still there")
+	}
+}
+
 func testReorg(t *testing.T, first, second []int, td int64) {
 	bc := newTestLightChain()
 

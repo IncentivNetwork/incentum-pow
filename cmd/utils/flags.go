@@ -292,6 +292,11 @@ var (
 		Usage:    "Manually specify the WebAuthnStrict fork timestamp, overriding the bundled setting",
 		Category: flags.EthCategory,
 	}
+	OverrideMinerSignerTD = &cli.Uint64Flag{
+		Name:     "override.minersignertd",
+		Usage:    "Manually specify the total difficulty the first miner signer epoch starts at, overriding the bundled setting",
+		Category: flags.EthCategory,
+	}
 	// Light server and client settings
 	LightServeFlag = &cli.IntFlag{
 		Name:     "light.serve",
@@ -582,6 +587,23 @@ var (
 		Name:     "miner.newpayload-timeout",
 		Usage:    "Specify the maximum time allowance for creating a new payload",
 		Value:    ethconfig.Defaults.Miner.NewPayloadTimeout,
+		Category: flags.MinerCategory,
+	}
+	MinerSignerKeyFlag = &cli.PathFlag{
+		Name:      "miner.signerkey",
+		Usage:     "Keystore file with the key mined blocks are signed with: the signer listed for the etherbase, or else the etherbase's own key. Keep it outside the datadir and the keystore directory",
+		TakesFile: true,
+		Category:  flags.MinerCategory,
+	}
+	MinerSignerPasswordFlag = &cli.PathFlag{
+		Name:      "miner.signerpassword",
+		Usage:     "File whose first line is the password of --miner.signerkey",
+		TakesFile: true,
+		Category:  flags.MinerCategory,
+	}
+	MinerNoSignerFlag = &cli.BoolFlag{
+		Name:     "miner.nosigner",
+		Usage:    "Start mining without a signer on a chain that lists them. Blocks stop at the signature threshold. For an emergency hold only",
 		Category: flags.MinerCategory,
 	}
 
@@ -1765,6 +1787,15 @@ func setMiner(ctx *cli.Context, cfg *miner.Config) {
 	if ctx.IsSet(MinerNewPayloadTimeout.Name) {
 		cfg.NewPayloadTimeout = ctx.Duration(MinerNewPayloadTimeout.Name)
 	}
+	if ctx.IsSet(MinerSignerKeyFlag.Name) {
+		cfg.SignerKeyFile = ctx.Path(MinerSignerKeyFlag.Name)
+	}
+	if ctx.IsSet(MinerSignerPasswordFlag.Name) {
+		cfg.SignerPasswordFile = ctx.Path(MinerSignerPasswordFlag.Name)
+	}
+	if ctx.IsSet(MinerNoSignerFlag.Name) {
+		cfg.NoSigner = ctx.Bool(MinerNoSignerFlag.Name)
+	}
 }
 
 func setRequiredBlocks(ctx *cli.Context, cfg *ethconfig.Config) {
@@ -2456,10 +2487,12 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool, overrides *cor
 				Fatalf("This database has no head header, so the configuration a start would settle on cannot be worked out. Start the node once, then re-run this command.")
 			default:
 				wanted, _ := gspec.ConfigOrStored(storedcfg, stored, head, overrides)
-				if sameChainConfig(storedcfg, wanted) {
-					break
+				if !sameChainConfig(storedcfg, wanted) {
+					Fatalf("The chain configuration in this database differs from the one this binary would apply, and a read-only command cannot update it. %s", startOnce)
 				}
-				Fatalf("The chain configuration in this database differs from the one this binary would apply, and a read-only command cannot update it. %s", startOnce)
+				if first, reason := core.InvalidMinerSignatureCrossing(chainDb, storedcfg, engine, head); first != nil {
+					Fatalf("The head of this database passed a miner signer threshold on block %v, which the rule rejects (%v), and a read-only command cannot rewind it. Start the node once so that it rewinds, then re-run this command.", first.Number, reason)
+				}
 			}
 		}
 	}

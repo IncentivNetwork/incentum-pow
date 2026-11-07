@@ -392,6 +392,9 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 			}
 		}
 	}
+	if err := bc.rewindInvalidMinerSignature(); err != nil {
+		return nil, err
+	}
 
 	// Load any existing snapshot, regenerating it if loading failed
 	if bc.cacheConfig.SnapshotLimit > 0 {
@@ -1273,8 +1276,10 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 				return i, fmt.Errorf("containing header #%d [%x..] unknown", block.Number(), block.Hash().Bytes()[:4])
 			}
 			if !skipPresenceCheck {
-				// Ignore if the entire data is already known
-				if bc.HasBlock(block.Hash(), block.NumberU64()) {
+				// Ignore if the entire data is already known. A side block stored without
+				// being executed is not: it has no receipts, and a pivot without them
+				// would not count as having its state.
+				if bc.HasFastBlock(block.Hash(), block.NumberU64()) {
 					stats.ignored++
 					continue
 				} else {
@@ -1376,6 +1381,68 @@ func (bc *BlockChain) writeBlockWithoutState(block *types.Block, td *big.Int) (e
 	return nil
 }
 
+// rewindInvalidMinerSignature takes the head off a chain that passed a miner signer
+// threshold on a block the rule rejects. A node ends up there by crossing on a binary
+// without the rule, or by a threshold that moved onto such a block, and this cannot tell
+// the two apart. That chain can be heavier than the one the network is on, so fork choice
+// alone never leaves it, and a miner would go on signing on top of it. A timestamp fork
+// gets this from ConfigCompatError; a total difficulty has no entry there.
+//
+// It reads the header head. After a crash the repair at startup can leave the block head
+// below the threshold and the header head past it, and the node goes on announcing that
+// chain's total difficulty to its peers.
+//
+// Only the first block of each epoch is checked, which is enough to catch a binary that
+// predates the rule: it cannot accept a signed block at all. A release that rotates a
+// signer has to consider a node that accepted the first block of the new epoch and then
+// one by the retired key.
+func (bc *BlockChain) rewindInvalidMinerSignature() error {
+	first, reason := InvalidMinerSignatureCrossing(bc.db, bc.chainConfig, bc.engine, bc.CurrentHeader())
+	if first == nil {
+		return nil
+	}
+	log.Error("Chain crossed the miner signer threshold on an invalid block, rewinding", "number", first.Number, "hash", first.Hash(), "err", reason)
+	return bc.SetHead(first.Number.Uint64() - 1)
+}
+
+// InvalidMinerSignatureCrossing returns the first block of an epoch on the canonical chain up to
+// head that the miner signer rule rejects, and the reason, or nil if there is none. A start
+// rewinds below that block. It is exported for the read-only commands, which cannot, so that
+// they can refuse before a start gets as far as trying, and for a light chain, which holds the
+// same headers.
+func InvalidMinerSignatureCrossing(db ethdb.Reader, config *params.ChainConfig, engine consensus.Engine, head *types.Header) (first *types.Header, reason error) {
+	verifier, ok := engine.(consensus.MinerSignatureVerifier)
+	if !ok {
+		return nil, nil
+	}
+	headTD := rawdb.ReadTd(db, head.Hash(), head.Number.Uint64())
+	if headTD == nil {
+		return nil, nil
+	}
+	canonical := func(number uint64) (*types.Header, *big.Int) {
+		hash := rawdb.ReadCanonicalHash(db, number)
+		return rawdb.ReadHeader(db, hash, number), rawdb.ReadTd(db, hash, number)
+	}
+	for _, epoch := range config.MinerSignerEpochs {
+		if headTD.Cmp(epoch.TD) < 0 {
+			return nil, nil
+		}
+		// Search from block 1: the genesis block is not subject to the rule.
+		number := uint64(sort.Search(int(head.Number.Uint64()), func(i int) bool {
+			header, td := canonical(uint64(i) + 1)
+			return header != nil && td != nil && td.Cmp(epoch.TD) >= 0
+		})) + 1
+		header, td := canonical(number)
+		if header == nil || td == nil {
+			return nil, nil
+		}
+		if err := verifier.VerifyMinerSignature(config, header, td); err != nil {
+			return header, err
+		}
+	}
+	return nil, nil
+}
+
 // writeKnownBlock updates the head block flag with a known block
 // and introduces chain reorg if necessary.
 func (bc *BlockChain) writeKnownBlock(block *types.Block) error {
@@ -1425,9 +1492,16 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	bc.triedb.Reference(root, common.Hash{}) // metadata reference to keep trie alive
 	bc.triegc.Push(root, -int64(block.NumberU64()))
 
-	current := block.NumberU64()
+	tip, current := block.NumberU64(), block.NumberU64()
+	// A side block can be lighter than the head and still far above it. Collecting by its
+	// number would take the state of the head away while the head stays where it is, so what
+	// belongs to the head goes by the head: current is the block's number, but not past the
+	// one after the head. The memory limit and the side chain's own states go by the block.
+	if head := bc.CurrentBlock().Number.Uint64(); current > head+1 {
+		current = head + 1
+	}
 	// Flush limits are not considered for the first TriesInMemory blocks.
-	if current <= TriesInMemory {
+	if tip <= TriesInMemory {
 		return nil
 	}
 	// If we exceeded our memory allowance, flush matured singleton nodes to disk
@@ -1437,6 +1511,13 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	)
 	if nodes > limit || imgs > 4*1024*1024 {
 		bc.triedb.Cap(limit - ethdb.IdealBatchSize)
+	}
+	// A head this low has no state to commit or to collect yet, but a side chain above it still
+	// keeps no more than TriesInMemory states behind its tip. The head is below the tip here,
+	// as the tip is past TriesInMemory.
+	if current <= TriesInMemory {
+		bc.collectSideStates(tip - TriesInMemory)
+		return nil
 	}
 	// Find the next state trie we need to commit
 	chosen := current - TriesInMemory
@@ -1469,7 +1550,37 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		}
 		bc.triedb.Dereference(root)
 	}
+	if tip > current {
+		bc.collectSideStates(tip - TriesInMemory)
+	}
 	return nil
+}
+
+// collectSideStates dereferences the states at or below number, except those of the canonical
+// chain. It is for a side block above the head, which the collection by the head's number does
+// not reach: a side chain keeps as many states behind its tip as any chain does, rather than all
+// of them until the head gets there, by which time they would be on disk for good.
+func (bc *BlockChain) collectSideStates(number uint64) {
+	type entry struct {
+		root   common.Hash
+		number int64
+	}
+	var canonical []entry
+	for !bc.triegc.Empty() {
+		root, n := bc.triegc.Pop()
+		if uint64(-n) > number {
+			bc.triegc.Push(root, n)
+			break
+		}
+		if header := bc.GetHeaderByNumber(uint64(-n)); header != nil && header.Root == root {
+			canonical = append(canonical, entry{root, n})
+			continue
+		}
+		bc.triedb.Dereference(root)
+	}
+	for _, e := range canonical {
+		bc.triegc.Push(e.root, e.number)
+	}
 }
 
 // WriteBlockAndSetHead writes the given block and all associated state to the database,
@@ -1751,20 +1862,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 				"uncles", len(block.Uncles()), "txs", len(block.Transactions()), "gas", block.GasUsed(),
 				"root", block.Root())
 
-			// Special case. Commit the empty receipt slice if we meet the known
-			// block in the middle. It can only happen in the clique chain. Whenever
-			// we insert blocks via `insertSideChain`, we only commit `td`, `header`
-			// and `body` if it's non-existent. Since we don't have receipts without
-			// reexecution, so nothing to commit. But if the sidechain will be adopted
-			// as the canonical chain eventually, it needs to be reexecuted for missing
-			// state, but if it's this special case here(skip reexecution) we will lose
-			// the empty receipt entry.
-			if len(block.Transactions()) == 0 {
-				rawdb.WriteReceipts(bc.db, block.Hash(), block.NumberU64(), nil)
-			} else {
-				log.Error("Please file an issue, skip known block execution without receipt",
-					"hash", block.Hash(), "number", block.NumberU64())
-			}
 			if err := bc.writeKnownBlock(block); err != nil {
 				return it.index, err
 			}
@@ -1948,10 +2045,11 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator) (i
 	// to disk.
 	err := consensus.ErrPrunedAncestor
 	for ; block != nil && errors.Is(err, consensus.ErrPrunedAncestor); block, err = it.next() {
-		// Check the canonical state root for that number
+		// A root equal to that of the canonical block at this number proves nothing: two empty
+		// siblings share one on a chain without block rewards. It needs no check either, since
+		// a block counts as having its state only once it has executed (hasExecutedState).
 		if number := block.NumberU64(); current.Number.Uint64() >= number {
-			canonical := bc.GetBlockByNumber(number)
-			if canonical != nil && canonical.Hash() == block.Hash() {
+			if bc.GetCanonicalHash(number) == block.Hash() {
 				// Not a sidechain block, this is a re-import of a canon block which has it's state pruned
 
 				// Collect the TD of the block. Since we know it's a canon one,
@@ -1959,21 +2057,6 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator) (i
 				// the parent and then add the block on top
 				externTd = bc.GetTd(block.Hash(), block.NumberU64())
 				continue
-			}
-			if canonical != nil && canonical.Root() == block.Root() {
-				// This is most likely a shadow-state attack. When a fork is imported into the
-				// database, and it eventually reaches a block height which is not pruned, we
-				// just found that the state already exist! This means that the sidechain block
-				// refers to a state which already exists in our canon chain.
-				//
-				// If left unchecked, we would now proceed importing the blocks, without actually
-				// having verified the state of the previous blocks.
-				log.Warn("Sidechain ghost-state attack detected", "number", block.NumberU64(), "sideroot", block.Root(), "canonroot", canonical.Root())
-
-				// If someone legitimately side-mines blocks, they would still be imported as usual. However,
-				// we cannot risk writing unverified blocks to disk when they obviously target the pruning
-				// mechanism.
-				return it.index, errors.New("sidechain ghost-state attack")
 			}
 		}
 		if externTd == nil {
@@ -2014,7 +2097,7 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator) (i
 		numbers []uint64
 	)
 	parent := it.previous()
-	for parent != nil && !bc.HasState(parent.Root) {
+	for parent != nil && !bc.hasExecutedState(parent.Hash(), parent.Number.Uint64(), parent.Root) {
 		hashes = append(hashes, parent.Hash())
 		numbers = append(numbers, parent.Number.Uint64())
 
@@ -2070,7 +2153,7 @@ func (bc *BlockChain) recoverAncestors(block *types.Block) (common.Hash, error) 
 		numbers []uint64
 		parent  = block
 	)
-	for parent != nil && !bc.HasState(parent.Root()) {
+	for parent != nil && !bc.hasExecutedState(parent.Hash(), parent.NumberU64(), parent.Root()) {
 		hashes = append(hashes, parent.Hash())
 		numbers = append(numbers, parent.NumberU64())
 		parent = bc.GetBlock(parent.ParentHash(), parent.NumberU64()-1)
@@ -2315,7 +2398,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	defer bc.chainmu.Unlock()
 
 	// Re-execute the reorged chain in case the head state is missing.
-	if !bc.HasState(head.Root()) {
+	if !bc.hasExecutedState(head.Hash(), head.NumberU64(), head.Root()) {
 		if latestValidHash, err := bc.recoverAncestors(head); err != nil {
 			return latestValidHash, err
 		}

@@ -286,7 +286,18 @@ func (bc *BlockChain) HasBlockAndState(hash common.Hash, number uint64) bool {
 	if block == nil {
 		return false
 	}
-	return bc.HasState(block.Root())
+	return bc.hasExecutedState(hash, number, block.Root())
+}
+
+// hasExecutedState checks that a block's state is present and that the block itself got
+// there by being executed. insertSideChain stores blocks unexecuted, without receipts, and
+// a state under the root such a block names says nothing about the block: the root can be
+// false, or simply its parent's, as that of any empty block is on a chain without block
+// rewards. Counting the block as having its state would skip it as known or run its
+// children on that state, with the checks made at execution, such as the DPoW registry,
+// never applied to it.
+func (bc *BlockChain) hasExecutedState(hash common.Hash, number uint64, root common.Hash) bool {
+	return bc.HasState(root) && rawdb.HasReceipts(bc.db, hash, number)
 }
 
 // TrieNode retrieves a blob of data associated with a trie node

@@ -136,3 +136,10 @@ type PoW interface {
 type DPoWVerifier interface {
 	VerifyMinerAuthorization(config *params.ChainConfig, state *state.StateDB, header *types.Header) error
 }
+
+// MinerSignatureVerifier is an optional interface implemented by consensus engines
+// that enforce ChainConfig.MinerSignerEpochs. BlockChain uses it at startup to check
+// a block it already holds, which VerifyHeader would skip as known.
+type MinerSignatureVerifier interface {
+	VerifyMinerSignature(config *params.ChainConfig, header *types.Header, td *big.Int) error
+}
