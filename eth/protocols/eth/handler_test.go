@@ -336,6 +336,45 @@ func testGetBlockHeaders(t *testing.T, protocol uint) {
 }
 
 // Tests that block contents can be retrieved from a remote chain based on their hashes.
+// TestGetBlockHeadersZeroAmount checks that a header query with Amount == 0 is
+// rejected (backport of upstream go-ethereum 733fcbbc6, #30305). Without the
+// guard, count-1 underflows in the contiguous path and a hash-origin forward
+// query returns the whole sub-chain below the origin instead of nothing.
+func TestGetBlockHeadersZeroAmount66(t *testing.T) { testGetBlockHeadersZeroAmount(t, ETH66) }
+func TestGetBlockHeadersZeroAmount67(t *testing.T) { testGetBlockHeadersZeroAmount(t, ETH67) }
+func TestGetBlockHeadersZeroAmount68(t *testing.T) { testGetBlockHeadersZeroAmount(t, ETH68) }
+
+func testGetBlockHeadersZeroAmount(t *testing.T, protocol uint) {
+	t.Parallel()
+
+	backend := newTestBackend(256)
+	defer backend.close()
+
+	peer, _ := newTestPeer("peer", protocol, backend)
+	defer peer.close()
+
+	mid := backend.chain.GetBlockByNumber(128)
+
+	zeroQueries := []struct {
+		name  string
+		query *GetBlockHeadersPacket
+	}{
+		{"forward hash", &GetBlockHeadersPacket{Origin: HashOrNumber{Hash: mid.Hash()}, Amount: 0}},
+		{"reverse hash", &GetBlockHeadersPacket{Origin: HashOrNumber{Hash: mid.Hash()}, Amount: 0, Reverse: true}},
+		{"number origin", &GetBlockHeadersPacket{Origin: HashOrNumber{Number: 128}, Amount: 0}},
+		{"non-contiguous", &GetBlockHeadersPacket{Origin: HashOrNumber{Hash: mid.Hash()}, Amount: 0, Skip: 5}},
+	}
+	for _, tc := range zeroQueries {
+		if got := ServiceGetBlockHeadersQuery(backend.chain, tc.query, peer.Peer); len(got) != 0 {
+			t.Errorf("%s: Amount==0 returned %d headers, want 0", tc.name, len(got))
+		}
+	}
+	if got := ServiceGetBlockHeadersQuery(backend.chain,
+		&GetBlockHeadersPacket{Origin: HashOrNumber{Hash: mid.Hash()}, Amount: 1}, peer.Peer); len(got) != 1 {
+		t.Errorf("Amount==1 control returned %d headers, want 1", len(got))
+	}
+}
+
 func TestGetBlockBodies66(t *testing.T) { testGetBlockBodies(t, ETH66) }
 func TestGetBlockBodies67(t *testing.T) { testGetBlockBodies(t, ETH67) }
 func TestGetBlockBodies68(t *testing.T) { testGetBlockBodies(t, ETH68) }

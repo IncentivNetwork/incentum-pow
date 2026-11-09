@@ -42,6 +42,13 @@ func handleGetBlockHeaders66(backend Backend, msg Decoder, peer *Peer) error {
 // ServiceGetBlockHeadersQuery assembles the response to a header query. It is
 // exposed to allow external packages to test protocol behavior.
 func ServiceGetBlockHeadersQuery(chain *core.BlockChain, query *GetBlockHeadersPacket, peer *Peer) []rlp.RawValue {
+	// A zero Amount makes count-1 underflow in the contiguous fast path below
+	// (uint64 count-1 wraps to 2^64-1), so reject it up front. Backport of
+	// upstream go-ethereum commit 733fcbbc6 ("eth/protocols/eth: handle Count
+	// Zero", #30305, v1.14.9).
+	if query.Amount == 0 {
+		return nil
+	}
 	if query.Skip == 0 {
 		// The fast path: when the request is for a contiguous segment of headers.
 		return serviceContiguousBlockHeaderQuery(chain, query)
