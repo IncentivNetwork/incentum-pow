@@ -375,6 +375,38 @@ func testGetBlockHeadersZeroAmount(t *testing.T, protocol uint) {
 	}
 }
 
+// TestGetBlockHeadersSkipOverflow checks the number-mode traversal guards from
+// upstream go-ethereum PR #31522: advancing the origin by Skip+1 must not wrap.
+// With Skip == MaxUint64 (Skip+1 == 0) or MaxUint64-1, a number-origin query,
+// forward or reverse, must stop after the origin instead of looping on it.
+func TestGetBlockHeadersSkipOverflow66(t *testing.T) { testGetBlockHeadersSkipOverflow(t, ETH66) }
+func TestGetBlockHeadersSkipOverflow67(t *testing.T) { testGetBlockHeadersSkipOverflow(t, ETH67) }
+func TestGetBlockHeadersSkipOverflow68(t *testing.T) { testGetBlockHeadersSkipOverflow(t, ETH68) }
+
+func testGetBlockHeadersSkipOverflow(t *testing.T, protocol uint) {
+	t.Parallel()
+
+	backend := newTestBackend(256)
+	defer backend.close()
+
+	peer, _ := newTestPeer("peer", protocol, backend)
+	defer peer.close()
+
+	for _, skip := range []uint64{math.MaxUint64, math.MaxUint64 - 1} {
+		for _, reverse := range []bool{false, true} {
+			query := &GetBlockHeadersPacket{
+				Origin:  HashOrNumber{Number: 128},
+				Amount:  4,
+				Skip:    skip,
+				Reverse: reverse,
+			}
+			if got := ServiceGetBlockHeadersQuery(backend.chain, query, peer.Peer); len(got) != 1 {
+				t.Errorf("skip=%d reverse=%v: returned %d headers, want 1 (origin only)", skip, reverse, len(got))
+			}
+		}
+	}
+}
+
 func TestGetBlockBodies66(t *testing.T) { testGetBlockBodies(t, ETH66) }
 func TestGetBlockBodies67(t *testing.T) { testGetBlockBodies(t, ETH67) }
 func TestGetBlockBodies68(t *testing.T) { testGetBlockBodies(t, ETH68) }
