@@ -92,6 +92,8 @@ var (
 	errInvalidDifficulty = errors.New("non-positive difficulty")
 	errInvalidMixDigest  = errors.New("invalid mix digest")
 	errInvalidPoW        = errors.New("invalid proof-of-work")
+	errWithdrawalsHash   = errors.New("withdrawals hash not supported")
+	errExcessDataGas     = errors.New("excess data gas not supported")
 )
 
 // Author implements consensus.Engine, returning the header's coinbase as the
@@ -107,10 +109,12 @@ func (ethash *Ethash) VerifyHeader(chain consensus.ChainHeaderReader, header *ty
 	if ethash.config.PowMode == ModeFullFake {
 		return nil
 	}
-	// Short circuit if the header is known, or its parent not
+	// Short circuit if the header is known, or its parent not. A stored header is not
+	// verified again, except for the fields ethash blocks never carry: that rule has no
+	// fork gate, so it holds for what was stored before it as well.
 	number := header.Number.Uint64()
 	if chain.GetHeader(header.Hash(), number) != nil {
-		return nil
+		return ethash.verifyHeaderFields(header)
 	}
 	parent := chain.GetHeader(header.ParentHash, number-1)
 	if parent == nil {
@@ -288,12 +292,37 @@ func (ethash *Ethash) VerifyUncles(chain consensus.ChainReader, block *types.Blo
 	return nil
 }
 
+// verifyHeaderFields refuses a header that carries the withdrawals hash or the excess
+// data gas. Ethash blocks carry neither, and the seal hash covers neither, so the check
+// has to come before the seal hash is computed: SealHash panics on the withdrawals hash.
+// The default header encoder does not write the excess data gas, so the block hash leaves
+// it out too; it is refused all the same, so that the rule holds in a build with the
+// reflection codec (the norlpgen tag) and should the encoding change. The fake engines
+// are exempt: they do not reach the seal hash when verifying, and tests build headers
+// with these fields under them on purpose.
+func (ethash *Ethash) verifyHeaderFields(header *types.Header) error {
+	if ethash.config.PowMode == ModeFake || ethash.config.PowMode == ModeFullFake {
+		return nil
+	}
+	if header.WithdrawalsHash != nil {
+		return errWithdrawalsHash
+	}
+	if header.ExcessDataGas != nil {
+		return errExcessDataGas
+	}
+	return nil
+}
+
 // verifyHeader checks whether a header conforms to the consensus rules of the
 // stock Ethereum ethash engine.
 // See YP section 4.3.4. "Block Header Validity"
 //
 // td is the header's own total difficulty, nil when the miner signer rule is off.
 func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, parent *types.Header, td *big.Int, uncle bool, seal bool, unixNow int64) error {
+	// Refuse the fields ethash blocks never carry before anything computes the seal hash.
+	if err := ethash.verifyHeaderFields(header); err != nil {
+		return err
+	}
 	var epoch *params.MinerSignerEpoch
 	if td != nil {
 		epoch = chain.Config().MinerSignerEpochAt(td)

@@ -236,11 +236,6 @@ func TestMinerSignatureRejected(t *testing.T) {
 			header.Extra = make([]byte, crypto.SignatureLength)
 			return header
 		}, "malformed signature"},
-		{"withdrawals hash set", func(f *minerSigFixture) *types.Header {
-			header := f.signed()
-			header.WithdrawalsHash = &types.EmptyWithdrawalsHash
-			return header
-		}, "withdrawals hash"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newMinerSigFixture(t)
@@ -249,6 +244,24 @@ func TestMinerSignatureRejected(t *testing.T) {
 				t.Fatalf("got %v, want %v with %q", err, consensus.ErrInvalidMinerSignature, tt.reason)
 			}
 		})
+	}
+}
+
+// A withdrawals hash is part of the block hash but of neither the digest nor the seal. The header
+// field check refuses it in verifyHeader before the signature rule looks at the header. The rule
+// keeps its own refusal for a stored parent, which verifyStoredParent hands to it directly.
+func TestMinerSignatureWithdrawalsHash(t *testing.T) {
+	f := newMinerSigFixture(t)
+	header := f.signed()
+	header.WithdrawalsHash = &types.EmptyWithdrawalsHash
+
+	if err := f.engine.VerifyHeader(f.chain, header, false); !errors.Is(err, errWithdrawalsHash) {
+		t.Fatalf("VerifyHeader: got %v, want %v", err, errWithdrawalsHash)
+	}
+	epoch := &f.chain.config.MinerSignerEpochs[0]
+	err := f.engine.verifyMinerSignature(f.chain.config, header, epoch.TD, epoch)
+	if !errors.Is(err, consensus.ErrInvalidMinerSignature) || !strings.Contains(err.Error(), "withdrawals hash") {
+		t.Fatalf("verifyMinerSignature: got %v, want %v with %q", err, consensus.ErrInvalidMinerSignature, "withdrawals hash")
 	}
 }
 
