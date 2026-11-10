@@ -24,6 +24,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -4754,5 +4755,619 @@ func TestEIP3651(t *testing.T) {
 	expected = new(big.Int).SetUint64(block.GasUsed() * (block.Transactions()[0].GasTipCap().Uint64() + block.BaseFee().Uint64()))
 	if actual.Cmp(expected) != 0 {
 		t.Fatalf("sender balance incorrect: expected %d, got %d", expected, actual)
+	}
+}
+
+var (
+	knownBlockKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	knownBlockSender = crypto.PubkeyToAddress(knownBlockKey.PublicKey)
+)
+
+// knownBlockGenesis returns a genesis with a funded sender and no block reward, as on
+// mainnet, so a block without transactions has the state root of its parent. The config
+// is a copy because other tests clear ZeroRewardBlock on the shared params.TestChainConfig.
+func knownBlockGenesis() *Genesis {
+	config := *params.TestChainConfig
+	config.ZeroRewardBlock = big.NewInt(0)
+
+	return &Genesis{
+		Config:  &config,
+		Alloc:   GenesisAlloc{knownBlockSender: {Balance: big.NewInt(math.MaxInt64)}},
+		BaseFee: big.NewInt(params.InitialBaseFee),
+	}
+}
+
+// knownBlockTransfer adds a transfer from the funded sender to the generated block.
+func knownBlockTransfer(t *testing.T, gen *BlockGen, to common.Address, value int64) {
+	t.Helper()
+
+	var (
+		signer = types.LatestSigner(gen.config)
+		price  = new(big.Int).Add(gen.BaseFee(), big.NewInt(params.GWei))
+	)
+	tx, err := types.SignTx(types.NewTransaction(gen.TxNonce(knownBlockSender), to, big.NewInt(value), params.TxGas, price, nil), signer, knownBlockKey)
+	if err != nil {
+		t.Fatalf("failed to sign transfer: %v", err)
+	}
+	gen.AddTx(tx)
+}
+
+// knownBlockWantChain checks that the head is the last of the blocks and that they are
+// the canonical chain up to it.
+func knownBlockWantChain(t *testing.T, chain *BlockChain, want []*types.Block) {
+	t.Helper()
+
+	last := want[len(want)-1]
+	if head := chain.CurrentBlock(); head.Hash() != last.Hash() {
+		t.Fatalf("head is #%d %x, want #%d %x", head.Number, head.Hash(), last.NumberU64(), last.Hash())
+	}
+	for _, block := range want {
+		if hash := chain.GetCanonicalHash(block.NumberU64()); hash != block.Hash() {
+			t.Fatalf("canonical block #%d is %x, want %x", block.NumberU64(), hash, block.Hash())
+		}
+	}
+}
+
+// knownBlockWantHeavier checks that the fork on top of parent has more total difficulty than
+// the head.
+func knownBlockWantHeavier(t *testing.T, chain *BlockChain, parent *types.Block, fork []*types.Block) {
+	t.Helper()
+
+	forkTD := chain.GetTd(parent.Hash(), parent.NumberU64())
+	for _, block := range fork {
+		forkTD = new(big.Int).Add(forkTD, block.Difficulty())
+	}
+	head := chain.CurrentBlock()
+	if headTD := chain.GetTd(head.Hash(), head.Number.Uint64()); forkTD.Cmp(headTD) <= 0 {
+		t.Fatalf("fork has total difficulty %v, head has %v", forkTD, headTD)
+	}
+}
+
+// knownBlockPruned imports the blocks, stops the chain and opens it again on the same
+// database. Stop commits the state of the head, of its parent and of the block 127 behind
+// it. A chain shorter than that keeps only its last two states, so every older state is gone
+// afterwards, as on a node that has been running for a while.
+func knownBlockPruned(t *testing.T, gspec *Genesis, engine consensus.Engine, blocks []*types.Block) *BlockChain {
+	t.Helper()
+
+	return knownBlockPrunedOn(t, rawdb.NewMemoryDatabase(), gspec, engine, blocks)
+}
+
+// knownBlockPrunedOn is knownBlockPruned on a database of the caller.
+func knownBlockPrunedOn(t *testing.T, db ethdb.Database, gspec *Genesis, engine consensus.Engine, blocks []*types.Block) *BlockChain {
+	t.Helper()
+
+	chain, err := NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create tester chain: %v", err)
+	}
+	if n, err := chain.InsertChain(blocks); err != nil {
+		t.Fatalf("block %d: failed to insert into chain: %v", n, err)
+	}
+	chain.Stop()
+
+	chain, err = NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to reopen tester chain: %v", err)
+	}
+	t.Cleanup(chain.Stop)
+
+	return chain
+}
+
+// knownBlockCanonical generates eight blocks where #6 has no transaction and so shares the
+// state root of #5. Every other block has a transfer, which keeps their roots apart.
+func knownBlockCanonical(t *testing.T, gspec *Genesis, engine consensus.Engine) (ethdb.Database, []*types.Block) {
+	t.Helper()
+
+	genDb, canon, _ := GenerateChainWithGenesis(gspec, engine, 8, func(i int, gen *BlockGen) {
+		if i != 5 {
+			knownBlockTransfer(t, gen, common.Address{1}, 100)
+		}
+	})
+	if canon[5].Root() != canon[4].Root() {
+		t.Fatal("block #6 does not share the state root of #5")
+	}
+	return genDb, canon
+}
+
+// Tests that a known block in the middle of a batch does not take the head to a chain
+// with less total difficulty.
+//
+// The state of a side block U is collected once the head is 128 blocks past it, while the
+// state of its parent is still there. U is executed again by the second import, which
+// recreates its root, and its empty child K, which has the same root and kept its receipts
+// from the first import, then counts as known and is not executed again.
+func TestKnownBlockMidBatchKeepsHead(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		gspec  = knownBlockGenesis()
+	)
+	genDb, canon, _ := GenerateChainWithGenesis(gspec, engine, 470, func(i int, gen *BlockGen) {
+		knownBlockTransfer(t, gen, common.Address{1}, 100)
+	})
+	// A side chain of empty blocks from #300, so all of them have the state root of #300.
+	side, _ := GenerateChain(gspec.Config, canon[299], engine, genDb, 90, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+	})
+	if side[0].Root() != canon[299].Root() {
+		t.Fatal("empty side block does not share the state root of its parent")
+	}
+	// U (#341) is the one side block with a transfer and K (#342) is empty on top of it.
+	uk, _ := GenerateChain(gspec.Config, side[39], engine, genDb, 2, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+		if i == 0 {
+			knownBlockTransfer(t, gen, common.Address{3}, 200)
+		}
+	})
+	u, k := uk[0], uk[1]
+	if k.Root() != u.Root() || u.Root() == side[39].Root() {
+		t.Fatal("U does not have a root of its own that K repeats")
+	}
+	chain, err := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create tester chain: %v", err)
+	}
+	defer chain.Stop()
+
+	for _, blocks := range [][]*types.Block{canon[:400], side, {u, k}, canon[400:]} {
+		if n, err := chain.InsertChain(blocks); err != nil {
+			t.Fatalf("block %d: failed to insert into chain: %v", n, err)
+		}
+	}
+	knownBlockWantChain(t, chain, canon)
+
+	if chain.HasState(u.Root()) {
+		t.Fatal("the state of U is still there")
+	}
+	if !chain.HasState(side[39].Root()) {
+		t.Fatal("the state of the parent of U is gone")
+	}
+	if head, kTD := chain.GetTd(canon[469].Hash(), 470), chain.GetTd(k.Hash(), 342); kTD.Cmp(head) >= 0 {
+		t.Fatalf("K has total difficulty %v, head has %v", kTD, head)
+	}
+	if n, err := chain.InsertChain([]*types.Block{u, k}); err != nil {
+		t.Fatalf("block %d: failed to import again: %v", n, err)
+	}
+	knownBlockWantChain(t, chain, canon)
+}
+
+// Tests that a fork with more total difficulty than the head becomes the head, also when its
+// last block is empty.
+//
+// A fork from the pruned #6 outweighs #8 once it is executed. Its last block is empty and
+// repeats the root of the block before it, but it was stored without being executed and has
+// no receipts, so it does not count as known and is executed with the rest. The test pins the
+// outcome only. The next test covers the known path.
+func TestKnownBlockMidBatchMovesHeavierHead(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		gspec  = knownBlockGenesis()
+	)
+	genDb, canon := knownBlockCanonical(t, gspec, engine)
+	chain := knownBlockPruned(t, gspec, engine, canon)
+
+	fork, _ := GenerateChain(gspec.Config, canon[5], engine, genDb, 4, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+		if i < 3 {
+			knownBlockTransfer(t, gen, common.Address{2}, 100)
+		}
+	})
+	if fork[3].Root() != fork[2].Root() {
+		t.Fatal("the last fork block does not share the state root of the one before")
+	}
+	if chain.HasState(fork[2].Root()) {
+		t.Fatal("the state of the fork is already there")
+	}
+	knownBlockWantHeavier(t, chain, canon[5], fork)
+
+	if n, err := chain.InsertChain(fork); err != nil {
+		t.Fatalf("block %d: failed to insert fork: %v", n, err)
+	}
+	knownBlockWantChain(t, chain, append(canon[:6:6], fork...))
+}
+
+// Tests that a known block in the middle of a batch which was executed before still becomes
+// the head if it has more total difficulty than the current one.
+//
+// After a crash without saving, the head goes back to the genesis because no other state is
+// left, while the blocks and their receipts stay. Importing #1 to #6 executes #1 to #5. #6 is
+// empty and repeats the root of #5, so it is known, and it outweighs #5.
+func TestKnownBlockMidBatchMovesHeavierHeadAfterCrash(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		gspec  = knownBlockGenesis()
+		db     = rawdb.NewMemoryDatabase()
+	)
+	_, canon := knownBlockCanonical(t, gspec, engine)
+
+	chain, err := NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create tester chain: %v", err)
+	}
+	if n, err := chain.InsertChain(canon[:6]); err != nil {
+		t.Fatalf("block %d: failed to insert into chain: %v", n, err)
+	}
+	chain.stopWithoutSaving()
+
+	chain, err = NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to reopen tester chain: %v", err)
+	}
+	t.Cleanup(chain.Stop)
+
+	if head := chain.CurrentBlock(); head.Number.Sign() != 0 {
+		t.Fatalf("head is #%d after the crash, want the genesis", head.Number)
+	}
+	if chain.HasState(canon[4].Root()) || !rawdb.HasReceipts(db, canon[5].Hash(), 6) {
+		t.Fatal("#6 should be left without state and with its receipts")
+	}
+	if n, err := chain.InsertChain(canon[:6]); err != nil {
+		t.Fatalf("block %d: failed to import again: %v", n, err)
+	}
+	knownBlockWantChain(t, chain, canon[:6])
+}
+
+// Tests that a heavier fork that fails to execute leaves the head where it was, even though
+// a known block was passed on the way.
+//
+// The fork leaves from the pruned #6, so the import executes #1 to #6 again before it gets
+// to the fork. #6 is empty and shares the root of #5, which makes it known as soon as #5 is
+// executed. The first block of the fork has a wrong state root, which nothing notices until
+// it is executed.
+func TestKnownBlockOnFailedFork(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		gspec  = knownBlockGenesis()
+	)
+	genDb, canon := knownBlockCanonical(t, gspec, engine)
+	chain := knownBlockPruned(t, gspec, engine, canon)
+
+	if chain.HasState(canon[4].Root()) {
+		t.Fatal("the state of #5 is not pruned")
+	}
+	valid, _ := GenerateChain(gspec.Config, canon[5], engine, genDb, 3, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+		knownBlockTransfer(t, gen, common.Address{2}, 100)
+	})
+	fork := make([]*types.Block, len(valid))
+	for i, block := range valid {
+		header := types.CopyHeader(block.Header())
+		if i == 0 {
+			header.Root = common.Hash{0xba, 0xd}
+		} else {
+			header.ParentHash = fork[i-1].Hash()
+		}
+		fork[i] = types.NewBlockWithHeader(header).WithBody(block.Transactions(), block.Uncles())
+	}
+	knownBlockWantHeavier(t, chain, canon[5], fork)
+
+	_, err := chain.InsertChain(fork)
+	if err == nil {
+		t.Fatal("fork with a wrong state root was imported")
+	}
+	// Only the first fork block has a wrong root, so this error shows that the import got
+	// through #1 to #6 and executed it.
+	if !strings.Contains(err.Error(), "invalid merkle root") {
+		t.Fatalf("fork failed with %v, want an invalid merkle root", err)
+	}
+	knownBlockWantChain(t, chain, canon)
+}
+
+// Tests that a known block in the middle of a batch which is the head itself is left alone.
+// Fork choice sees the same total difficulty and height on both sides and answers with a
+// coin flip, and moving the head onto itself logs an impossible reorg and announces the head
+// a second time.
+//
+// Importing the chain again after a restart executes #1 to #5. #6 is empty and repeats the
+// root of #5, and #7 and #8 kept their state, so all three are known and #8 is the head.
+func TestKnownBlockMidBatchIsHead(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		gspec  = knownBlockGenesis()
+	)
+	_, canon := knownBlockCanonical(t, gspec, engine)
+
+	// The coin flip misses a bug half of the time, so one import proves little. Each round is a
+	// subtest so that its chain is stopped when the round ends.
+	for round := 0; round < 32; round++ {
+		t.Run(fmt.Sprintf("round%d", round), func(t *testing.T) {
+			chain := knownBlockPruned(t, gspec, engine, canon)
+
+			events := make(chan ChainHeadEvent, 8)
+			sub := chain.SubscribeChainHeadEvent(events)
+			if n, err := chain.InsertChain(canon); err != nil {
+				t.Fatalf("block %d: failed to import the chain again: %v", n, err)
+			}
+			sub.Unsubscribe()
+
+			select {
+			case ev := <-events:
+				t.Fatalf("head #%d announced again", ev.Block.NumberU64())
+			default:
+			}
+			knownBlockWantChain(t, chain, canon)
+		})
+	}
+}
+
+// Tests that known blocks on the canonical chain are left alone once the terminal total
+// difficulty is reached. Fork choice then answers true for every block, so without a check of
+// its own the head would walk down to #6 and up again to #8, announcing every step.
+//
+// The limit is the total difficulty of #6. Importing the chain again after a restart executes
+// #1 to #5, which stay below it and do not move the head. #6 is empty and repeats the root
+// of #5, and #7 and #8 kept their state, so all three are known and canonical.
+func TestKnownBlockMidBatchTerminalDifficulty(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		gspec  = knownBlockGenesis()
+	)
+	_, canon := knownBlockCanonical(t, gspec, engine)
+
+	ttd := new(big.Int).Set(params.GenesisDifficulty)
+	for _, block := range canon[:6] {
+		ttd.Add(ttd, block.Difficulty())
+	}
+	gspec.Config.TerminalTotalDifficulty = ttd
+	chain := knownBlockPruned(t, gspec, engine, canon)
+
+	events := make(chan ChainHeadEvent, 8)
+	sub := chain.SubscribeChainHeadEvent(events)
+	if n, err := chain.InsertChain(canon); err != nil {
+		t.Fatalf("block %d: failed to import the chain again: %v", n, err)
+	}
+	sub.Unsubscribe()
+
+	select {
+	case ev := <-events:
+		t.Fatalf("head #%d announced again", ev.Block.NumberU64())
+	default:
+	}
+	knownBlockWantChain(t, chain, canon)
+}
+
+// Tests that a known block is not ignored only because the canonical index lists it. A header
+// reorg rewrites the index below the full head, so a match does not make the block an ancestor
+// of the head, and a known block that outweighs the head has to go through fork choice.
+//
+// The setup is that of the first test, but K has one more unit of total difficulty than #380
+// and U has less. Both are lighter than #400, which is the head when they are executed, so they
+// stay a side chain, and once the head is #470 the state of U is collected. The head is then
+// rewound to #380, and a header reorg points the canonical index at the side chain without
+// moving the head. Importing [U, K] again executes U, and K is known. It is not an ancestor of
+// the head, it has more total difficulty than the head, and it must become the head.
+func TestKnownBlockAfterHeaderReorgBelowHead(t *testing.T) {
+	var (
+		engine = ethash.NewFullFaker()
+		gspec  = knownBlockGenesis()
+	)
+	genDb, canon, _ := GenerateChainWithGenesis(gspec, engine, 470, func(i int, gen *BlockGen) {
+		knownBlockTransfer(t, gen, common.Address{1}, 100)
+	})
+	side, _ := GenerateChain(gspec.Config, canon[299], engine, genDb, 90, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+	})
+	total := func(groups ...[]*types.Block) *big.Int {
+		sum := new(big.Int).Set(params.GenesisDifficulty)
+		for _, group := range groups {
+			for _, block := range group {
+				sum.Add(sum, block.Difficulty())
+			}
+		}
+		return sum
+	}
+	us, _ := GenerateChain(gspec.Config, side[39], engine, genDb, 1, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+		knownBlockTransfer(t, gen, common.Address{3}, 200)
+	})
+	u := us[0]
+	// K is empty, and has the difficulty that takes it one unit past #380.
+	kDifficulty := new(big.Int).Sub(total(canon[:380]), total(canon[:300], side[:40], us))
+	kDifficulty.Add(kDifficulty, big.NewInt(1))
+	ks, _ := GenerateChain(gspec.Config, u, engine, genDb, 1, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+		gen.SetDifficulty(kDifficulty)
+	})
+	k := ks[0]
+	if k.Root() != u.Root() || u.Root() == side[39].Root() {
+		t.Fatal("U does not have a root of its own that K repeats")
+	}
+	chain, err := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create tester chain: %v", err)
+	}
+	defer chain.Stop()
+
+	for _, blocks := range [][]*types.Block{canon[:400], side, {u, k}, canon[400:]} {
+		if n, err := chain.InsertChain(blocks); err != nil {
+			t.Fatalf("block %d: failed to insert into chain: %v", n, err)
+		}
+	}
+	knownBlockWantChain(t, chain, canon)
+	if chain.HasState(u.Root()) {
+		t.Fatal("the state of U is still there")
+	}
+	if !chain.HasState(side[39].Root()) {
+		t.Fatal("the state of the parent of U is gone")
+	}
+	if !rawdb.HasReceipts(chain.db, k.Hash(), 342) {
+		t.Fatal("K has no receipts")
+	}
+	var (
+		uTD   = chain.GetTd(u.Hash(), 341)
+		kTD   = chain.GetTd(k.Hash(), 342)
+		td380 = chain.GetTd(canon[379].Hash(), 380)
+		td400 = chain.GetTd(canon[399].Hash(), 400)
+	)
+	if uTD.Cmp(td380) >= 0 || kTD.Cmp(td380) <= 0 || kTD.Cmp(td400) >= 0 {
+		t.Fatalf("U has total difficulty %v and K %v, want U below #380 with %v and K between it and #400 with %v", uTD, kTD, td380, td400)
+	}
+
+	if err := chain.SetHead(380); err != nil {
+		t.Fatalf("failed to rewind: %v", err)
+	}
+	if head := chain.CurrentBlock(); head.Hash() != canon[379].Hash() {
+		t.Fatalf("head is #%d, want #380", head.Number)
+	}
+	headers := make([]*types.Header, 0, 42)
+	for _, block := range append(append([]*types.Block{}, side[:40]...), u, k) {
+		headers = append(headers, block.Header())
+	}
+	if n, err := chain.InsertHeaderChain(headers, 1); err != nil {
+		t.Fatalf("header %d: failed to insert: %v", n, err)
+	}
+	if head := chain.CurrentBlock(); head.Hash() != canon[379].Hash() {
+		t.Fatalf("the header reorg moved the head to #%d", head.Number)
+	}
+	if hash := chain.GetCanonicalHash(342); hash != k.Hash() {
+		t.Fatalf("canonical index of #342 is %x, want K", hash)
+	}
+
+	if n, err := chain.InsertChain([]*types.Block{u, k}); err != nil {
+		t.Fatalf("block %d: failed to import again: %v", n, err)
+	}
+	knownBlockWantChain(t, chain, append(append(canon[:300:300], side[:40]...), u, k))
+}
+
+// Tests that a known ancestor of the head is left alone when the canonical index does not list
+// it. A header reorg rewrites the index below the full head without moving the head, so a block
+// that the index lacks can still be an ancestor of it, and once the terminal total difficulty is
+// reached fork choice would take the head back onto that ancestor.
+//
+// The limit and the chain are those of TestKnownBlockMidBatchTerminalDifficulty. A fork from #4
+// that outweighs #8 takes #5 to #8 in the index as headers without bodies. Importing #1 to #6
+// again executes #1 to #5, which stay below the limit, and #6 is empty, repeats the root of #5
+// and is known.
+func TestKnownBlockAfterHeaderReorgTerminalDifficulty(t *testing.T) {
+	var (
+		engine = ethash.NewFaker()
+		gspec  = knownBlockGenesis()
+	)
+	genDb, canon := knownBlockCanonical(t, gspec, engine)
+
+	ttd := new(big.Int).Set(params.GenesisDifficulty)
+	for _, block := range canon[:6] {
+		ttd.Add(ttd, block.Difficulty())
+	}
+	gspec.Config.TerminalTotalDifficulty = ttd
+
+	// The chain is not stopped with Stop, which writes the states of the head and of the blocks
+	// behind it and expects the index to list them.
+	db := rawdb.NewMemoryDatabase()
+	chain, err := NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create tester chain: %v", err)
+	}
+	if n, err := chain.InsertChain(canon); err != nil {
+		t.Fatalf("block %d: failed to insert into chain: %v", n, err)
+	}
+	chain.Stop()
+
+	chain, err = NewBlockChain(db, nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to reopen tester chain: %v", err)
+	}
+	defer chain.stopWithoutSaving()
+
+	fork, _ := GenerateChain(gspec.Config, canon[3], engine, genDb, 5, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+	})
+	headers := make([]*types.Header, len(fork))
+	for i, block := range fork {
+		headers[i] = block.Header()
+	}
+	if n, err := chain.InsertHeaderChain(headers, 1); err != nil {
+		t.Fatalf("header %d: failed to insert: %v", n, err)
+	}
+	if head := chain.CurrentBlock(); head.Hash() != canon[7].Hash() {
+		t.Fatalf("the header reorg moved the head to #%d", head.Number)
+	}
+	if hash := chain.GetCanonicalHash(6); hash != fork[1].Hash() {
+		t.Fatalf("canonical index of #6 is %x, want the fork", hash)
+	}
+	if reorg, err := chain.forker.ReorgNeeded(chain.CurrentBlock(), canon[5].Header()); err != nil || !reorg {
+		t.Fatalf("fork choice does not select #6: reorg %v, error %v", reorg, err)
+	}
+
+	events := make(chan ChainHeadEvent, 8)
+	sub := chain.SubscribeChainHeadEvent(events)
+	if n, err := chain.InsertChain(canon[:6]); err != nil {
+		t.Fatalf("block %d: failed to import again: %v", n, err)
+	}
+	sub.Unsubscribe()
+
+	select {
+	case ev := <-events:
+		t.Fatalf("head #%d announced again", ev.Block.NumberU64())
+	default:
+	}
+	if head := chain.CurrentBlock(); head.Hash() != canon[7].Hash() {
+		t.Fatalf("head is #%d, want #8", head.Number)
+	}
+}
+
+// knownBlockHeaderReads counts the headers read from the database by key.
+type knownBlockHeaderReads struct {
+	ethdb.Database
+	reads atomic.Int64
+}
+
+func (db *knownBlockHeaderReads) Get(key []byte) ([]byte, error) {
+	// A header key is a prefix, a number and a hash, and the total difficulty adds a suffix.
+	if len(key) == 1+8+common.HashLength && key[0] == 'h' {
+		db.reads.Add(1)
+	}
+	return db.Database.Get(key)
+}
+
+// Tests that a heavier fork from far below the head does not make the node walk the chain from
+// the head once for every known block it replays. The state below the fork point is gone, so
+// the canonical blocks down to the last state are executed again first. Without block rewards
+// each empty one repeats the root of its parent and has receipts, so it is known. It is an
+// ancestor of the head, but fork choice rejects it for its total difficulty before any walk
+// is needed, and only a block it would select has to be proved an ancestor.
+//
+// The chain has 1200 blocks with a transfer in every tenth, and the fork starts at #100, so
+// the replay holds 90 known blocks that are 1100 blocks or more from the head. A walk for each
+// of them reads some 100000 headers, far more than the cache of 512 holds, while the replay
+// itself reads about 1300 and the limit is 10000.
+func TestKnownBlockReplayDoesNotWalkAncestry(t *testing.T) {
+	var (
+		engine = ethash.NewFullFaker()
+		gspec  = knownBlockGenesis()
+	)
+	genDb, canon, _ := GenerateChainWithGenesis(gspec, engine, 1200, func(i int, gen *BlockGen) {
+		if i%10 == 0 {
+			knownBlockTransfer(t, gen, common.Address{1}, 100)
+		}
+	})
+	// A single block outweighs everything the canonical chain has built on #100.
+	difficulty := big.NewInt(1)
+	for _, block := range canon[100:] {
+		difficulty.Add(difficulty, block.Difficulty())
+	}
+	fork, _ := GenerateChain(gspec.Config, canon[99], engine, genDb, 1, func(i int, gen *BlockGen) {
+		gen.SetCoinbase(common.Address{2})
+		gen.SetDifficulty(difficulty)
+		knownBlockTransfer(t, gen, common.Address{3}, 200)
+	})
+
+	db := &knownBlockHeaderReads{Database: rawdb.NewMemoryDatabase()}
+	chain := knownBlockPrunedOn(t, db, gspec, engine, canon)
+	if chain.HasState(canon[99].Root()) {
+		t.Fatal("the state of the fork point is still there")
+	}
+	knownBlockWantHeavier(t, chain, canon[99], fork)
+
+	db.reads.Store(0)
+	if n, err := chain.InsertChain(fork); err != nil {
+		t.Fatalf("block %d: failed to import the fork: %v", n, err)
+	}
+	if !chain.HasState(fork[0].Root()) {
+		t.Fatal("the replay did not execute the fork")
+	}
+	if reads := db.reads.Load(); reads > 10000 {
+		t.Fatalf("the import read %d headers, want no ancestry walk for a block that fork choice rejects", reads)
 	}
 }

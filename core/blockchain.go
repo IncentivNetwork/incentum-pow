@@ -1853,10 +1853,40 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		// just skip the block (we already validated it once fully (and crashed), since
 		// its header and body was already in the database). But if the corresponding
 		// snapshot layer is missing, forcibly rerun the execution to build it.
+		//
+		// Without Clique it happens on a node that pruned its state, to a block that repeats a
+		// root which executing another block has recreated, as an empty block does when there
+		// is no block reward, or that kept its own state.
 		if bc.skipBlock(err, it) {
 			logger := log.Debug
 			if bc.chainConfig.Clique == nil {
 				logger = log.Warn
+			}
+			// A known block can sit on a side chain whose state was garbage collected
+			// and recreated by re-execution, so it is not necessarily better than the
+			// current head. Only move the head if the fork choice agrees. The head is ignored
+			// without asking, as it ties with itself, which fork choice decides by a coin flip.
+			// An ancestor of the head must be ignored too, but once the terminal total
+			// difficulty is reached fork choice answers true for every block, so the block is
+			// only ignored as an ancestor if fork choice would select it. The walk comes second
+			// because it is costly: without a block reward, replaying a deep fork makes every
+			// empty canonical block below the fork point a known ancestor, and before the
+			// terminal total difficulty fork choice rejects each of them for having less total
+			// difficulty than the head.
+			current := bc.CurrentBlock()
+			ignore := block.Hash() == current.Hash()
+			if !ignore {
+				reorg, err := bc.forker.ReorgNeeded(current, block.Header())
+				if err != nil {
+					return it.index, err
+				}
+				ignore = !reorg || bc.isHeadAncestor(current, block)
+			}
+			if ignore {
+				logger("Ignored known block", "number", block.Number(), "hash", block.Hash(),
+					"root", block.Root(), "head", current.Number)
+				stats.ignored++
+				continue
 			}
 			logger("Inserted known block", "number", block.Number(), "hash", block.Hash(),
 				"uncles", len(block.Uncles()), "txs", len(block.Transactions()), "gas", block.GasUsed(),
@@ -1867,8 +1897,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 			}
 			stats.processed++
 
-			// We can assume that logs are empty here, since the only way for consecutive
-			// Clique blocks to have the same state is if there are no transactions.
+			// The block is not executed here, so no ChainEvent or logs are sent for it, only the
+			// head event. For the Clique blocks this path was written for the logs are empty,
+			// since consecutive Clique blocks share a state only if they have no transactions.
 			lastCanon = block
 			continue
 		}
@@ -2485,6 +2516,23 @@ func (bc *BlockChain) skipBlock(err error, it *insertIterator) bool {
 	// Parent is also missing snapshot: we can skip this. Otherwise process.
 	if bc.snaps.Snapshot(parentRoot) == nil {
 		return true
+	}
+	return false
+}
+
+// isHeadAncestor reports whether the block is an ancestor of the head, found by following
+// parent hashes. The canonical index says nothing about that: a header reorg can rewrite it
+// below the full head, so a block it lists may be off the chain of the head and a block it
+// does not list may be on it.
+func (bc *BlockChain) isHeadAncestor(head *types.Header, block *types.Block) bool {
+	number := block.NumberU64()
+	if number >= head.Number.Uint64() {
+		return false
+	}
+	for header := head; header != nil; header = bc.GetHeader(header.ParentHash, header.Number.Uint64()-1) {
+		if header.Number.Uint64() == number+1 {
+			return header.ParentHash == block.Hash()
+		}
 	}
 	return false
 }
