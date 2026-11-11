@@ -335,6 +335,77 @@ func testGetBlockHeaders(t *testing.T, protocol uint) {
 	}
 }
 
+// TestGetBlockHeadersZeroAmount checks that a header query with Amount == 0 is
+// rejected (backport of upstream go-ethereum 733fcbbc6, #30305). Without the
+// guard, count-1 underflows in the contiguous path and a hash-origin forward
+// query returns the whole sub-chain below the origin instead of nothing.
+func TestGetBlockHeadersZeroAmount66(t *testing.T) { testGetBlockHeadersZeroAmount(t, ETH66) }
+func TestGetBlockHeadersZeroAmount67(t *testing.T) { testGetBlockHeadersZeroAmount(t, ETH67) }
+func TestGetBlockHeadersZeroAmount68(t *testing.T) { testGetBlockHeadersZeroAmount(t, ETH68) }
+
+func testGetBlockHeadersZeroAmount(t *testing.T, protocol uint) {
+	t.Parallel()
+
+	backend := newTestBackend(256)
+	defer backend.close()
+
+	peer, _ := newTestPeer("peer", protocol, backend)
+	defer peer.close()
+
+	mid := backend.chain.GetBlockByNumber(128)
+
+	zeroQueries := []struct {
+		name  string
+		query *GetBlockHeadersPacket
+	}{
+		{"forward hash", &GetBlockHeadersPacket{Origin: HashOrNumber{Hash: mid.Hash()}, Amount: 0}},
+		{"reverse hash", &GetBlockHeadersPacket{Origin: HashOrNumber{Hash: mid.Hash()}, Amount: 0, Reverse: true}},
+		{"number origin", &GetBlockHeadersPacket{Origin: HashOrNumber{Number: 128}, Amount: 0}},
+		{"non-contiguous", &GetBlockHeadersPacket{Origin: HashOrNumber{Hash: mid.Hash()}, Amount: 0, Skip: 5}},
+	}
+	for _, tc := range zeroQueries {
+		if got := ServiceGetBlockHeadersQuery(backend.chain, tc.query, peer.Peer); len(got) != 0 {
+			t.Errorf("%s: Amount==0 returned %d headers, want 0", tc.name, len(got))
+		}
+	}
+	if got := ServiceGetBlockHeadersQuery(backend.chain,
+		&GetBlockHeadersPacket{Origin: HashOrNumber{Hash: mid.Hash()}, Amount: 1}, peer.Peer); len(got) != 1 {
+		t.Errorf("Amount==1 control returned %d headers, want 1", len(got))
+	}
+}
+
+// TestGetBlockHeadersSkipOverflow checks the number-mode traversal guards from
+// upstream go-ethereum PR #31522: advancing the origin by Skip+1 must not wrap.
+// With Skip == MaxUint64 (Skip+1 == 0) or MaxUint64-1, a number-origin query,
+// forward or reverse, must stop after the origin instead of looping on it.
+func TestGetBlockHeadersSkipOverflow66(t *testing.T) { testGetBlockHeadersSkipOverflow(t, ETH66) }
+func TestGetBlockHeadersSkipOverflow67(t *testing.T) { testGetBlockHeadersSkipOverflow(t, ETH67) }
+func TestGetBlockHeadersSkipOverflow68(t *testing.T) { testGetBlockHeadersSkipOverflow(t, ETH68) }
+
+func testGetBlockHeadersSkipOverflow(t *testing.T, protocol uint) {
+	t.Parallel()
+
+	backend := newTestBackend(256)
+	defer backend.close()
+
+	peer, _ := newTestPeer("peer", protocol, backend)
+	defer peer.close()
+
+	for _, skip := range []uint64{math.MaxUint64, math.MaxUint64 - 1} {
+		for _, reverse := range []bool{false, true} {
+			query := &GetBlockHeadersPacket{
+				Origin:  HashOrNumber{Number: 128},
+				Amount:  4,
+				Skip:    skip,
+				Reverse: reverse,
+			}
+			if got := ServiceGetBlockHeadersQuery(backend.chain, query, peer.Peer); len(got) != 1 {
+				t.Errorf("skip=%d reverse=%v: returned %d headers, want 1 (origin only)", skip, reverse, len(got))
+			}
+		}
+	}
+}
+
 // Tests that block contents can be retrieved from a remote chain based on their hashes.
 func TestGetBlockBodies66(t *testing.T) { testGetBlockBodies(t, ETH66) }
 func TestGetBlockBodies67(t *testing.T) { testGetBlockBodies(t, ETH67) }
@@ -665,7 +736,7 @@ func testGetBlockHeadersDoSProtection(t *testing.T, protocol uint) {
 			reverse:       false,
 			expectedCount: 0,
 			maxAllowed:    0,
-			description:   "CVE-2024-32972: amount=0 should return 0 headers",
+			description:   "amount=0 by number returns 0 headers; the hash-origin shape that underflowed is in TestGetBlockHeadersZeroAmount",
 		},
 		{
 			name:          "normal_single_header",

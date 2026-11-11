@@ -17,12 +17,12 @@
  *
  *   node trace_passkey_ops.js <rpc-url> [sampleCount]     default sample 20
  *
- * The sample spreads over the fixture's block range, one operation per sender where possible,
- * and always includes the first and the last. Exit 0 when every traced operation matched, 1 on
- * any mismatch (with the lengths and the tail after the reconstruction), 2 when nothing could be
- * confirmed, and 3 when some operations matched but others could not be traced, since confirming
- * part of the sample says nothing about the rest. trace_passkey_ops_test.js runs it against a
- * stub node for all four outcomes.
+ * The sample spreads evenly over the fixture's block range, preferring a sender not yet sampled
+ * within each stretch, and includes the first and the last when at least two operations fit.
+ * Exit 0 when every traced operation matched, 1 on any mismatch (with the lengths and the tail
+ * after the reconstruction), 2 when nothing could be confirmed, and 3 when some operations
+ * matched but others could not be traced, since confirming part of the sample says nothing about
+ * the rest. trace_passkey_ops_test.js runs it against a stub node for all four outcomes.
  */
 'use strict'
 const fs = require('node:fs')
@@ -36,10 +36,6 @@ const VALIDATE_USEROP = '0x19822f7c'
 const FIXTURE = process.env.WEBAUTHN_OPS_FILE || path.join(__dirname, 'mainnet-passkey-ops.json')
 
 const rpcURL = process.argv[2]
-if (!rpcURL) {
-  console.error('usage: trace_passkey_ops.js <rpc-url> [sampleCount]')
-  process.exit(2)
-}
 const sampleCount = Number(process.argv[3] || 20)
 
 let id = 0
@@ -74,26 +70,45 @@ function validationInputs(frame, account, entryPoint, uopHash, inside, out) {
   return out
 }
 
-// An even spread across the block range, one operation per sender where possible, and the
-// first and last operation always in.
+// An even spread across the block range, with the first and last operation reserved when at
+// least two operations fit. The operations between them are cut into target-2 consecutive windows
+// of near-equal width, and each window contributes exactly one: the first operation whose sender
+// is not sampled yet, the endpoints' senders included, else its first operation. Sender
+// diversity is a preference inside a window, so repeated senders cannot discard endpoints or
+// slots, and cannot pull the sample towards the oldest operations either: neighbouring picks are
+// less than two windows apart.
 function pickSample(ops, n) {
   const sorted = ops.slice().sort((a, b) => a.block - b.block)
-  const seen = new Set()
-  const out = []
-  const take = (o) => {
-    if (out.length >= n || seen.has(o.sender.toLowerCase())) return
-    seen.add(o.sender.toLowerCase())
-    out.push(o)
+  const target = Math.min(n, sorted.length)
+  if (target === 0) return []
+  const last = sorted.length - 1
+  const picked = [0]
+  const seenSender = new Set([sorted[0].sender.toLowerCase()])
+  if (target > 1) seenSender.add(sorted[last].sender.toLowerCase())
+  const windows = target - 2
+  for (let k = 0; k < windows; k++) {
+    const from = 1 + Math.floor((k * (last - 1)) / windows)
+    const to = 1 + Math.floor(((k + 1) * (last - 1)) / windows)
+    let pick = from
+    for (let i = from; i < to; i++) {
+      if (!seenSender.has(sorted[i].sender.toLowerCase())) {
+        pick = i
+        break
+      }
+    }
+    picked.push(pick)
+    seenSender.add(sorted[pick].sender.toLowerCase())
   }
-  take(sorted[0])
-  take(sorted[sorted.length - 1])
-  const step = Math.max(1, Math.floor(sorted.length / n))
-  for (let i = step; i < sorted.length - 1 && out.length < n; i += step) take(sorted[i])
-  return out.sort((a, b) => a.block - b.block)
+  if (target > 1) picked.push(last)
+  return picked.map((i) => sorted[i])
 }
 
 async function main() {
+  if (!Number.isSafeInteger(sampleCount) || sampleCount < 1) {
+    throw new Error('sampleCount must be a positive whole number')
+  }
   const fixture = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'))
+  if (fixture.ops.length === 0) throw new Error('fixture contains no operations to trace')
   const chainId = parseInt(await rpc('eth_chainId', []), 16)
   const head = parseInt(await rpc('eth_blockNumber', []), 16)
   console.log(`RPC ${new URL(rpcURL).host}  chainId ${chainId}  head ${head}  fixture ops ${fixture.ops.length}`)
@@ -149,20 +164,32 @@ async function main() {
   if (mismatches.length) {
     for (const m of mismatches) console.log('  ' + JSON.stringify(m))
     console.error('\nAt least one real 0x111 input differs from the reconstruction. Investigate before activation.')
-    process.exit(1)
+    process.exitCode = 1
+    return
   }
   if (matched === 0) {
     console.error('\nNo operation could be confirmed. Is this an archive node on the right chain?')
-    process.exit(2)
+    process.exitCode = 2
+    return
   }
   if (unconfirmed.length) {
     console.error(`\n${unconfirmed.length} of ${sample.length} sampled operation(s) could not be traced, so this is not a clean pass: confirming only part of the sample says nothing about the rest. Re-run against a full-history archive node, or investigate those transactions.`)
-    process.exit(3)
+    process.exitCode = 3
+    return
   }
   console.log('\nOK: every traced operation fed 0x111 exactly the reconstructed input, ending at y with no trailing bytes.')
 }
 
-main().catch((e) => {
-  console.error('ERROR', e.message)
-  process.exit(2)
-})
+module.exports = { pickSample }
+
+if (require.main === module) {
+  if (!rpcURL) {
+    console.error('usage: trace_passkey_ops.js <rpc-url> [sampleCount]')
+    process.exitCode = 2
+  } else {
+    main().catch((e) => {
+      console.error('ERROR', e.message)
+      process.exitCode = 2
+    })
+  }
+}

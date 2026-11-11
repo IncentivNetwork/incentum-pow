@@ -264,6 +264,25 @@ refuses([harvest({ counts: { passkeyOps: 0 }, ops: [] })], /every harvest is emp
   assert.equal(pickSample(twice, 10).length, 2)
 }
 
+// Duplicates in the remainder must not consume slots when harvest windows overlap.
+{
+  const unique = Array.from({ length: 7 }, (_, i) => op(i + 1, String(i), '0xsame'))
+  const overlapping = [unique[0], unique[1], unique[1], unique[1], ...unique.slice(2)]
+  const sampled = pickSample(overlapping, 5)
+  assert.equal(sampled.length, 5, 'overlapping windows must fill the target when enough unique operations exist')
+  assert.equal(new Set(sampled.map((o) => o.txHash)).size, 5)
+}
+
+// The documented replay floor is 500, even if duplicate records dominate the windows.
+{
+  const unique = Array.from({ length: 700 }, (_, i) => op(i + 1, String(i), '0xsame'))
+  const overlapping = [unique[0], ...Array(301).fill(unique[1]), ...unique.slice(2)]
+  const sampled = pickSample(overlapping, 500)
+  assert.equal(sampled.length, 500)
+  assert.equal(new Set(sampled.map((o) => o.txHash)).size, 500)
+  assert.deepEqual(pickSample(overlapping, 1000), unique, 'return all unique operations when fewer than the target exist')
+}
+
 // Chronological order, whatever order the windows arrived in.
 {
   const ops = pickSample([op(5, 'c'), op(1, 'a'), op(3, 'b')], 10)
