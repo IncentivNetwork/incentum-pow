@@ -179,6 +179,7 @@ func testBlockChainImport(chain types.Blocks, blockchain *BlockChain) error {
 		rawdb.WriteTd(blockchain.db, block.Hash(), block.NumberU64(), new(big.Int).Add(block.Difficulty(), blockchain.GetTd(block.ParentHash(), block.NumberU64()-1)))
 		rawdb.WriteBlock(blockchain.db, block)
 		rawdb.WriteReceipts(blockchain.db, block.Hash(), block.NumberU64(), receipts)
+		rawdb.WriteBlockExecuted(blockchain.db, block.Hash(), block.NumberU64())
 		statedb.Commit(false)
 		blockchain.chainmu.Unlock()
 	}

@@ -673,6 +673,28 @@ func DeleteReceipts(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 	}
 }
 
+// HasBlockExecuted reports whether the execution mark of a block is stored. Only the
+// execution of the block writes it, so receipts alone, as snap sync stores them, do not
+// stand for it.
+func HasBlockExecuted(db ethdb.KeyValueReader, hash common.Hash, number uint64) bool {
+	has, _ := db.Has(blockExecutedKey(number, hash))
+	return has
+}
+
+// WriteBlockExecuted stores the execution mark of a block.
+func WriteBlockExecuted(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
+	if err := db.Put(blockExecutedKey(number, hash), []byte{1}); err != nil {
+		log.Crit("Failed to store block execution mark", "err", err)
+	}
+}
+
+// DeleteBlockExecuted removes the execution mark of a block.
+func DeleteBlockExecuted(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
+	if err := db.Delete(blockExecutedKey(number, hash)); err != nil {
+		log.Crit("Failed to delete block execution mark", "err", err)
+	}
+}
+
 // storedReceiptRLP is the storage encoding of a receipt.
 // Re-definition in core/types/receipt.go.
 // TODO: Re-use the existing definition.
@@ -814,6 +836,7 @@ func writeAncientBlock(op ethdb.AncientWriteOp, block *types.Block, header *type
 // DeleteBlock removes all block data associated with a hash.
 func DeleteBlock(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 	DeleteReceipts(db, hash, number)
+	DeleteBlockExecuted(db, hash, number)
 	DeleteHeader(db, hash, number)
 	DeleteBody(db, hash, number)
 	DeleteTd(db, hash, number)
@@ -823,6 +846,7 @@ func DeleteBlock(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 // the hash to number mapping.
 func DeleteBlockWithoutNumber(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 	DeleteReceipts(db, hash, number)
+	DeleteBlockExecuted(db, hash, number)
 	deleteHeaderWithoutNumber(db, hash, number)
 	DeleteBody(db, hash, number)
 	DeleteTd(db, hash, number)

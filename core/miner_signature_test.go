@@ -562,6 +562,15 @@ func TestMinerSignatureUnexecutedForksOnPrunedNode(t *testing.T) {
 	wantRefused("a claimed state on a pruned node", pruned, claimed)
 	wantRefused("a claimed state delivered again", pruned, claimed)
 
+	withEntry := prunedNode()
+	w.mustInsert(withEntry, []*types.Block{stake})
+	w.mustInsert(withEntry, []*types.Block{claiming})
+	rawdb.WriteReceipts(withEntry.db, claiming.Hash(), claiming.NumberU64(), nil)
+	if withEntry.HasBlockAndState(claiming.Hash(), claiming.NumberU64()) {
+		t.Fatal("an empty receipts entry counts as proof that the block ran")
+	}
+	wantRefused("a claimed state with an empty receipts entry", withEntry, claimed)
+
 	// A node that executes every side block, and one that never had that state, say the same.
 	archive, err := NewBlockChain(rawdb.NewMemoryDatabase(), &CacheConfig{TrieDirtyDisabled: true}, w.genesisSpec(w.config), nil, w.plain, vm.Config{}, nil, nil)
 	if err != nil {
@@ -1146,4 +1155,61 @@ func TestMinerSignerEpochsAdoptedOnRestart(t *testing.T) {
 	next := w.mine(w.config, w.signer, blocks[1], 2, 5, w.listed)
 	w.mustInsert(upgraded, next)
 	w.wantHead(upgraded, next[1])
+}
+
+func TestMinerSignatureRewindAfterHeaderReorg(t *testing.T) {
+	w := newMinerSigWorld(t, 2)
+	var public []*types.Block
+	parent := w.genesis
+	for i := 0; i < 12; i++ {
+		parent = w.mineWith(w.config, w.signer, parent, 1, w.listed, w.spend)
+		public = append(public, parent)
+	}
+	db := rawdb.NewMemoryDatabase()
+	old := w.node(db, w.config)
+	w.mustInsert(old, public)
+	w.stop(old)
+	chain := w.node(db, w.config)
+	base := public[2]
+	if chain.HasState(base.Root()) {
+		t.Fatal("the fork ancestor was not pruned")
+	}
+	stake := w.mineWith(w.legacy, w.plain, w.genesis, 1, w.listed, w.stake)
+	w.mustInsert(chain, []*types.Block{stake})
+	claiming := w.claimingRoot(base, stake.Root())
+	stored := []*types.Block{claiming}
+	for tip := claiming; tip.NumberU64() < public[len(public)-1].NumberU64(); {
+		tip = w.mineWith(w.withoutRegistry(), w.rogue, tip, 30, w.attacker, nil)
+		stored = append(stored, tip)
+	}
+	target := rawdb.ReadTd(w.genDb, parent.Hash(), parent.NumberU64())
+	tip := stored[len(stored)-1]
+	if rawdb.ReadTd(w.genDb, tip.Hash(), tip.NumberU64()).Cmp(target) >= 0 {
+		t.Fatal("the stored fork is not strictly lighter than the public chain")
+	}
+	w.mustInsert(chain, stored)
+	if rawdb.HasReceipts(db, claiming.Hash(), claiming.NumberU64()) || chain.HasBlockAndState(claiming.Hash(), claiming.NumberU64()) {
+		t.Fatal("the unexecuted block was trusted before the header reorg")
+	}
+	fork := append([]*types.Block{}, stored...)
+	for rawdb.ReadTd(w.genDb, tip.Hash(), tip.NumberU64()).Cmp(target) <= 0 {
+		tip = w.mineWith(w.config, w.rogue, tip, 1, w.attacker, nil)
+		fork = append(fork, tip)
+	}
+	headers := make([]*types.Header, len(fork))
+	for i, block := range fork {
+		headers[i] = block.Header()
+	}
+	if _, err := chain.InsertHeaderChain(headers, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := chain.SetHead(claiming.NumberU64()); err != nil {
+		t.Fatal(err)
+	}
+	if chain.CurrentBlock().Hash() == claiming.Hash() || chain.HasBlockAndState(claiming.Hash(), claiming.NumberU64()) {
+		t.Fatal("rewind promoted a block that never passed the registry check")
+	}
+	if _, err := chain.InsertChain(append([]*types.Block{claiming}, stored[1:2]...)); !errors.Is(err, consensus.ErrUnauthorizedMiner) {
+		t.Fatalf("reimport after rewind: %v, want unauthorized miner", err)
+	}
 }

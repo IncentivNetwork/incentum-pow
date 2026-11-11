@@ -1033,3 +1033,29 @@ func TestReadHeaderRange_DoSProtectionAndEdgeCases(t *testing.T) {
 		})
 	}
 }
+
+func TestBlockExecutedStorage(t *testing.T) {
+	hash, number := common.Hash{1}, uint64(7)
+	for name, remove := range map[string]func(ethdb.KeyValueWriter, common.Hash, uint64){
+		"DeleteBlockExecuted":      DeleteBlockExecuted,
+		"DeleteBlock":              DeleteBlock,
+		"DeleteBlockWithoutNumber": DeleteBlockWithoutNumber,
+	} {
+		db := NewMemoryDatabase()
+		if HasBlockExecuted(db, hash, number) {
+			t.Fatalf("%s: mark on an empty database", name)
+		}
+		WriteReceipts(db, hash, number, nil)
+		if HasBlockExecuted(db, hash, number) {
+			t.Fatalf("%s: receipts count as the mark", name)
+		}
+		WriteBlockExecuted(db, hash, number)
+		if !HasBlockExecuted(db, hash, number) || HasBlockExecuted(db, common.Hash{2}, number) || HasBlockExecuted(db, hash, number+1) {
+			t.Fatalf("%s: the mark does not belong to one block", name)
+		}
+		remove(db, hash, number)
+		if HasBlockExecuted(db, hash, number) {
+			t.Fatalf("%s: the mark stays", name)
+		}
+	}
+}

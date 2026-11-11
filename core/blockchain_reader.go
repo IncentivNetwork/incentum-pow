@@ -290,14 +290,117 @@ func (bc *BlockChain) HasBlockAndState(hash common.Hash, number uint64) bool {
 }
 
 // hasExecutedState checks that a block's state is present and that the block itself got
-// there by being executed. insertSideChain stores blocks unexecuted, without receipts, and
-// a state under the root such a block names says nothing about the block: the root can be
-// false, or simply its parent's, as that of any empty block is on a chain without block
-// rewards. Counting the block as having its state would skip it as known or run its
-// children on that state, with the checks made at execution, such as the DPoW registry,
-// never applied to it.
+// there by being executed. A block can be stored without having run: insertSideChain
+// stores it with no receipts, an older binary wrote an empty receipts entry for a block it
+// met as known, and snap sync stores the receipts it downloaded. A state under the root
+// such a block names says nothing about the block: the root can be false, or simply its
+// parent's, as that of any empty block is on a chain without block rewards. Counting the
+// block as having its state would skip it as known or run its children on that state, with
+// the checks made at execution, such as the DPoW registry, never applied to it.
+//
+// The proof is the mark that writeBlockWithState writes with the receipts. A block without
+// one counts as executed only on the full head's own chain (onHeadChain). Blocks written
+// before the mark existed have none, and freezing a block deletes it.
 func (bc *BlockChain) hasExecutedState(hash common.Hash, number uint64, root common.Hash) bool {
-	return bc.HasState(root) && rawdb.HasReceipts(bc.db, hash, number)
+	if !bc.HasState(root) {
+		return false
+	}
+	if rawdb.HasBlockExecuted(bc.db, hash, number) {
+		return true
+	}
+	return bc.onHeadChain(bc.CurrentBlock(), hash, number)
+}
+
+// onHeadChain reports whether a block is the full head or one of its ancestors: the genesis
+// block, a frozen block that matches the frozen canonical table, which cannot be rewritten,
+// or a block found by following parent hashes from the head. The canonical index is no
+// proof, as header sync rewrites it below the head too. It only rejects a block, while it
+// agrees with the head at the head's height, so a true ancestor at a wrong entry is not
+// counted, and runs again if it is adopted. The genesis and frozen cases save a walk, and
+// the head check keeps a frozen block above a rewound head from passing the frozen test.
+func (bc *BlockChain) onHeadChain(head *types.Header, hash common.Hash, number uint64) bool {
+	if number == 0 {
+		return hash == bc.genesisBlock.Hash()
+	}
+	headNumber := head.Number.Uint64()
+	if number > headNumber {
+		return false
+	}
+	if frozen, _ := bc.db.Ancients(); number < frozen {
+		return rawdb.ReadCanonicalHash(bc.db, number) == hash
+	}
+	if bc.GetCanonicalHash(headNumber) == head.Hash() && bc.GetCanonicalHash(number) != hash {
+		return false
+	}
+	ancestor, ok := bc.headAncestorHash(head, headNumber-number)
+	return ok && ancestor == hash
+}
+
+// headAncestorHash returns the hash of the full head's ancestor depth blocks below it, by
+// following parent hashes. One walk is kept per head hash and extended as needed, so the
+// checks under one head share it. A missing header ends the walk with false.
+func (bc *BlockChain) headAncestorHash(head *types.Header, depth uint64) (common.Hash, bool) {
+	bc.headAncestry.lock.Lock()
+	defer bc.headAncestry.lock.Unlock()
+
+	if hash := head.Hash(); bc.headAncestry.head != hash {
+		if segment := bc.keptWalkSegment(head); segment != nil {
+			// The head grew over the kept head: its ancestors are the segment, the kept head
+			// and that head's ancestors, so the walk is kept and the segment goes in front.
+			hashes, n := bc.headAncestry.hashes, len(segment)
+			hashes = append(hashes, segment...)
+			copy(hashes[n:], hashes[:len(hashes)-n])
+			copy(hashes, segment)
+			// The frozen table answers below the frozen limit, so the walk is never asked for
+			// those depths: drop them, or the list grows with every head.
+			if frozen, _ := bc.db.Ancients(); frozen > 0 {
+				keep := uint64(1)
+				if number := head.Number.Uint64(); number >= frozen {
+					keep = number - frozen + 1
+				}
+				if uint64(len(hashes)) > keep {
+					hashes = hashes[:keep]
+				}
+			}
+			bc.headAncestry.hashes = hashes
+		} else {
+			bc.headAncestry.hashes = append(bc.headAncestry.hashes[:0], hash)
+		}
+		bc.headAncestry.head, bc.headAncestry.number = hash, head.Number.Uint64()
+	}
+	for uint64(len(bc.headAncestry.hashes)) <= depth {
+		last := len(bc.headAncestry.hashes) - 1
+		header := bc.GetHeader(bc.headAncestry.hashes[last], head.Number.Uint64()-uint64(last))
+		if header == nil {
+			return common.Hash{}, false
+		}
+		bc.headAncestry.hashes = append(bc.headAncestry.hashes, header.ParentHash)
+	}
+	return bc.headAncestry.hashes[depth], true
+}
+
+// keptWalkSegment returns the hashes from head down to the child of the kept head when head
+// is above the kept head and descends from it, else nil. It walks the gap between the two by
+// parent hash, and only while the gap is no longer than the kept walk: the walk of the gap then
+// costs at most the walk it keeps. The caller holds the headAncestry lock.
+func (bc *BlockChain) keptWalkSegment(head *types.Header) []common.Hash {
+	kept := &bc.headAncestry
+	number := head.Number.Uint64()
+	if len(kept.hashes) == 0 || number <= kept.number || number-kept.number > uint64(len(kept.hashes)) {
+		return nil
+	}
+	segment := make([]common.Hash, 0, number-kept.number)
+	header := head
+	for header.Number.Uint64() > kept.number {
+		segment = append(segment, header.Hash())
+		if header = bc.GetHeader(header.ParentHash, header.Number.Uint64()-1); header == nil {
+			return nil
+		}
+	}
+	if header.Hash() != kept.head {
+		return nil
+	}
+	return segment
 }
 
 // TrieNode retrieves a blob of data associated with a trie node
