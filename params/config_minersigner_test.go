@@ -126,3 +126,29 @@ func TestMinerSignerEpochsJSON(t *testing.T) {
 		t.Fatalf("an empty config writes the field: %s", enc)
 	}
 }
+
+// Only devnet has an epoch so far. Mainnet and testnet get theirs in releases of their own,
+// which update this test.
+func TestBundledMinerSignerEpochs(t *testing.T) {
+	for name, config := range map[string]*ChainConfig{
+		"mainnet": IncentivMainnetChainConfig,
+		"testnet": IncentivTestnetChainConfig,
+	} {
+		if n := len(config.MinerSignerEpochs); n != 0 {
+			t.Errorf("%s has %d miner signer epochs, want none", name, n)
+		}
+	}
+	devnet := IncentivDevnetChainConfig
+	if err := devnet.CheckMinerSignerConfig(); err != nil {
+		t.Fatalf("devnet: %v", err)
+	}
+	miner := common.HexToAddress("0x270875c5cb93F56011365Ba765D8d0397F0baD8C")
+	if len(devnet.MinerSignerEpochs) != 1 || devnet.MinerSignerEpochs[0].Signers[miner] != miner {
+		t.Fatalf("devnet epochs %+v, want one that lists %s for itself", devnet.MinerSignerEpochs, miner)
+	}
+	// Once crossed, the epoch is history that a node syncing from scratch verifies.
+	epoch := devnet.MinerSignerEpochs[0]
+	if epoch.TD.Cmp(big.NewInt(8_845_680_000_000)) != 0 || len(epoch.Signers) != 1 {
+		t.Fatalf("devnet epoch at %v with %d signers, want 8845680000000 with one", epoch.TD, len(epoch.Signers))
+	}
+}
