@@ -342,6 +342,20 @@ var (
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
 		Clique:                        nil,
+		// The fleet's four producers sign with their own coinbase keys and are listed so that
+		// each can make the crossing block. The threshold is the head's total difficulty on
+		// 2026-11-12 at 11:29 UTC plus 19.5 hours of mining at 1.175e10 an hour, so the
+		// crossing comes at about 07:00 UTC on 2026-11-13. Once crossed, keep this epoch as
+		// it is: a node syncing from scratch verifies history against it.
+		MinerSignerEpochs: []MinerSignerEpoch{{
+			TD: big.NewInt(2_455_690_300_000_000),
+			Signers: map[common.Address]common.Address{
+				common.HexToAddress("0x47D994f172e3b124546804B2761Fb9deBad7169D"): common.HexToAddress("0x47D994f172e3b124546804B2761Fb9deBad7169D"),
+				common.HexToAddress("0xCe3Cc056a1DfF0C9322C4B223e59E963AE18E65B"): common.HexToAddress("0xCe3Cc056a1DfF0C9322C4B223e59E963AE18E65B"),
+				common.HexToAddress("0xB000b08374508dEB5FbA1824F337a97197fefb13"): common.HexToAddress("0xB000b08374508dEB5FbA1824F337a97197fefb13"),
+				common.HexToAddress("0x9237f2e1E98C3ED9d5fd956BC111b96C3B38dA92"): common.HexToAddress("0x9237f2e1E98C3ED9d5fd956BC111b96C3B38dA92"),
+			},
+		}},
 	}
 
 	// IncentivDevnetChainConfig contains the chain parameters to run a node on the Incentiv dev network.

@@ -127,15 +127,36 @@ func TestMinerSignerEpochsJSON(t *testing.T) {
 	}
 }
 
-// Only devnet has an epoch so far. Mainnet and testnet get theirs in releases of their own,
-// which update this test.
+// Devnet and mainnet have one epoch each. Testnet gets its own in a release of its own, which
+// updates this test. Once crossed, an epoch is history that a node syncing from scratch
+// verifies, so its threshold and signers are pinned exactly.
 func TestBundledMinerSignerEpochs(t *testing.T) {
-	for name, config := range map[string]*ChainConfig{
-		"mainnet": IncentivMainnetChainConfig,
-		"testnet": IncentivTestnetChainConfig,
-	} {
-		if n := len(config.MinerSignerEpochs); n != 0 {
-			t.Errorf("%s has %d miner signer epochs, want none", name, n)
+	if n := len(IncentivTestnetChainConfig.MinerSignerEpochs); n != 0 {
+		t.Errorf("testnet has %d miner signer epochs, want none", n)
+	}
+	mainnet := IncentivMainnetChainConfig
+	if err := mainnet.CheckMinerSignerConfig(); err != nil {
+		t.Fatalf("mainnet: %v", err)
+	}
+	if len(mainnet.MinerSignerEpochs) != 1 {
+		t.Fatalf("mainnet has %d miner signer epochs, want one", len(mainnet.MinerSignerEpochs))
+	}
+	if td := mainnet.MinerSignerEpochs[0].TD; td.Cmp(big.NewInt(2_455_690_300_000_000)) != 0 {
+		t.Fatalf("mainnet epoch at %v, want 2455690300000000", td)
+	}
+	producers := []common.Address{
+		common.HexToAddress("0x47D994f172e3b124546804B2761Fb9deBad7169D"),
+		common.HexToAddress("0xCe3Cc056a1DfF0C9322C4B223e59E963AE18E65B"),
+		common.HexToAddress("0xB000b08374508dEB5FbA1824F337a97197fefb13"),
+		common.HexToAddress("0x9237f2e1E98C3ED9d5fd956BC111b96C3B38dA92"),
+	}
+	signers := mainnet.MinerSignerEpochs[0].Signers
+	if len(signers) != len(producers) {
+		t.Fatalf("mainnet epoch lists %d signers, want %d", len(signers), len(producers))
+	}
+	for _, producer := range producers {
+		if signers[producer] != producer {
+			t.Errorf("mainnet epoch lists %s for %s, want itself", signers[producer], producer)
 		}
 	}
 	devnet := IncentivDevnetChainConfig
@@ -146,7 +167,6 @@ func TestBundledMinerSignerEpochs(t *testing.T) {
 	if len(devnet.MinerSignerEpochs) != 1 || devnet.MinerSignerEpochs[0].Signers[miner] != miner {
 		t.Fatalf("devnet epochs %+v, want one that lists %s for itself", devnet.MinerSignerEpochs, miner)
 	}
-	// Once crossed, the epoch is history that a node syncing from scratch verifies.
 	epoch := devnet.MinerSignerEpochs[0]
 	if epoch.TD.Cmp(big.NewInt(8_847_620_000_000)) != 0 || len(epoch.Signers) != 1 {
 		t.Fatalf("devnet epoch at %v with %d signers, want 8847620000000 with one", epoch.TD, len(epoch.Signers))

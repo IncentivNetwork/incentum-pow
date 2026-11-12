@@ -952,11 +952,14 @@ func TestOverrideMinerSignerTD(t *testing.T) {
 }
 
 // A start resolves the config more than once on an Incentiv chain, and an override with nothing
-// to move is still one thing to say.
+// to move is still one thing to say. The chain here ships no epochs, whatever mainnet ships.
 func TestMinerSignerOverrideWithoutEpochsWarnsOnce(t *testing.T) {
 	const warning = "Ignoring --override.minersignertd"
 	held := uint64(2_000_000)
 	overrides := &ChainOverrides{OverrideMinerSignerTD: &held}
+	shipped := params.IncentivMainnetChainConfig.MinerSignerEpochs
+	params.IncentivMainnetChainConfig.MinerSignerEpochs = nil
+	defer func() { params.IncentivMainnetChainConfig.MinerSignerEpochs = shipped }()
 
 	start := func(t *testing.T, stored []params.MinerSignerEpoch, genesis *Genesis, setup bool) int {
 		t.Helper()
