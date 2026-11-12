@@ -96,6 +96,7 @@ if one is set.  Otherwise it prints the genesis from the datadir.`,
 			utils.TxLookupLimitFlag,
 			utils.OverrideShanghai,
 			utils.OverrideWebAuthnStrict,
+			utils.OverrideMinerSignerTD,
 		}, utils.DatabasePathFlags),
 		Description: `
 The import command imports blocks from an RLP-encoded form. The form can be one file
@@ -114,6 +115,7 @@ processing will proceed even if an individual RLP-file import failure occurs.`,
 			utils.SyncModeFlag,
 			utils.OverrideShanghai,
 			utils.OverrideWebAuthnStrict,
+			utils.OverrideMinerSignerTD,
 		}, utils.DatabasePathFlags),
 		Description: `
 Requires a first argument of the file to write to.

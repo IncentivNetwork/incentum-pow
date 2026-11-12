@@ -75,6 +75,9 @@ const (
 
 	// staleThreshold is the maximum depth of the acceptable stale block.
 	staleThreshold = 7
+
+	// assemblyErrLogInterval is how often a block assembly failing the same way is logged.
+	assemblyErrLogInterval = 5 * time.Minute
 )
 
 var (
@@ -225,6 +228,9 @@ type worker struct {
 	localUncles  map[common.Hash]*types.Block // A set of side blocks generated locally as the possible uncle blocks.
 	remoteUncles map[common.Hash]*types.Block // A set of side blocks as the possible uncle blocks.
 	unconfirmed  *unconfirmedBlocks           // A set of locally mined blocks pending canonicalness confirmations.
+
+	assemblyErr       string    // The last assembly failure logged. Only the main loop uses this and the next.
+	assemblyErrLogged time.Time // When it was logged.
 
 	mu       sync.RWMutex // The lock used to protect the coinbase and extra fields
 	coinbase common.Address
@@ -1188,11 +1194,42 @@ func (w *worker) commitWork(interrupt *atomic.Int32, noempty bool, timestamp int
 	w.current = work
 }
 
+// reportAssemblyFailure logs a block that could not be assembled. None of the callers of commit
+// look at the error, and the miner keeps reporting itself as running, so a miner that cannot
+// produce blocks has to say so here. It can stay that way for a long time, as while a stake
+// matures, and every round fails twice, so the same failure is logged once per interval. A block
+// with no coinbase was prepared just before the worker started and says nothing about the miner.
+func (w *worker) reportAssemblyFailure(header *types.Header, err error) {
+	if header.Coinbase == (common.Address{}) {
+		return
+	}
+	text := err.Error()
+	if text == w.assemblyErr && time.Since(w.assemblyErrLogged) < assemblyErrLogInterval {
+		return
+	}
+	w.assemblyErr, w.assemblyErrLogged = text, time.Now()
+	log.Error("Failed to assemble sealing block", "number", header.Number, "coinbase", header.Coinbase, "err", err)
+}
+
+// reportAssemblySuccess forgets the failure logged last, so that one which comes back is logged
+// at once and not taken for a repeat of the old one. Like reportAssemblyFailure it says nothing
+// about a block with no coinbase.
+func (w *worker) reportAssemblySuccess(header *types.Header) {
+	if header.Coinbase != (common.Address{}) {
+		w.assemblyErr = ""
+	}
+}
+
 // commit runs any post-transaction state modifications, assembles the final block
 // and commits new work if consensus engine is running.
 // Note the assumption is held that the mutation is allowed to the passed env, do
 // the deep copy first.
 func (w *worker) commit(env *environment, interval func(), update bool, start time.Time) error {
+	// The pending block and state do not depend on the block assembling: a miner that cannot
+	// produce one still follows the chain, and wallets read their nonces from it.
+	if update {
+		defer w.updateSnapshot(env)
+	}
 	if w.isRunning() {
 		if interval != nil {
 			interval()
@@ -1203,8 +1240,10 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		// Withdrawals are set to nil here, because this is only called in PoW.
 		block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, env.unclelist(), env.receipts, nil)
 		if err != nil {
+			w.reportAssemblyFailure(env.header, err)
 			return err
 		}
+		w.reportAssemblySuccess(env.header)
 		// If we're post merge, just ignore
 		if !w.isTTDReached(block.Header()) {
 			select {
@@ -1222,9 +1261,6 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 				log.Info("Worker has exited")
 			}
 		}
-	}
-	if update {
-		w.updateSnapshot(env)
 	}
 	return nil
 }

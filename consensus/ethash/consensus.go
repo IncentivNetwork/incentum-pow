@@ -92,6 +92,8 @@ var (
 	errInvalidDifficulty = errors.New("non-positive difficulty")
 	errInvalidMixDigest  = errors.New("invalid mix digest")
 	errInvalidPoW        = errors.New("invalid proof-of-work")
+	errWithdrawalsHash   = errors.New("withdrawals hash not supported")
+	errExcessDataGas     = errors.New("excess data gas not supported")
 )
 
 // Author implements consensus.Engine, returning the header's coinbase as the
@@ -107,17 +109,26 @@ func (ethash *Ethash) VerifyHeader(chain consensus.ChainHeaderReader, header *ty
 	if ethash.config.PowMode == ModeFullFake {
 		return nil
 	}
-	// Short circuit if the header is known, or its parent not
+	// Short circuit if the header is known, or its parent not. A stored header is not
+	// verified again, except for the fields ethash blocks never carry: that rule has no
+	// fork gate, so it holds for what was stored before it as well.
 	number := header.Number.Uint64()
 	if chain.GetHeader(header.Hash(), number) != nil {
-		return nil
+		return ethash.verifyHeaderFields(header)
 	}
 	parent := chain.GetHeader(header.ParentHash, number-1)
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
 	}
+	td, err := ethash.headerTD(chain, header, parent.Number.Uint64())
+	if err != nil {
+		return err
+	}
 	// Sanity checks passed, do a proper verification
-	return ethash.verifyHeader(chain, header, parent, false, seal, time.Now().Unix())
+	if err := ethash.verifyHeader(chain, header, parent, td, false, seal, time.Now().Unix()); err != nil {
+		return err
+	}
+	return ethash.verifyStoredParent(chain.Config(), header, parent, td)
 }
 
 // VerifyHeaders is similar to VerifyHeader, but verifies a batch of headers
@@ -133,6 +144,8 @@ func (ethash *Ethash) VerifyHeaders(chain consensus.ChainHeaderReader, headers [
 		return abort, results
 	}
 
+	tds := ethash.batchTDs(chain, headers)
+
 	// Spawn as many workers as allowed threads
 	workers := min(len(headers), runtime.GOMAXPROCS(0))
 
@@ -147,7 +160,7 @@ func (ethash *Ethash) VerifyHeaders(chain consensus.ChainHeaderReader, headers [
 	for i := 0; i < workers; i++ {
 		go func() {
 			for index := range inputs {
-				errors[index] = ethash.verifyHeaderWorker(chain, headers, seals, index, unixNow)
+				errors[index] = ethash.verifyHeaderWorker(chain, headers, tds, seals, index, unixNow)
 				done <- index
 			}
 		}()
@@ -183,7 +196,7 @@ func (ethash *Ethash) VerifyHeaders(chain consensus.ChainHeaderReader, headers [
 	return abort, errorsOut
 }
 
-func (ethash *Ethash) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, index int, unixNow int64) error {
+func (ethash *Ethash) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []*types.Header, tds []*big.Int, seals []bool, index int, unixNow int64) error {
 	var parent *types.Header
 	if index == 0 {
 		parent = chain.GetHeader(headers[0].ParentHash, headers[0].Number.Uint64()-1)
@@ -193,7 +206,23 @@ func (ethash *Ethash) verifyHeaderWorker(chain consensus.ChainHeaderReader, head
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
 	}
-	return ethash.verifyHeader(chain, headers[index], parent, false, seals[index], unixNow)
+	var td *big.Int
+	if tds != nil {
+		if td = tds[index]; td == nil {
+			// Either the parent is unknown, or batchTDs stopped at a header too large to sum.
+			if err := headers[index].SanityCheck(); err != nil {
+				return err
+			}
+			return consensus.ErrUnknownAncestor
+		}
+	}
+	if err := ethash.verifyHeader(chain, headers[index], parent, td, false, seals[index], unixNow); err != nil {
+		return err
+	}
+	if index == 0 {
+		return ethash.verifyStoredParent(chain.Config(), headers[0], parent, td)
+	}
+	return nil
 }
 
 // VerifyUncles verifies that the given block's uncles conform to the consensus
@@ -252,9 +281,34 @@ func (ethash *Ethash) VerifyUncles(chain consensus.ChainReader, block *types.Blo
 		if ancestors[uncle.ParentHash] == nil || uncle.ParentHash == block.ParentHash() {
 			return errDanglingUncle
 		}
-		if err := ethash.verifyHeader(chain, uncle, ancestors[uncle.ParentHash], true, true, time.Now().Unix()); err != nil {
+		td, err := ethash.headerTD(chain, uncle, ancestors[uncle.ParentHash].Number.Uint64())
+		if err != nil {
 			return err
 		}
+		if err := ethash.verifyHeader(chain, uncle, ancestors[uncle.ParentHash], td, true, true, time.Now().Unix()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyHeaderFields refuses a header that carries the withdrawals hash or the excess
+// data gas. Ethash blocks carry neither, and the seal hash covers neither, so the check
+// has to come before the seal hash is computed: SealHash panics on the withdrawals hash.
+// The default header encoder does not write the excess data gas, so the block hash leaves
+// it out too; it is refused all the same, so that the rule holds in a build with the
+// reflection codec (the norlpgen tag) and should the encoding change. The fake engines
+// are exempt: they do not reach the seal hash when verifying, and tests build headers
+// with these fields under them on purpose.
+func (ethash *Ethash) verifyHeaderFields(header *types.Header) error {
+	if ethash.config.PowMode == ModeFake || ethash.config.PowMode == ModeFullFake {
+		return nil
+	}
+	if header.WithdrawalsHash != nil {
+		return errWithdrawalsHash
+	}
+	if header.ExcessDataGas != nil {
+		return errExcessDataGas
 	}
 	return nil
 }
@@ -262,9 +316,20 @@ func (ethash *Ethash) VerifyUncles(chain consensus.ChainReader, block *types.Blo
 // verifyHeader checks whether a header conforms to the consensus rules of the
 // stock Ethereum ethash engine.
 // See YP section 4.3.4. "Block Header Validity"
-func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, parent *types.Header, uncle bool, seal bool, unixNow int64) error {
-	// Ensure that the header's extra-data section is of a reasonable size
-	if uint64(len(header.Extra)) > params.MaximumExtraDataSize {
+//
+// td is the header's own total difficulty, nil when the miner signer rule is off.
+func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, parent *types.Header, td *big.Int, uncle bool, seal bool, unixNow int64) error {
+	// Refuse the fields ethash blocks never carry before anything computes the seal hash.
+	if err := ethash.verifyHeaderFields(header); err != nil {
+		return err
+	}
+	var epoch *params.MinerSignerEpoch
+	if td != nil {
+		epoch = chain.Config().MinerSignerEpochAt(td)
+	}
+	// Ensure that the header's extra-data section is of a reasonable size. Past the
+	// miner signer threshold it also holds the signature, checked below.
+	if epoch == nil && uint64(len(header.Extra)) > params.MaximumExtraDataSize {
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), params.MaximumExtraDataSize)
 	}
 	// Verify the header's timestamp
@@ -312,6 +377,14 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 	}
 	if chain.Config().IsCancun(header.Time) {
 		return fmt.Errorf("ethash does not support cancun fork")
+	}
+	// Verify the miner signature, whatever the seal flag says: sampled seal checks
+	// would leave most headers of a sync unchecked, and a recovery is far cheaper
+	// than the seal it comes before.
+	if epoch != nil {
+		if err := ethash.verifyMinerSignature(chain.Config(), header, td, epoch); err != nil {
+			return err
+		}
 	}
 	// Verify the engine specific seal securing the block
 	if seal {
@@ -667,7 +740,21 @@ func (ethash *Ethash) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	}
 	ethash.Finalize(chain, header, state, txs, uncles, nil)
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
-	return types.NewBlock(header, txs, uncles, receipts, trie.NewStackTrie(nil)), nil
+	block := types.NewBlock(header, txs, uncles, receipts, trie.NewStackTrie(nil))
+
+	// Past the miner signer threshold the block is signed here, after NewBlock has filled
+	// in the header and before anything seals it: the seal hash the worker tracks its
+	// tasks by has to cover the signature from the start.
+	td, err := ethash.headerTD(chain, header, header.Number.Uint64()-1)
+	if err != nil {
+		return nil, err
+	}
+	if td != nil {
+		if epoch := chain.Config().MinerSignerEpochAt(td); epoch != nil {
+			return ethash.signMinedBlock(chain.Config(), block, td, epoch)
+		}
+	}
+	return block, nil
 }
 
 // SealHash returns the hash of a block prior to it being sealed.

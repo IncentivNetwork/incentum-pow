@@ -18,6 +18,7 @@
 package eth
 
 import (
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"math/big"
@@ -32,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
+	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -39,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
@@ -132,6 +135,14 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	}
 	log.Info("Allocated trie memory caches", "clean", common.StorageSize(config.TrieCleanCache)*1024*1024, "dirty", common.StorageSize(config.TrieDirtyCache)*1024*1024)
 
+	// A signer key that cannot be read is a failed start, not a miner that stops later.
+	var minerKey *ecdsa.PrivateKey
+	if config.Miner.SignerKeyFile != "" {
+		var err error
+		if minerKey, err = loadMinerSigner(config.Miner.SignerKeyFile, config.Miner.SignerPasswordFile, stack.KeyStoreDir()); err != nil {
+			return nil, fmt.Errorf("miner signer: %w", err)
+		}
+	}
 	// Assemble the Ethereum object
 	chainDb, err := stack.OpenDatabaseWithFreezer("chaindata", config.DatabaseCache, config.DatabaseHandles, config.DatabaseFreezer, "eth/db/chaindata/", false)
 	if err != nil {
@@ -148,6 +159,14 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
+	if minerKey != nil {
+		pow, ok := engine.(*ethash.Ethash)
+		if !ok {
+			return nil, errors.New("miner signer: this chain does not run ethash")
+		}
+		pow.AuthorizeMiner(minerKey)
+		log.Info("Loaded miner block signer", "address", crypto.PubkeyToAddress(minerKey.PublicKey))
+	}
 
 	eth := &Ethereum{
 		config:            config,
@@ -421,6 +440,10 @@ func (s *Ethereum) StartMining(threads int) error {
 		if err != nil {
 			log.Error("Cannot start mining without etherbase", "err", err)
 			return fmt.Errorf("etherbase missing: %v", err)
+		}
+		if err := s.checkMinerSigner(eb); err != nil {
+			log.Error("Cannot start mining", "err", err)
+			return err
 		}
 		var cli *clique.Clique
 		if c, ok := s.engine.(*clique.Clique); ok {

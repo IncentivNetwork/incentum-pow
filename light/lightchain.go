@@ -113,6 +113,14 @@ func NewLightChain(odr OdrBackend, config *params.ChainConfig, engine consensus.
 			log.Info("Chain rewind was successful, resuming normal operation")
 		}
 	}
+	// As a full node's start does: headers that crossed a miner signer threshold on an older
+	// binary stay ahead of the honest chain by their total difficulty alone.
+	if first, reason := core.InvalidMinerSignatureCrossing(bc.chainDb, config, engine, bc.hc.CurrentHeader()); first != nil {
+		log.Error("Chain crossed the miner signer threshold on an invalid block, rewinding", "number", first.Number, "hash", first.Hash(), "err", reason)
+		if err := bc.SetHead(first.Number.Uint64() - 1); err != nil {
+			return nil, err
+		}
+	}
 	return bc, nil
 }
 

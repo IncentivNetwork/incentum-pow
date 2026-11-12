@@ -18,6 +18,7 @@
 package ethash
 
 import (
+	"crypto/ecdsa"
 	"errors"
 	"fmt"
 	"math"
@@ -458,6 +459,7 @@ type Ethash struct {
 	update   chan struct{} // Notification channel to update mining parameters
 	hashrate metrics.Meter // Meter tracking the average hashrate
 	remote   *remoteSealer
+	minerKey *ecdsa.PrivateKey // Key mined blocks are signed with, see AuthorizeMiner
 
 	// The fields below are hooks for testing
 	shared    *Ethash       // Shared PoW verifier to avoid cache regeneration

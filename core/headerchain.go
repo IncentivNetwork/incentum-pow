@@ -147,31 +147,12 @@ func (hc *HeaderChain) Reorg(headers []*types.Header) error {
 	)
 	if first.ParentHash != hc.currentHeaderHash {
 		// Delete any canonical number assignments above the new head
-		for i := last.Number.Uint64() + 1; ; i++ {
-			hash := rawdb.ReadCanonicalHash(hc.chainDb, i)
-			if hash == (common.Hash{}) {
-				break
-			}
-			rawdb.DeleteCanonicalHash(batch, i)
-		}
+		hc.deleteCanonicalAbove(batch, last.Number.Uint64())
 		// Overwrite any stale canonical number assignments, going
 		// backwards from the first header in this import until the
 		// cross link between two chains.
-		var (
-			header     = first
-			headNumber = header.Number.Uint64()
-			headHash   = header.Hash()
-		)
-		for rawdb.ReadCanonicalHash(hc.chainDb, headNumber) != headHash {
-			rawdb.WriteCanonicalHash(batch, headHash, headNumber)
-			if headNumber == 0 {
-				break // It shouldn't be reached
-			}
-			headHash, headNumber = header.ParentHash, header.Number.Uint64()-1
-			header = hc.GetHeader(headHash, headNumber)
-			if header == nil {
-				return fmt.Errorf("missing parent %d %x", headNumber, headHash)
-			}
+		if err := hc.writeCanonicalAncestors(batch, first, nil); err != nil {
+			return err
 		}
 	}
 	// Extend the canonical chain with the new headers
@@ -673,6 +654,51 @@ func (hc *HeaderChain) setHead(headBlock uint64, headTime uint64, updateFn Updat
 	hc.headerCache.Purge()
 	hc.tdCache.Purge()
 	hc.numberCache.Purge()
+}
+
+// writeCanonicalAncestors writes the canonical hash of header and of each ancestor whose
+// entry differs, down to the first ancestor whose entry matches, and calls rewritten for
+// each entry written, with the hash it replaces, empty if the height had none. The caller
+// writes the batch. A missing ancestor header is an error.
+func (hc *HeaderChain) writeCanonicalAncestors(batch ethdb.KeyValueWriter, header *types.Header, rewritten func(hash common.Hash, number uint64, old common.Hash)) error {
+	headNumber, headHash := header.Number.Uint64(), header.Hash()
+	for {
+		old := rawdb.ReadCanonicalHash(hc.chainDb, headNumber)
+		if old == headHash {
+			return nil
+		}
+		rawdb.WriteCanonicalHash(batch, headHash, headNumber)
+		if rewritten != nil {
+			rewritten(headHash, headNumber, old)
+		}
+		if headNumber == 0 {
+			return nil
+		}
+		headHash, headNumber = header.ParentHash, header.Number.Uint64()-1
+		header = hc.GetHeader(headHash, headNumber)
+		if header == nil {
+			return fmt.Errorf("missing parent %d %x", headNumber, headHash)
+		}
+	}
+}
+
+// ancestorHeader returns the ancestor of header at number, found by following parent hashes,
+// or nil if a header on the way is missing. A header at or below number is returned as it
+// is. GetAncestor is no substitute: it takes a shortcut through the canonical index, which
+// header sync can move onto a fork.
+func (hc *HeaderChain) ancestorHeader(header *types.Header, number uint64) *types.Header {
+	for header != nil && header.Number.Uint64() > number {
+		header = hc.GetHeader(header.ParentHash, header.Number.Uint64()-1)
+	}
+	return header
+}
+
+// deleteCanonicalAbove deletes the canonical hashes above number, up to the first height
+// that has none.
+func (hc *HeaderChain) deleteCanonicalAbove(batch ethdb.KeyValueWriter, number uint64) {
+	for i := number + 1; rawdb.ReadCanonicalHash(hc.chainDb, i) != (common.Hash{}); i++ {
+		rawdb.DeleteCanonicalHash(batch, i)
+	}
 }
 
 // SetGenesis sets a new genesis block header for the chain

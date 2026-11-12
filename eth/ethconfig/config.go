@@ -210,6 +210,9 @@ type Config struct {
 
 	// OverrideWebAuthnStrict (TODO: remove after the fork)
 	OverrideWebAuthnStrict *uint64 `toml:",omitempty"`
+
+	// OverrideMinerSignerTD (TODO: remove after the fork)
+	OverrideMinerSignerTD *uint64 `toml:",omitempty"`
 }
 
 // ChainOverrides collects the fork overrides this configuration asks for. Both the
@@ -219,6 +222,7 @@ func (c *Config) ChainOverrides() core.ChainOverrides {
 	return core.ChainOverrides{
 		OverrideShanghai:       c.OverrideShanghai,
 		OverrideWebAuthnStrict: c.OverrideWebAuthnStrict,
+		OverrideMinerSignerTD:  c.OverrideMinerSignerTD,
 	}
 }
 

@@ -293,7 +293,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		config = params.TestChainConfig
 	}
 	blocks, receipts := make(types.Blocks, n), make([]types.Receipts, n)
-	chainreader := &fakeChainReader{config: config}
+	chainreader := &fakeChainReader{config: config, db: db}
 	genblock := func(i int, parent *types.Block, statedb *state.StateDB) (*types.Block, types.Receipts) {
 		b := &BlockGen{i: i, chain: blocks, parent: parent, statedb: statedb, config: config, engine: engine}
 		b.header = makeHeader(chainreader, parent, statedb, b.engine)
@@ -441,6 +441,7 @@ func makeBlockChainWithGenesis(genesis *Genesis, n int, engine consensus.Engine,
 
 type fakeChainReader struct {
 	config *params.ChainConfig
+	db     ethdb.Reader // Where GetTd reads from, if set
 }
 
 // Config returns the chain configuration.
@@ -453,4 +454,13 @@ func (cr *fakeChainReader) GetHeaderByNumber(number uint64) *types.Header       
 func (cr *fakeChainReader) GetHeaderByHash(hash common.Hash) *types.Header          { return nil }
 func (cr *fakeChainReader) GetHeader(hash common.Hash, number uint64) *types.Header { return nil }
 func (cr *fakeChainReader) GetBlock(hash common.Hash, number uint64) *types.Block   { return nil }
-func (cr *fakeChainReader) GetTd(hash common.Hash, number uint64) *big.Int          { return nil }
+
+// GetTd reads the generator's database. GenerateChain writes no total difficulty there,
+// so a test that assembles past the miner signer threshold has to, for the parents it
+// seals.
+func (cr *fakeChainReader) GetTd(hash common.Hash, number uint64) *big.Int {
+	if cr.db == nil {
+		return nil
+	}
+	return rawdb.ReadTd(cr.db, hash, number)
+}

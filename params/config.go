@@ -18,6 +18,7 @@ package params
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -341,6 +342,20 @@ var (
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
 		Clique:                        nil,
+		// The fleet's four producers sign with their own coinbase keys and are listed so that
+		// each can make the crossing block. The threshold is the head's total difficulty on
+		// 2026-11-12 at 11:29 UTC plus 19.5 hours of mining at 1.175e10 an hour, so the
+		// crossing comes at about 07:00 UTC on 2026-11-13. Once crossed, keep this epoch as
+		// it is: a node syncing from scratch verifies history against it.
+		MinerSignerEpochs: []MinerSignerEpoch{{
+			TD: big.NewInt(2_455_690_300_000_000),
+			Signers: map[common.Address]common.Address{
+				common.HexToAddress("0x47D994f172e3b124546804B2761Fb9deBad7169D"): common.HexToAddress("0x47D994f172e3b124546804B2761Fb9deBad7169D"),
+				common.HexToAddress("0xCe3Cc056a1DfF0C9322C4B223e59E963AE18E65B"): common.HexToAddress("0xCe3Cc056a1DfF0C9322C4B223e59E963AE18E65B"),
+				common.HexToAddress("0xB000b08374508dEB5FbA1824F337a97197fefb13"): common.HexToAddress("0xB000b08374508dEB5FbA1824F337a97197fefb13"),
+				common.HexToAddress("0x9237f2e1E98C3ED9d5fd956BC111b96C3B38dA92"): common.HexToAddress("0x9237f2e1E98C3ED9d5fd956BC111b96C3B38dA92"),
+			},
+		}},
 	}
 
 	// IncentivDevnetChainConfig contains the chain parameters to run a node on the Incentiv dev network.
@@ -414,6 +429,16 @@ var (
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
 		Clique:                        nil,
+		// The devnet miner signs with its own key and is listed so that it can make the
+		// crossing block. The threshold is the head's total difficulty on 2026-11-12 at
+		// 09:37 UTC plus about 69 minutes of mining at 1.96e9 an hour. Once crossed, keep
+		// this epoch as it is: a node syncing from scratch verifies history against it.
+		MinerSignerEpochs: []MinerSignerEpoch{{
+			TD: big.NewInt(8_847_620_000_000),
+			Signers: map[common.Address]common.Address{
+				common.HexToAddress("0x270875c5cb93F56011365Ba765D8d0397F0baD8C"): common.HexToAddress("0x270875c5cb93F56011365Ba765D8d0397F0baD8C"),
+			},
+		}},
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
@@ -655,6 +680,19 @@ type ChainConfig struct {
 
 	IrregularStateChangeHeight2 *big.Int `json:"irregularStateChangeHeight2,omitempty"` // Second irregular state change height for balance correction (not a fork parameter, doesn't affect fork ID)
 
+	// MinerSignerEpochs says who signs blocks from a given total difficulty on. A header
+	// whose own total difficulty reaches an epoch's TD must carry a signature: by the
+	// signer the epoch lists for its coinbase, or by the coinbase's own key if it is not
+	// listed. Only a listed signer can produce the block that crosses into an epoch.
+	// nil = rule off.
+	//
+	// Keyed on total difficulty rather than on time or height: a chain no listed signer
+	// has crossed with stays below the threshold, so it can never outweigh one past it,
+	// whatever its timestamps say. The name stays clear of the Time and Block suffixes
+	// so the epochs are not folded into the fork id. See
+	// docs/dpow/DPOW_MINER_SIGNATURE.md.
+	MinerSignerEpochs []MinerSignerEpoch `json:"minerSignerEpochs,omitempty"`
+
 	// MinBaseFeeContractAddr is the address of the on-chain MinBaseFeeGovernor
 	// contract. Must be set when DynamicMinBaseFeeTime is non-nil.
 	MinBaseFeeContractAddr *common.Address `json:"minBaseFeeContractAddr,omitempty"`
@@ -850,6 +888,9 @@ func (c *ChainConfig) Description() string {
 	if c.WebAuthnStrictTime != nil {
 		banner += fmt.Sprintf(" - WebAuthnStrict:              @%-10v (%s)\n", *c.WebAuthnStrictTime, formatTimestampFork(*c.WebAuthnStrictTime))
 	}
+	for _, epoch := range c.MinerSignerEpochs {
+		banner += fmt.Sprintf(" - MinerSigners:                @TD %v (%d signers)\n", epoch.TD, len(epoch.Signers))
+	}
 	if c.CancunTime != nil {
 		banner += fmt.Sprintf(" - Cancun:                      @%-10v (%s)\n", *c.CancunTime, formatTimestampFork(*c.CancunTime))
 	}
@@ -1035,6 +1076,65 @@ func (c *ChainConfig) CheckDPoWConfig() error {
 	default:
 		return nil
 	}
+}
+
+// MinerSignerEpoch is one entry of ChainConfig.MinerSignerEpochs.
+type MinerSignerEpoch struct {
+	TD      *big.Int                          `json:"td"`      // Total difficulty the epoch starts at
+	Signers map[common.Address]common.Address `json:"signers"` // Coinbases that sign with another key, and may cross into the epoch
+}
+
+// MinerSignerEpochAt returns the epoch that applies to a header of the given total
+// difficulty, or nil below the first one.
+func (c *ChainConfig) MinerSignerEpochAt(td *big.Int) *MinerSignerEpoch {
+	var epoch *MinerSignerEpoch
+	for i := range c.MinerSignerEpochs {
+		if td.Cmp(c.MinerSignerEpochs[i].TD) < 0 {
+			break
+		}
+		epoch = &c.MinerSignerEpochs[i]
+	}
+	return epoch
+}
+
+// CheckMinerSignerConfig validates the miner signer epochs. Only ethash reads them, and a
+// config that names clique runs clique whether it names ethash too or not. The signed digest
+// is bound to the chain id, which has to be one RLP can encode and not the zero of an unset
+// value, and MinerSignerEpochAt relies on the order.
+func (c *ChainConfig) CheckMinerSignerConfig() error {
+	if len(c.MinerSignerEpochs) == 0 {
+		return nil
+	}
+	if c.Ethash == nil {
+		return errors.New("minerSignerEpochs is set on a chain that does not run ethash")
+	}
+	if c.Clique != nil {
+		return errors.New("minerSignerEpochs is set on a chain that also sets clique, which runs instead of ethash")
+	}
+	if c.ChainID == nil {
+		return errors.New("minerSignerEpochs is set but chainId is missing")
+	}
+	if c.ChainID.Sign() <= 0 {
+		return fmt.Errorf("minerSignerEpochs is set but chainId %v is not positive", c.ChainID)
+	}
+	var previous *big.Int
+	for i, epoch := range c.MinerSignerEpochs {
+		switch {
+		case epoch.TD == nil || epoch.TD.Sign() <= 0:
+			return fmt.Errorf("minerSignerEpochs[%d] has no positive td", i)
+		case previous != nil && epoch.TD.Cmp(previous) <= 0:
+			return fmt.Errorf("minerSignerEpochs[%d] td %v does not follow td %v", i, epoch.TD, previous)
+		case len(epoch.Signers) == 0:
+			return fmt.Errorf("minerSignerEpochs[%d] lists no signers", i)
+		}
+		for coinbase, signer := range epoch.Signers {
+			if coinbase == (common.Address{}) || signer == (common.Address{}) {
+				return fmt.Errorf("minerSignerEpochs[%d] lists the zero address", i)
+			}
+		}
+		previous = epoch.TD
+	}
+	return nil
 }
 
 // GetMinBaseFeeContractAddr returns the configured MinBaseFeeGovernor contract

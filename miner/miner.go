@@ -56,6 +56,10 @@ type Config struct {
 	Noverify   bool           // Disable remote mining solution verification(only useful in ethash).
 
 	NewPayloadTimeout time.Duration // The maximum time allowance for creating a new payload
+
+	SignerKeyFile      string `toml:",omitempty"` // Keystore file with the key mined blocks are signed with
+	SignerPasswordFile string `toml:",omitempty"` // File whose first line is the password of that keystore
+	NoSigner           bool   `toml:",omitempty"` // Start mining without a signer on a chain that lists them
 }
 
 // DefaultConfig contains default settings for miner.
