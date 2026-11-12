@@ -148,7 +148,7 @@ func TestBundledMinerSignerEpochs(t *testing.T) {
 	}
 	// Once crossed, the epoch is history that a node syncing from scratch verifies.
 	epoch := devnet.MinerSignerEpochs[0]
-	if epoch.TD.Cmp(big.NewInt(8_845_680_000_000)) != 0 || len(epoch.Signers) != 1 {
-		t.Fatalf("devnet epoch at %v with %d signers, want 8845680000000 with one", epoch.TD, len(epoch.Signers))
+	if epoch.TD.Cmp(big.NewInt(8_847_620_000_000)) != 0 || len(epoch.Signers) != 1 {
+		t.Fatalf("devnet epoch at %v with %d signers, want 8847620000000 with one", epoch.TD, len(epoch.Signers))
 	}
 }

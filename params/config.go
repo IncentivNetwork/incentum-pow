@@ -417,10 +417,10 @@ var (
 		Clique:                        nil,
 		// The devnet miner signs with its own key and is listed so that it can make the
 		// crossing block. The threshold is the head's total difficulty on 2026-11-12 at
-		// 08:54 UTC plus about 51 minutes of mining at 2.0e9 an hour. Once crossed, keep
+		// 09:37 UTC plus about 69 minutes of mining at 1.96e9 an hour. Once crossed, keep
 		// this epoch as it is: a node syncing from scratch verifies history against it.
 		MinerSignerEpochs: []MinerSignerEpoch{{
-			TD: big.NewInt(8_845_680_000_000),
+			TD: big.NewInt(8_847_620_000_000),
 			Signers: map[common.Address]common.Address{
 				common.HexToAddress("0x270875c5cb93F56011365Ba765D8d0397F0baD8C"): common.HexToAddress("0x270875c5cb93F56011365Ba765D8d0397F0baD8C"),
 			},
