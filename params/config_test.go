@@ -122,6 +122,24 @@ func TestCheckCompatible(t *testing.T) {
 	}
 }
 
+func TestCheckCompatibleIrregularStateChange2(t *testing.T) {
+	stored := &ChainConfig{}
+	newcfg := &ChainConfig{IrregularStateChangeHeight2: big.NewInt(200)}
+
+	// Before the correction height, adopting the value is safe: nothing has run yet.
+	if err := stored.CheckCompatible(newcfg, 150, 0); err != nil {
+		t.Errorf("unexpected incompatibility before the height: %v", err)
+	}
+	// Once the height is reached, a config that lacks it must rewind to just before it.
+	err := stored.CheckCompatible(newcfg, 250, 0)
+	if err == nil {
+		t.Fatal("expected an incompatibility once the correction height is reached, got nil")
+	}
+	if err.RewindToBlock != 199 {
+		t.Errorf("expected rewind to 199 (just before the height), got %d", err.RewindToBlock)
+	}
+}
+
 func TestConfigRules(t *testing.T) {
 	c := &ChainConfig{
 		ShanghaiTime: newUint64(500),

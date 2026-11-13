@@ -62,6 +62,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		CheckpointOracle        *params.CheckpointOracleConfig `toml:",omitempty"`
 		OverrideShanghai        *uint64                        `toml:",omitempty"`
 		OverrideWebAuthnStrict  *uint64                        `toml:",omitempty"`
+		OverrideMinerSignerTD   *uint64                        `toml:",omitempty"`
 	}
 	var enc Config
 	enc.Genesis = c.Genesis
@@ -108,6 +109,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.CheckpointOracle = c.CheckpointOracle
 	enc.OverrideShanghai = c.OverrideShanghai
 	enc.OverrideWebAuthnStrict = c.OverrideWebAuthnStrict
+	enc.OverrideMinerSignerTD = c.OverrideMinerSignerTD
 	return &enc, nil
 }
 
@@ -158,6 +160,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		CheckpointOracle        *params.CheckpointOracleConfig `toml:",omitempty"`
 		OverrideShanghai        *uint64                        `toml:",omitempty"`
 		OverrideWebAuthnStrict  *uint64                        `toml:",omitempty"`
+		OverrideMinerSignerTD   *uint64                        `toml:",omitempty"`
 	}
 	var dec Config
 	if err := unmarshal(&dec); err != nil {
@@ -294,6 +297,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.OverrideWebAuthnStrict != nil {
 		c.OverrideWebAuthnStrict = dec.OverrideWebAuthnStrict
+	}
+	if dec.OverrideMinerSignerTD != nil {
+		c.OverrideMinerSignerTD = dec.OverrideMinerSignerTD
 	}
 	return nil
 }

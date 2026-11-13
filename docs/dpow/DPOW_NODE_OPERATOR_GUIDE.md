@@ -24,6 +24,7 @@ DPoW (Delegated Proof-of-Work) adds a stake-based miner authorization rule to co
 - Know your `systemd` unit name (e.g. `incentum.service`).
 - Have the published SHA-256 checksum of the new binary release.
 - Schedule the upgrade well before `DPoWTime` — do not wait for activation day.
+- For the miner signature release, finish the upgrade before the chain reaches its threshold (§5.3). The release announcement gives the expected time; a node still on an older binary then stops at the first signed block.
 
 Install paths differ between nodes. The shell commands in this guide reference the geth binary and data directory through two variables — set them to your node's actual paths before running any command:
 
@@ -42,13 +43,13 @@ Before activation, every node's service file must be hardened. This is not optio
 
 - [ ] `--http.addr 127.0.0.1` — HTTP RPC bound to localhost (or behind an authenticated reverse proxy / IP allowlist; never `0.0.0.0` on a public interface).
 - [ ] `--ws.addr 127.0.0.1` — same for WebSocket RPC.
-- [ ] **No** `--unlock` — Ethash mining does not need an unlocked etherbase; the etherbase only receives rewards, it signs nothing.
+- [ ] **No** `--unlock` — Ethash mining does not need an unlocked etherbase. Until the chain reaches a signer threshold nothing is signed on the node. Past it a producer signs with a key the engine loads itself, which never goes through the account manager: the key listed for its coinbase, or else the etherbase key itself (`DPOW_MINER_SIGNATURE.md`).
 - [ ] **No** `--allow-insecure-unlock`.
 - [ ] **No** `--rpc.allow-unprotected-txs`.
 - [ ] `--txpool.pricelimit <wei>` — set a minimum gas price so zero-fee spam transactions propagated over P2P are rejected on entry. Pick a value above zero but below the normal transaction-fee level of the network; tune it to the network's actual fee policy (`1000000000` = 1 Gwei is a reasonable starting point, not a universal constant).
 - [ ] **No** `debug` in `--http.api` / `--ws.api` — unless the node indexes for a block explorer, in which case use the restricted profile described below.
 
-> Miners sign their `approve` / `stake` / `requestUnstake` transactions **externally** (with `cast --keystore` or a hardware wallet) and submit them over local IPC or a restricted RPC. The node itself never needs an unlocked account. See `DPOW_MINER_ONBOARDING.md`.
+> Miners sign their `approve` / `stake` / `requestUnstake` transactions **externally** (with `cast --keystore` or a hardware wallet) and submit them over local IPC or a restricted RPC. The node itself never needs an unlocked account. See `DPOW_MINER_ONBOARDING.md`. A dedicated signer key is not one of these accounts: it holds no funds and no stake. A coinbase signing with its own key, listed or not, uses one of them, because staking is self-only. That key has to be on the host in a keystore file to mine past the threshold, so a coinbase kept in a hardware wallet cannot do so unless a release lists a dedicated signer for it.
 
 #### The `debug` namespace on HTTP / WS
 
@@ -121,6 +122,9 @@ Group=ubuntu
 Restart=on-failure
 RestartSec=15
 WorkingDirectory=/mnt/data/node
+LimitCORE=0
+LoadCredential=miner-signer-key:<absolute path of the signer keystore file>
+LoadCredential=miner-signer-password:<absolute path of the signer password file>
 ExecStart=/mnt/data/node/client/build/bin/geth \
   --datadir /mnt/data/node/data \
   --http \
@@ -135,17 +139,17 @@ ExecStart=/mnt/data/node/client/build/bin/geth \
   --txpool.pricelimit 1000000000 \
   --mine \
   --miner.threads 4 \
-  --miner.etherbase 0x<MINER_COINBASE>
-StandardOutput=append:/var/log/geth.log
-StandardError=append:/var/log/geth.log
+  --miner.etherbase 0x<MINER_COINBASE> \
+  --miner.signerkey ${CREDENTIALS_DIRECTORY}/miner-signer-key \
+  --miner.signerpassword ${CREDENTIALS_DIRECTORY}/miner-signer-password
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-> The `/mnt/data/node/...` paths and the `User` / `Group` shown are an example layout — set `WorkingDirectory`, `ExecStart`, `--datadir`, and `User` / `Group` to your node's actual install. systemd does not expand shell variables, so these must be absolute paths.
+> The `/mnt/data/node/...` paths and the `User` / `Group` shown are an example layout — set `WorkingDirectory`, `ExecStart`, `--datadir`, and `User` / `Group` to your node's actual install. systemd does not expand shell variables, so these must be absolute paths. `${CREDENTIALS_DIRECTORY}` is the exception: systemd sets it itself for a unit with `LoadCredential=`, whose sources must be absolute paths too. A unit that keeps `StandardOutput=append:` logs to that file, so the §4.5 and §5.1 checks read nothing on it.
 
-An RPC or archive node uses the same flags minus `--mine`, `--miner.threads`, `--miner.etherbase`.
+An RPC or archive node uses the same flags minus `--mine`, `--miner.threads`, `--miner.etherbase`, `--miner.signerkey`, `--miner.signerpassword`, and drops the two `LoadCredential=` lines: a unit whose credential source is missing fails before geth runs.
 
 > If the network requires external HTTP access (block explorer, monitoring), do not reopen `0.0.0.0`. Use an SSH tunnel, a private network interface, or an authenticated reverse proxy with an IP allowlist.
 
@@ -219,10 +223,10 @@ sudo systemctl daemon-reload
 
 The DPoW activation parameters live in the binary's built-in network `ChainConfig` — they are not in any TOML file, so `geth dumpconfig` does **not** show them. Verify from a running node instead.
 
-At startup geth logs a one-line consensus banner:
+At startup geth logs a one-line consensus banner. Read it after the start in §4.6, because until then the journal holds the banner of the binary before it:
 
 ```bash
-sudo journalctl -u incentum.service | grep -i "Consensus:"
+sudo journalctl -u incentum.service | grep -i "Consensus:" | tail -1
 # DPoW-enabled binary with activation set:
 #   Consensus: Ethash + DPoW (authorized mining, activates at timestamp <DPoWTime> / <RFC3339 UTC>)
 # DPoW code present but inactive (DPoWTime = nil):
@@ -237,7 +241,8 @@ For the full active chain config, attach over IPC:
 
 ```javascript
 admin.nodeInfo.protocols.eth.config   // shows dpowTime, minerRegistryAddress,
-                                      // dpowMaturityTime, dpowMaturityBlocks
+                                      // dpowMaturityTime, dpowMaturityBlocks,
+                                      // minerSignerEpochs
 ```
 
 > The `admin` namespace is intentionally excluded from the hardened `--http.api` / `--ws.api` set (§3.1), so run this command over the local IPC socket. `admin` is not inherently IPC-only — it can be served over HTTP/WS if added to those flags, which the hardening checklist deliberately avoids.
@@ -246,6 +251,20 @@ admin.nodeInfo.protocols.eth.config   // shows dpowTime, minerRegistryAddress,
 - For the activation release: `dpowTime` is set (Unix seconds) and `minerRegistryAddress` is the real deployed contract.
 
 A node configured with `DPoWTime` set but no registry address **refuses to start** (`CheckDPoWConfig` invariant) — this is intentional.
+
+From the miner signature release on, `minerSignerEpochs` lists each epoch's `td` and `signers` (`DPOW_MINER_SIGNATURE.md`). Check it on every node after the start in §4.6. A node that reports no epochs follows the chain only up to the first signed block:
+
+```bash
+"$GETH" attach --exec 'JSON.stringify(admin.nodeInfo.protocols.eth.config.minerSignerEpochs)' "$DATADIR/geth.ipc"
+```
+
+On mainnet a correct build prints exactly this line, the threshold and the four producers, each its own signer:
+
+```
+"[{\"td\":2455690300000000,\"signers\":{\"0x47d994f172e3b124546804b2761fb9debad7169d\":\"0x47d994f172e3b124546804b2761fb9debad7169d\",\"0x9237f2e1e98c3ed9d5fd956bc111b96c3b38da92\":\"0x9237f2e1e98c3ed9d5fd956bc111b96c3b38da92\",\"0xb000b08374508deb5fba1824f337a97197fefb13\":\"0xb000b08374508deb5fba1824f337a97197fefb13\",\"0xce3cc056a1dff0c9322c4b223e59e963ae18e65b\":\"0xce3cc056a1dff0c9322c4b223e59e963ae18e65b\"}}]"
+```
+
+`undefined` means a binary without the epoch, even if it reports the expected version: install the release named in the announcement, checked against its commit and SHA-256.
 
 ### 4.6 Start and verify
 
@@ -288,7 +307,8 @@ At the first block with `block.timestamp ≥ DPoWTime`:
 
 # consensus errors in the last 15 minutes
 sudo journalctl -u incentum.service --since "15 min ago" \
-  | grep -ciE 'DPoW|unauthorized|not yet mature|BAD BLOCK|panic'
+  | grep -iE 'DPoW|unauthorized|not yet mature|BAD BLOCK|panic' \
+  | grep -cvE 'Consensus: | - DPoW: +@'
 ```
 
 Expected after activation: the latest block's `miner` is always a staked, authorized address; the consensus-error count is `0`.
@@ -302,11 +322,26 @@ Symptoms: your `eth.blockNumber` diverges from public explorers; logs show repea
 3. Restart the node. It will re-evaluate peers and re-sync onto the canonical chain.
 4. If it still does not converge, stop the node, remove the diverged chain segment by resyncing (`geth removedb` of chaindata or a fresh datadir), and let it re-sync from peers.
 
+### 5.3 Miner signature threshold
+
+From the first block whose total difficulty reaches the `td` of the first epoch in `minerSignerEpochs` (§4.5), every block ends its extra-data with a 65-byte signature. A node on a binary without that epoch rejects the first signed block with `extra-data too long` and stops at the block before it. Installing the release and restarting lets it continue, and rewinds any unsigned block past the threshold it took meanwhile.
+
+```bash
+# total difficulty and extra-data length of the head: past the threshold the length is the vanity plus 65
+"$GETH" attach --exec \
+  'var b = eth.getBlock("latest"); JSON.stringify({block: b.number, td: b.totalDifficulty.toString(10), extraBytes: (b.extraData.length - 2) / 2})' \
+  "$DATADIR/geth.ipc"
+
+# signature errors in the last 15 minutes: 0 on a correctly upgraded node
+sudo journalctl -u incentum.service --since "15 min ago" | grep -cE 'invalid miner signature|extra-data too long|BAD BLOCK'
+```
+
 ---
 
 ## 6. Post-upgrade checklist
 
 - [ ] `geth version` shows the expected release commit.
+- [ ] `minerSignerEpochs` shows the expected epoch: on mainnet the line in §4.5, `td` 2455690300000000 with the four producers.
 - [ ] Service file passes the §3.1 hardening checklist.
 - [ ] geth's HTTP/WS RPC listens on `127.0.0.1` only and is not bound directly to a public interface; any external access is terminated by the reverse proxy (§3.1), which handles authentication / method filtering.
 - [ ] Node is synced (`eth.syncing == false`, `net.peerCount > 0`).

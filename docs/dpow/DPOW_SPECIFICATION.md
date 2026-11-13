@@ -46,6 +46,7 @@ Implement a **stake-based mining authorization layer** on top of Ethash Proof-of
 5. **Delayed unstaking** — a withdrawal delay prevents hit-and-run attacks and gives governance a response window.
 6. **Frozen storage layout** — consensus-critical storage slots 0–3 are fixed forever.
 7. **Hard fork activation** — a network-wide upgrade activates DPoW at a specific block height.
+8. **Miner signature** — past a total difficulty threshold a block must be signed by its coinbase's own key, or by the key the chain config lists for it, which is what ties a block to its coinbase. See `DPOW_MINER_SIGNATURE.md`.
 
 ### 1.3 Architecture Classification
 
@@ -143,6 +144,8 @@ insertChain()
 ```
 
 During local block production the same check runs inside `FinalizeAndAssemble()` (clean error, prevents a node from producing an invalid block). See §4.5.
+
+The miner signature needs no state, so unlike the registry check it does run in `VerifyHeader`. See `DPOW_MINER_SIGNATURE.md`.
 
 ---
 
@@ -309,6 +312,7 @@ slot(key) = keccak256(abi.encode(key, S))
 | `consensus/ethash/dpow.go` (new) | `VerifyMinerAuthorization` + slot helpers |
 | `consensus/ethash/consensus.go` | DPoW check in `Finalize` (panic) and `FinalizeAndAssemble` (clean error) |
 | `core/state_processor.go` | DPoW check in `Process` for imported blocks (clean error) |
+| `consensus/ethash/minersig.go` (new) | Miner signature: digest, verification, signing |
 
 ### 4.2 Configuration (`params/config.go`)
 
@@ -343,6 +347,7 @@ func (c *ChainConfig) CheckDPoWConfig() error            // invariant validation
 ErrUnauthorizedMiner          = errors.New("unauthorized miner: address not in DPoW registry")
 ErrMinerNotMature             = errors.New("miner stake not yet mature: maturity period not elapsed")
 ErrMinerRegistryNotConfigured = errors.New("miner registry not configured: dpow block is set but registry address is zero")
+ErrInvalidMinerSignature      = errors.New("invalid miner signature")
 ```
 
 > **Note on `ErrMinerRegistryNotConfigured` wording.** The literal error string still reads "dpow block is set" — this is legacy wording predating DPOW-008-7 (#92) that the timestamp switch did not sweep. The condition it describes is now `DPoWTime != nil && MinerRegistryAddress == zero`; the "dpow block" phrase should be read as the former block-number activation field (which no longer exists as such — the field is now `DPoWTime`). Fixing the string itself is out of scope for this doc-only PR and is tracked as a code-side follow-up under #66.
@@ -470,7 +475,7 @@ DPoW activation is a **consensus-breaking hard fork**. The full operational plan
 
 **Flash attack** — mitigated by the dual maturity period: a newly staked miner cannot produce blocks for `MATURITY_TIME` *and* `MATURITY_BLOCKS`. Capital is locked the entire time.
 
-**Sybil / 51% attack** — each miner identity costs `STAKE_AMOUNT` (26M WCENT) of locked capital; an N-identity attack costs `N × STAKE_AMOUNT`.
+**Sybil / 51% attack** — each miner identity costs `STAKE_AMOUNT` (26M WCENT) of locked capital. The registry alone does not make that hold: it checks an address, and a block can name any staked address without its key. The stake binds only once the miner signature is active (`DPOW_MINER_SIGNATURE.md`). Before that, and in any part of a chain below the threshold, what a rewrite costs is hash power.
 
 **Hit-and-run** — `UNSTAKE_DELAY` keeps capital locked for 7 days after `requestUnstake()`, during which `miners[m]` is already `false` (mining authorization is revoked immediately, not after the delay).
 
@@ -520,6 +525,11 @@ where `B = header.Number`, `T = header.Time`.
 ```
 ∀ block b with b.timestamp ≥ DPoWTime:
     Valid(b) ⟹ Authorized(b.coinbase, b.number, b.timestamp)
+
+∀ block b whose total difficulty reaches a miner signer epoch, taking the last epoch it reaches:
+    Valid(b) ⟹ b.extraData ends in a signature by the signer that epoch lists for b.coinbase,
+               or by b.coinbase itself if the epoch does not list it
+              ∧ (b's parent is below the epoch ⟹ the epoch lists b.coinbase)
 ```
 
 ### 10.4 Chain-level invariants
@@ -593,14 +603,14 @@ Recovery is a coordinated social hard fork, **not** a simple binary swap. The cl
 
 ### 11.5 Node hardening (mandatory)
 
-DPoW mining with Ethash does **not** require an unlocked etherbase account — the etherbase only receives rewards; no signing happens. Every node's service configuration must therefore:
+DPoW mining with Ethash does **not** require an unlocked etherbase account. Until the chain reaches a signer threshold nothing is signed on the node. Past it blocks are signed by a key loaded by the consensus engine, out of reach of the account manager and of RPC: the key the chain config lists for the coinbase, or else the etherbase key itself (`DPOW_MINER_SIGNATURE.md`). Every node's service configuration must therefore:
 
 - Bind HTTP/WS RPC to `127.0.0.1` (or place it behind an authenticated proxy) — never `0.0.0.0` on a public interface.
 - Run **without** `--unlock` and **without** `--allow-insecure-unlock`.
 - Run **without** `--rpc.allow-unprotected-txs`.
 - Set `--txpool.pricelimit` above zero to reject zero-fee spam transactions propagated over P2P.
 
-Miner transactions (`approve`, `stake`, `requestUnstake`, …) are signed externally with `cast --keystore` or a hardware wallet and submitted over local IPC or a restricted RPC. See `DPOW_NODE_OPERATOR_GUIDE.md` for the exact service-file template.
+Miner transactions (`approve`, `stake`, `requestUnstake`, …) are signed externally with `cast --keystore` or a hardware wallet and submitted over local IPC or a restricted RPC. A coinbase the chain config does not list signs its blocks with the same key past the signer threshold, from a keystore file on the host, so that key cannot stay in a hardware wallet. See `DPOW_NODE_OPERATOR_GUIDE.md` for the exact service-file template.
 
 ---
 
@@ -631,6 +641,7 @@ The Go implementation is `calculateMappingSlot` in `consensus/ethash/dpow.go`; t
 | `Finalize` / `Process` | Consensus engine entry points where post-execution state is available |
 | Storage slot | A 32-byte word in contract storage |
 | Guardian | An independent address holding `CANCELLER_ROLE` only |
+| Miner signer | The address that signs the blocks of a coinbase: the one the chain config lists, or else the coinbase itself |
 
 ---
 

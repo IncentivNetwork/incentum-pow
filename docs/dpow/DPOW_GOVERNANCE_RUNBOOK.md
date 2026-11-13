@@ -294,7 +294,9 @@ Do **not** grant the guardian `PROPOSER_ROLE` or `EXECUTOR_ROLE` — it must be 
 |---|---|
 | Unrecognized operation scheduled on the Timelock | Guardian verifies it was not authorized; if malicious, `cancel(id)` immediately; investigate which proposer key acted |
 | Governance multisig suspected compromised | Guardian cancels all pending operations; rotate Safe signers; schedule `revokeRole` for compromised proposer keys |
-| Miner key compromised (attacker mining) | Schedule `emergencyRemoveMiner(miner, <operator-new-address>, reason)`; announce publicly |
+| Miner key compromised (attacker mining) | Schedule `emergencyRemoveMiner(miner, <operator-new-address>, reason)`; announce publicly. The timelock takes 7 days, so also release a signer epoch that lists the coinbase with another signer (`DPOW_MINER_SIGNATURE.md`) |
+| Dedicated miner signer key compromised | Governance cannot act on this: release a new signer epoch (`DPOW_MINER_SIGNATURE.md`). The stake is not at risk from this key |
+| A new stake that must not start mining | Governance is too slow: the timelock takes 7 days and maturity 24 hours. Release a new signer epoch that shuts the coinbase out (`DPOW_MINER_SIGNATURE.md`) |
 | Malicious miner harming the network | Schedule `emergencyRemoveMiner(miner, 0x..dEaD, reason)` (stake burned) |
 | All miners removed / chain halted | Coordinated recovery hard fork — see §8.3 |
 

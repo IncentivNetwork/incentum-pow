@@ -159,6 +159,14 @@ func (api *MinerAPI) SetGasLimit(gasLimit hexutil.Uint64) bool {
 
 // SetEtherbase sets the etherbase of the miner.
 func (api *MinerAPI) SetEtherbase(etherbase common.Address) bool {
+	// A loaded key means the node is set up to mine even when the miner is not running: while
+	// it is paused for a sync it does not count as mining, and nothing checks when it resumes.
+	if api.e.IsMining() || api.e.minerSignerLoaded() {
+		if err := api.e.checkMinerSigner(etherbase); err != nil {
+			log.Warn("Refusing to change the etherbase", "err", err)
+			return false
+		}
+	}
 	api.e.SetEtherbase(etherbase)
 	return true
 }

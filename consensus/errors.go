@@ -50,4 +50,11 @@ var (
 	// ErrMinerRegistryNotConfigured is returned when DPoW is active for the
 	// current block number but no MinerRegistryAddress is set in ChainConfig.
 	ErrMinerRegistryNotConfigured = errors.New("miner registry not configured: dpow block is set but registry address is zero")
+
+	// ErrInvalidMinerSignature is returned when a header past the miner signer
+	// threshold breaks the signature rule: its extra-data is malformed or not
+	// signed by the address its epoch requires (the signer listed for its
+	// coinbase, or else the coinbase itself), it crosses into the epoch from a
+	// coinbase the epoch does not list, or it sets a withdrawals hash.
+	ErrInvalidMinerSignature = errors.New("invalid miner signature")
 )

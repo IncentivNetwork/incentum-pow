@@ -188,7 +188,14 @@ function pickSample(all, target) {
     seenSender.add(o.sender)
     picked.set(keyOf(o), o)
   }
-  const remaining = all.filter((o) => !picked.has(keyOf(o)))
+  // Calculate the stride over unique operations. Otherwise overlapping windows
+  // spend sampling iterations on keys already inserted and can miss the target.
+  const remainingByKey = new Map()
+  for (const o of all) {
+    const key = keyOf(o)
+    if (!picked.has(key) && !remainingByKey.has(key)) remainingByKey.set(key, o)
+  }
+  const remaining = [...remainingByKey.values()]
   const want = Math.max(0, target - picked.size)
   if (want > 0 && remaining.length > 0) {
     const step = Math.max(1, Math.floor(remaining.length / want))

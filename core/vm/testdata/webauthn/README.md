@@ -34,7 +34,10 @@ Two things about that metadata, so it is not read for more than it says:
   them (3,500,000 – 3,505,000, 741 operations) lies inside another (3,500,000 –
   3,510,000, 1,170), so those 741 are counted twice. The number of distinct operations
   is 34,300, which is what `docs/webauthn/replay-validation.md` reports and what its
-  ten-row table sums to.
+  ten-row table sums to. The sample was drawn while the sampler still counted those
+  duplicates when it set its stride; the current `sample_passkey_ops.js` removes them first,
+  so running it on the same harvests selects a different set of operations. The committed
+  file stays the reference.
 - Four windows — 4,000,000 – 4,020,000; 4,500,000 – 4,520,000; 5,000,000 – 5,021,487;
   and 5,021,488 – 6,021,488, 21,585 operations between them — carry no
   `entryPointRevisions`, which `harvest_passkey_ops.js` as committed always emits. They

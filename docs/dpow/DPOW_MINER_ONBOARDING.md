@@ -154,6 +154,8 @@ Your node must run the DPoW-enabled, hardened binary (see `DPOW_NODE_OPERATOR_GU
 
 Ethash mining does **not** require an unlocked account — do not re-add `--unlock`.
 
+Past the signer threshold every block must also be signed. Unless the chain config lists another signer for your coinbase, that is your coinbase's own key, so the node needs its keystore through `--miner.signerkey` and `--miner.signerpassword`. A release that lists signers refuses `--mine` without a key that can sign for your etherbase, at any total difficulty, so add both flags in the restart onto that release. See `DPOW_MINER_SIGNATURE.md`.
+
 ---
 
 ## 7. Unstaking lifecycle
@@ -212,3 +214,5 @@ After `finalizeUnstake()`, the address may stake again from scratch: `approve` �
 | `finalizeUnstake()` reverts `UnstakeDelayNotMet` | `UNSTAKE_DELAY` has not elapsed | Wait until `unstakeRequestTime + UNSTAKE_DELAY` |
 | `isAuthorizedMiner` stays `false` after 24 h | Block-maturity not yet reached (slow blocks) | Wait until `blockNumber ≥ stakeBlock + MATURITY_BLOCKS` |
 | Blocks rejected after activation | Coinbase not the staked address, or not matured | Verify `--miner.etherbase` equals the staked address and `isAuthorizedMiner` is `true` |
+| `Failed to assemble sealing block` with `err` starting `DPoW: local miner` | The registry, at any total difficulty: the coinbase is not staked (`unauthorized miner`) or not matured (`miner stake not yet mature`) | Verify `--miner.etherbase` equals the staked address, and wait until `isAuthorizedMiner` is `true` (§4.4) |
+| `invalid miner signature`, or `Failed to assemble sealing block` with `err` starting `miner signature` | Past the signer threshold: the key is neither the coinbase's nor the one listed for it, or the block would cross the threshold and the coinbase is not listed | Compare `minerSignerEpochs` with `--miner.etherbase` and the `Loaded miner block signer` log line; an unlisted miner waits for the crossing. See `DPOW_MINER_SIGNATURE.md` |
